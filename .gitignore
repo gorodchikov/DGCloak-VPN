@@ -1,0 +1,62 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+
+# --- Виртуальные окружения ---
+venv/
+.venv/
+env/
+ENV/
+
+# --- Сборка (PyInstaller) ---
+# Если позже появится собственный *.spec, его нужно коммитить (здесь он не исключён).
+build/
+dist/
+app.ico            # генерируется при сборке из cloak_icon.py
+
+# --- Тесты / линтеры / покрытие ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+htmlcov/
+
+# --- Логи и временные файлы ---
+*.log
+*.tmp
+*.bak
+*.swp
+
+# --- Секреты и пользовательские данные (НЕ КОММИТИТЬ) ---
+data.json
+*.ovpn
+ckclient*.json
+ckserver*.json
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+.env
+.env.*
+# Безопасные примеры без секретов разрешены:
+!*.example.ovpn
+!*.example.json
+
+# --- IDE ---
+.vscode/
+.idea/
+*.code-workspace
+
+# --- Windows ---
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk

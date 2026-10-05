@@ -1,0 +1,9 @@
+# Python 3.8+ (рекомендуется 3.10+). Нужен Python с python.org: tkinter входит в установщик,
+# через pip он НЕ ставится. Остальные модули (json, socket, subprocess, threading, ctypes...) — стандартная библиотека.
+
+# Трей и иконки (без них программа запускается, но без трея и иконок — см. HAS_TRAY в cloak_ovpn.py)
+pystray>=0.19.5
+Pillow>=10.0.0
+
+# Только для сборки exe (раскомментируйте или ставьте отдельно: pip install pyinstaller)
+# pyinstaller>=6.0
