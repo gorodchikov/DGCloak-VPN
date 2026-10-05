@@ -123,6 +123,7 @@ STRINGS_EN = {
     "Открыть": "Open",
     "Подключить «{name}»": "Connect «{name}»",
     "Отключить «{name}»": "Disconnect «{name}»",
+    "Отключить «{name}» и подключить": "Disconnect «{name}» and connect",
     "Отключить VPN и выйти из программы": "Disconnect VPN and exit",
     "Программа продолжает работать в трее. Выход: "
     "правый клик по значку → «Отключить VPN и выйти из программы».":
@@ -711,6 +712,16 @@ class App(tk.Tk):
         advrow.pack(fill="x", padx=10, pady=(0, 10))
         self.b_adv = ttk.Button(advrow, text=t("Дополнительно ▾"), width=BTN_W, command=self._toggle_adv)
         self.b_adv.pack(side="left")
+        # выбор языка — в основном окне справа снизу
+        langf = ttk.Frame(advrow)
+        langf.pack(side="right")
+        self.lang_label = ttk.Label(langf, text=t("Язык:"))
+        self.lang_label.pack(side="left")
+        self.lang_combo = ttk.Combobox(langf, state="readonly", width=8,
+                                       values=[LANG_NAMES["ru"], LANG_NAMES["en"]])
+        self.lang_combo.set(LANG_NAMES[self.lang()])
+        self.lang_combo.pack(side="left", padx=4)
+        self.lang_combo.bind("<<ComboboxSelected>>", self._on_lang_pick)
 
         # Скрываемая панель: лог и редко нужные настройки
         self.adv = ttk.Frame(self)
@@ -724,15 +735,6 @@ class App(tk.Tk):
         self.b_clear.pack(pady=(4, 0))
         self.b_paths = ttk.Button(bar, text=t("Пути к Cloak и OpenVPN…"), command=self._paths)
         self.b_paths.pack(side="left", padx=6, anchor="n")
-        langf = ttk.Frame(bar)
-        langf.pack(side="right", anchor="n")
-        self.lang_label = ttk.Label(langf, text=t("Язык:"))
-        self.lang_label.pack(side="left")
-        self.lang_combo = ttk.Combobox(langf, state="readonly", width=8,
-                                       values=[LANG_NAMES["ru"], LANG_NAMES["en"]])
-        self.lang_combo.set(LANG_NAMES[self.lang()])
-        self.lang_combo.pack(side="left", padx=4)
-        self.lang_combo.bind("<<ComboboxSelected>>", self._on_lang_pick)
         self.chk_verbose = ttk.Checkbutton(
             self.adv, text=t("Отладочный лог OpenVPN (применится при следующем подключении)"),
             variable=self.verbose)
@@ -890,24 +892,32 @@ class App(tk.Tk):
         idle = lambda it: not self.busy  # noqa: E731
         yield MI(self.t("Открыть"), lambda i, it: self.ui(self._show), default=True)
         if self.active:
-            yield MI(self.t("Отключить «{name}»", name=self.active["name"]),
-                     lambda i, it: self.ui(self._toggle), enabled=idle)
-            skip = self.active["name"]
+            # один пункт: отключить и/или переключиться — отдельное «Отключить» путало
+            yield MI(self.t("Отключить «{name}» и подключить", name=self.active["name"]),
+                     pystray.Menu(self._tray_connected_items), enabled=idle)
         else:
-            skip = self.cur_name
             if self.cur_name in [p["name"] for p in self.data["profiles"]]:
                 yield MI(self.t("Подключить «{name}»", name=self.cur_name),
                          lambda i, it: self.ui(self._toggle), enabled=idle)
-        # подменю: остальные профили; при активном VPN выбор переключает на него
-        if any(p["name"] != skip for p in self.data["profiles"]):
-            yield MI(self.t("Подключить"), pystray.Menu(self._tray_profile_items), enabled=idle)
+            # подменю: профили кроме выбранного (для него есть кнопка выше)
+            if any(p["name"] != self.cur_name for p in self.data["profiles"]):
+                yield MI(self.t("Подключить"), pystray.Menu(self._tray_profile_items), enabled=idle)
         yield pystray.Menu.SEPARATOR
         yield MI(self.t("Отключить VPN и выйти из программы"), lambda i, it: self.ui(self._exit_clicked))
 
     def _tray_profile_items(self):
-        skip = self.active["name"] if self.active else self.cur_name
         for p in list(self.data["profiles"]):
-            if p["name"] == skip:
+            if p["name"] == self.cur_name:
+                continue
+            yield pystray.MenuItem(p["name"], self._tray_connect_action(p["name"]),
+                                   checked=self._tray_checked(p["name"]), radio=True)
+
+    def _tray_connected_items(self):
+        """Подменю при активном VPN: простое отключение и переключение на другой профиль."""
+        yield pystray.MenuItem(self.t("Отключить"), lambda i, it: self.ui(self._toggle))
+        yield pystray.Menu.SEPARATOR
+        for p in list(self.data["profiles"]):
+            if p["name"] == self.active["name"]:
                 continue
             yield pystray.MenuItem(p["name"], self._tray_connect_action(p["name"]),
                                    checked=self._tray_checked(p["name"]), radio=True)
