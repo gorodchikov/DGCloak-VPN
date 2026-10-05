@@ -40,6 +40,134 @@ DEFAULT_DATA = {
     "openvpn_exe": r"C:\Program Files\OpenVPN\bin\openvpn.exe",
     "profiles": [],
     "last_profile": "",
+    "language": "ru",
+}
+
+LANG_NAMES = {"ru": "Русский", "en": "English"}
+
+# Перевод интерфейса: ключ — русская строка, значение — английская.
+# Строка, которой нет в словаре, показывается по-русски.
+STRINGS_EN = {
+    # главное окно
+    "Подключить": "Connect",
+    "Отключить": "Disconnect",
+    "Выход": "Exit",
+    "Изм.": "Edit",
+    "Удал.": "Delete",
+    "Дополнительно ▾": "Advanced ▾",
+    "Дополнительно ▴": "Advanced ▴",
+    "Копировать лог": "Copy log",
+    "Очистить лог": "Clear log",
+    "Пути к Cloak и OpenVPN…": "Paths to Cloak and OpenVPN…",
+    "Отладочный лог OpenVPN (применится при следующем подключении)":
+        "OpenVPN debug log (applies on next connect)",
+    "Язык:": "Language:",
+    # статусы
+    "Отключено": "Disconnected",
+    "Подключение…": "Connecting…",
+    "Ожидание ответа сервера…": "Waiting for server…",
+    "Аутентификация…": "Authenticating…",
+    "Получение настроек…": "Getting config…",
+    "Назначение IP…": "Assigning IP…",
+    "Добавление маршрутов…": "Adding routes…",
+    "Подключено: {name}": "Connected: {name}",
+    "Переподключение…": "Reconnecting…",
+    "Отключение…": "Disconnecting…",
+    "Запуск Cloak…": "Starting Cloak…",
+    "Запуск OpenVPN…": "Starting OpenVPN…",
+    "Маршруты не добавлены — нужны права администратора":
+        "Routes not added — administrator rights required",
+    "Cloak остановлен — VPN не работает": "Cloak stopped — VPN down",
+    "OpenVPN завершился": "OpenVPN exited",
+    # диалоги
+    "Профиль": "Profile",
+    "Сохранить": "Save",
+    "Отмена": "Cancel",
+    "Ошибка": "Error",
+    "Заполните название, конфиг Cloak и профиль OpenVPN.":
+        "Fill in name, Cloak config and OpenVPN profile.",
+    "Порт должен быть числом.": "Port must be a number.",
+    "Удалить": "Delete",
+    "Удалить профиль «{name}»?": "Delete profile «{name}»?",
+    "Нет профиля": "No profile",
+    "Сначала добавьте профиль кнопкой «+».": "Add a profile first («+» button).",
+    "VPN подключён. Отключить и выйти из программы?":
+        "VPN is connected. Disconnect and exit?",
+    "Профили не добавлены. Добавить первый профиль сейчас?":
+        "No profiles yet. Add the first profile now?",
+    "Путь к {t}": "Path to {t}",
+    "Все": "All",
+    # поля профиля
+    "Название": "Name",
+    "Cloak конфиг (.json)": "Cloak config (.json)",
+    "OpenVPN профиль (.ovpn)": "OpenVPN profile (.ovpn)",
+    "Локальный порт Cloak (-l)": "Local Cloak port (-l)",
+    "Сервер Cloak (-s), если не в конфиге": "Cloak server (-s), if not in config",
+    "Порт сервера Cloak (-p)": "Cloak server port (-p)",
+    "IP сервера Cloak: исключить из туннеля": "Cloak server IP: bypass tunnel",
+    "UDP-режим (-u, для OpenVPN по UDP)": "UDP mode (-u, for OpenVPN over UDP)",
+    "Весь трафик через VPN (redirect-gateway local def1)":
+        "Route all traffic via VPN (redirect-gateway local def1)",
+    "Порт — локальный порт Cloak (-l); remote в .ovpn подставляется автоматически.\n"
+    "IP-обход добавит маршрут через основной шлюз, чтобы трафик Cloak\n"
+    "не заворачивался в сам VPN.":
+        "Port — local Cloak port (-l); remote in .ovpn is injected automatically.\n"
+        "Bypass IP adds a route via the main gateway so Cloak traffic\n"
+        "doesn't go into the VPN itself.",
+    # трей
+    "Открыть": "Open",
+    "Подключить «{name}»": "Connect «{name}»",
+    "Отключить «{name}»": "Disconnect «{name}»",
+    "Отключить VPN и выйти из программы": "Disconnect VPN and exit",
+    "Программа продолжает работать в трее. Выход: "
+    "правый клик по значку → «Отключить VPN и выйти из программы».":
+        "App keeps running in tray. Exit: right-click icon → «Disconnect VPN and exit».",
+    # мастер установки
+    "Настройка программ": "Program setup",
+    "не найден": "not found",
+    "Установить автоматически": "Install automatically",
+    "Указать пути вручную": "Set paths manually",
+    "Закрыть": "Close",
+    "Автоустановка: OpenVPN через winget, Cloak — свежий релиз с GitHub "
+    "в %APPDATA%\\DGCloakVPN. Пути можно изменить позже: "
+    "Дополнительно → «Пути к Cloak и OpenVPN…».":
+        "Auto setup: OpenVPN via winget, Cloak — latest GitHub release "
+        "into %APPDATA%\\DGCloakVPN. Paths can be changed later: "
+        "Advanced → «Paths to Cloak and OpenVPN…».",
+    "скачиваю свежий ck-client с GitHub…": "downloading latest ck-client from GitHub…",
+    "устанавливаю OpenVPN через winget…": "installing OpenVPN via winget…",
+    "winget не найден. Установите OpenVPN Community вручную: "
+    "openvpn.net/community-downloads/":
+        "winget not found. Install OpenVPN Community manually: "
+        "openvpn.net/community-downloads/",
+    "готово": "done",
+    "Установка": "Setup",
+    # логовые сообщения, которые важны пользователю
+    "отключено": "offline",
+    "Лог скопирован в буфер обмена.": "Log copied to clipboard.",
+    "Лог очищен.": "Log cleared.",
+    "Подключено.": "Connected.",
+    "Отключено.": "Disconnected.",
+    "Отключаюсь…": "Disconnecting…",
+    "Cloak готов.": "Cloak ready.",
+    "management подключён.": "management connected.",
+    "Состояние OpenVPN: ": "OpenVPN state: ",
+    "Внимание: нет прав администратора. OpenVPN не сможет создать адаптер — "
+    "запустите программу от имени администратора.":
+        "Warning: no administrator rights. OpenVPN cannot create the adapter — "
+        "run the app as administrator.",
+    "ВНИМАНИЕ: OpenVPN не смог добавить маршруты (Access is denied) — трафик не идёт "
+    "через VPN. Запустите программу от имени администратора.":
+        "WARNING: OpenVPN could not add routes (Access is denied) — traffic does not "
+        "go through VPN. Run the app as administrator.",
+    "ВНИМАНИЕ: 127.0.0.1 перестал отвечать — таблица маршрутов повреждена. "
+    "Остальные программы (например v2rayN) могут не работать до перезагрузки.":
+        "WARNING: 127.0.0.1 stopped responding — routing table damaged. "
+        "Other apps (e.g. v2rayN) may not work until reboot.",
+    "Системный маршрут 127.0.0.1 отсутствовал — восстановлен.":
+        "System route 127.0.0.1 was missing — restored.",
+    "После отключения маршрут 127.0.0.1 пропал — восстановлен.":
+        "Route 127.0.0.1 disappeared after disconnect — restored.",
 }
 
 # состояние OpenVPN -> (текст, цвет)
@@ -226,7 +354,8 @@ class SetupDialog(tk.Toplevel):
         super().__init__(app)
         self.app = app
         self.working = False
-        self.title("Настройка программ")
+        t = app.t
+        self.title(t("Настройка программ"))
         self.resizable(False, False)
         self.ck_var = tk.StringVar()
         self.ov_var = tk.StringVar()
@@ -240,16 +369,16 @@ class SetupDialog(tk.Toplevel):
                   ).grid(row=3, column=0, columnspan=2, sticky="w", padx=12)
         btns = ttk.Frame(self)
         btns.grid(row=4, column=0, columnspan=2, pady=10)
-        self.b_auto = ttk.Button(btns, text="Установить автоматически", command=self._auto)
+        self.b_auto = ttk.Button(btns, text=t("Установить автоматически"), command=self._auto)
         self.b_auto.pack(side="left", padx=4)
-        self.b_manual = ttk.Button(btns, text="Указать пути вручную", command=self._manual)
+        self.b_manual = ttk.Button(btns, text=t("Указать пути вручную"), command=self._manual)
         self.b_manual.pack(side="left", padx=4)
-        self.b_close = ttk.Button(btns, text="Закрыть", command=self.destroy)
+        self.b_close = ttk.Button(btns, text=t("Закрыть"), command=self.destroy)
         self.b_close.pack(side="left", padx=4)
         ttk.Label(self, foreground="gray", wraplength=440, justify="left",
-                  text="Автоустановка: OpenVPN через winget, Cloak — свежий релиз с GitHub "
-                       "в %APPDATA%\\DGCloakVPN. Пути можно изменить позже: "
-                       "Дополнительно → «Пути к Cloak и OpenVPN…»."
+                  text=t("Автоустановка: OpenVPN через winget, Cloak — свежий релиз с GitHub "
+                         "в %APPDATA%\\DGCloakVPN. Пути можно изменить позже: "
+                         "Дополнительно → «Пути к Cloak и OpenVPN…».")
                   ).grid(row=5, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 10))
         self.transient(app)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
@@ -261,7 +390,7 @@ class SetupDialog(tk.Toplevel):
                                 (self.ck_var, "ck_client", "Cloak")):
             path = d[key]
             ok = os.path.isfile(path)
-            var.set(f"{'✔' if ok else '✖'} {title}: {path if ok else 'не найден'}")
+            var.set(f"{'✔' if ok else '✖'} {title}: {path if ok else self.app.t('не найден')}")
         self.b_auto.config(state="normal" if not self.working else "disabled")
 
     def _manual(self):
@@ -274,8 +403,8 @@ class SetupDialog(tk.Toplevel):
         threading.Thread(target=self._install, daemon=True).start()
 
     def _say(self, text):
-        self.app.ui(lambda: self.status_var.set(text))
-        self.app.say("Установка: " + text)
+        self.app.ui(lambda: self.status_var.set(self.app.t(text)))
+        self.app.say(self.app.t("Установка") + ": " + text)
 
     def _set_progress(self, done, total):
         if total:
@@ -341,13 +470,15 @@ class ProfileDialog(tk.Toplevel):
 
     def __init__(self, parent, profile=None):
         super().__init__(parent)
-        self.title("Профиль")
+        self.t = parent.t
+        t = self.t
+        self.title(t("Профиль"))
         self.resizable(False, False)
         self.result = None
         p = profile or {}
         self.vars = {}
         for i, (key, label, ftypes) in enumerate(self.FIELDS):
-            ttk.Label(self, text=label).grid(row=i, column=0, sticky="w", padx=8, pady=4)
+            ttk.Label(self, text=t(label)).grid(row=i, column=0, sticky="w", padx=8, pady=4)
             v = tk.StringVar(value=str(p.get(key, "1984" if key == "port" else "")))
             self.vars[key] = v
             ttk.Entry(self, textvariable=v, width=48).grid(row=i, column=1, padx=4)
@@ -357,23 +488,24 @@ class ProfileDialog(tk.Toplevel):
         self.udp = tk.BooleanVar(value=p.get("udp", False))
         self.full = tk.BooleanVar(value=p.get("full_tunnel", True))
         n = len(self.FIELDS)
-        ttk.Checkbutton(self, text="UDP-режим (-u, для OpenVPN по UDP)",
+        ttk.Checkbutton(self, text=t("UDP-режим (-u, для OpenVPN по UDP)"),
                         variable=self.udp).grid(row=n, column=1, sticky="w", pady=4)
-        ttk.Checkbutton(self, text="Весь трафик через VPN (redirect-gateway local def1)",
+        ttk.Checkbutton(self, text=t("Весь трафик через VPN (redirect-gateway local def1)"),
                         variable=self.full).grid(row=n + 1, column=1, sticky="w")
         ttk.Label(self, foreground="gray",
-                  text="Порт — локальный порт Cloak (-l); remote в .ovpn подставляется автоматически.\n"
-                       "IP-обход добавит маршрут через основной шлюз, чтобы трафик Cloak\n"
-                       "не заворачивался в сам VPN."
+                  text=t("Порт — локальный порт Cloak (-l); remote в .ovpn подставляется автоматически.\n"
+                         "IP-обход добавит маршрут через основной шлюз, чтобы трафик Cloak\n"
+                         "не заворачивался в сам VPN.")
                   ).grid(row=n + 2, column=0, columnspan=3, padx=8, sticky="w")
         btns = ttk.Frame(self)
         btns.grid(row=n + 3, column=0, columnspan=3, pady=8)
-        ttk.Button(btns, text="Сохранить", command=self._ok).pack(side="left", padx=4)
-        ttk.Button(btns, text="Отмена", command=self.destroy).pack(side="left", padx=4)
+        ttk.Button(btns, text=t("Сохранить"), command=self._ok).pack(side="left", padx=4)
+        ttk.Button(btns, text=t("Отмена"), command=self.destroy).pack(side="left", padx=4)
         self.transient(parent)
         self.grab_set()
 
     def _browse(self, var, ftypes):
+        ftypes = [(self.t(lbl), pat) for lbl, pat in ftypes]
         path = filedialog.askopenfilename(filetypes=ftypes)
         if path:
             var.set(os.path.normpath(path))
@@ -383,12 +515,14 @@ class ProfileDialog(tk.Toplevel):
     def _ok(self):
         r = {k: v.get().strip() for k, v in self.vars.items()}
         if not (r["name"] and r["ck_config"] and r["ovpn"]):
-            messagebox.showerror("Ошибка", "Заполните название, конфиг Cloak и профиль OpenVPN.", parent=self)
+            messagebox.showerror(self.t("Ошибка"),
+                                 self.t("Заполните название, конфиг Cloak и профиль OpenVPN."),
+                                 parent=self)
             return
         try:
             r["port"] = int(r["port"] or 1984)
         except ValueError:
-            messagebox.showerror("Ошибка", "Порт должен быть числом.", parent=self)
+            messagebox.showerror(self.t("Ошибка"), self.t("Порт должен быть числом."), parent=self)
             return
         r["udp"] = self.udp.get()
         r["full_tunnel"] = self.full.get()
@@ -403,6 +537,7 @@ class App(tk.Tk):
         self.minsize(470, 10)
         self.resizable(False, False)  # фиксированный размер окна
         self.data = load_data()
+        self._status_msg = ("Отключено", "gray", {})
         self.ck = None
         self.vpn = None
         self.mgmt = None
@@ -468,33 +603,44 @@ class App(tk.Tk):
             self._suggest_profile()
 
     def _suggest_profile(self):
-        if messagebox.askyesno(APP_NAME, "Профили не добавлены. Добавить первый профиль сейчас?"):
+        if messagebox.askyesno(APP_NAME, self.t("Профили не добавлены. Добавить первый профиль сейчас?")):
             self._add()
+
+    def lang(self):
+        return self.data.get("language", "ru")
+
+    def t(self, s, **kw):
+        """Перевод строки интерфейса на выбранный язык (ключа нет → русский)."""
+        if self.lang() == "en":
+            s = STRINGS_EN.get(s, s)
+        return s.format(**kw) if kw else s
 
     # ---------- UI ----------
     def _build(self):
+        t = self.t
         top = ttk.Frame(self)
         top.pack(fill="x", padx=10, pady=(10, 6))
         self.combo = ttk.Combobox(top, state="readonly", width=30)
         self.combo.pack(side="left")
         self.combo.bind("<<ComboboxSelected>>", lambda e: self._sync_current())
         self.b_add = ttk.Button(top, text="+", width=BTN_S, command=self._add)
-        self.b_edit = ttk.Button(top, text="Изм.", width=BTN_S, command=self._edit)
-        self.b_del = ttk.Button(top, text="Удал.", width=BTN_S, command=self._delete)
+        self.b_edit = ttk.Button(top, text=t("Изм."), width=BTN_S, command=self._edit)
+        self.b_del = ttk.Button(top, text=t("Удал."), width=BTN_S, command=self._delete)
         for b in (self.b_add, self.b_edit, self.b_del):
             b.pack(side="left", padx=2)
-        ttk.Button(top, text="Выход", width=BTN_S, command=self._exit_clicked).pack(side="right")
+        self.b_exit = ttk.Button(top, text=t("Выход"), width=BTN_S, command=self._exit_clicked)
+        self.b_exit.pack(side="right")
 
         mid = ttk.Frame(self)
         mid.pack(fill="x", padx=10, pady=(0, 6))
-        self.btn = ttk.Button(mid, text="Подключить", width=BTN_W, command=self._toggle)
+        self.btn = ttk.Button(mid, text=t("Подключить"), width=BTN_W, command=self._toggle)
         self.btn.pack(side="left")
-        self.status = ttk.Label(mid, text="Отключено", foreground="gray", wraplength=380)
+        self.status = ttk.Label(mid, text=t("Отключено"), foreground="gray", wraplength=380)
         self.status.pack(side="left", padx=12)
 
         advrow = ttk.Frame(self)
         advrow.pack(fill="x", padx=10, pady=(0, 10))
-        self.b_adv = ttk.Button(advrow, text="Дополнительно ▾", width=BTN_W, command=self._toggle_adv)
+        self.b_adv = ttk.Button(advrow, text=t("Дополнительно ▾"), width=BTN_W, command=self._toggle_adv)
         self.b_adv.pack(side="left")
 
         # Скрываемая панель: лог и редко нужные настройки
@@ -503,20 +649,57 @@ class App(tk.Tk):
         bar.pack(fill="x")
         logbtns = ttk.Frame(bar)
         logbtns.pack(side="left")
-        self.b_copy = ttk.Button(logbtns, text="Копировать лог", width=BTN_W, command=self._copy_log)
+        self.b_copy = ttk.Button(logbtns, text=t("Копировать лог"), width=BTN_W, command=self._copy_log)
         self.b_copy.pack()
-        self.b_clear = ttk.Button(logbtns, text="Очистить лог", width=BTN_W, command=self._clear_log)
+        self.b_clear = ttk.Button(logbtns, text=t("Очистить лог"), width=BTN_W, command=self._clear_log)
         self.b_clear.pack(pady=(4, 0))
-        self.b_paths = ttk.Button(bar, text="Пути к Cloak и OpenVPN…", command=self._paths)
+        self.b_paths = ttk.Button(bar, text=t("Пути к Cloak и OpenVPN…"), command=self._paths)
         self.b_paths.pack(side="left", padx=6, anchor="n")
-        ttk.Checkbutton(self.adv, text="Отладочный лог OpenVPN (применится при следующем подключении)",
-                        variable=self.verbose).pack(anchor="w", pady=(6, 0))
+        langf = ttk.Frame(bar)
+        langf.pack(side="right", anchor="n")
+        self.lang_label = ttk.Label(langf, text=t("Язык:"))
+        self.lang_label.pack(side="left")
+        self.lang_combo = ttk.Combobox(langf, state="readonly", width=8,
+                                       values=[LANG_NAMES["ru"], LANG_NAMES["en"]])
+        self.lang_combo.set(LANG_NAMES[self.lang()])
+        self.lang_combo.pack(side="left", padx=4)
+        self.lang_combo.bind("<<ComboboxSelected>>", self._on_lang_pick)
+        self.chk_verbose = ttk.Checkbutton(
+            self.adv, text=t("Отладочный лог OpenVPN (применится при следующем подключении)"),
+            variable=self.verbose)
+        self.chk_verbose.pack(anchor="w", pady=(6, 0))
         self.log = tk.Text(self.adv, height=16, state="disabled", wrap="word")
         self.log.pack(fill="both", expand=True, pady=(6, 0))
         self._refresh_combo(self.data.get("last_profile"))
 
+    def _on_lang_pick(self, _e):
+        code = "en" if self.lang_combo.get() == LANG_NAMES["en"] else "ru"
+        if code != self.lang():
+            self.data["language"] = code
+            save_data(self.data)
+            self._apply_lang()
+
+    def _apply_lang(self):
+        """Перетекстировать все виджеты и меню трея на выбранном языке."""
+        t = self.t
+        self.b_edit.config(text=t("Изм."))
+        self.b_del.config(text=t("Удал."))
+        self.b_exit.config(text=t("Выход"))
+        self.btn.config(text=t("Отключить" if self.active else "Подключить"))
+        self.b_adv.config(text=t("Дополнительно ▴" if self.adv_open else "Дополнительно ▾"))
+        self.b_copy.config(text=t("Копировать лог"))
+        self.b_clear.config(text=t("Очистить лог"))
+        self.b_paths.config(text=t("Пути к Cloak и OpenVPN…"))
+        self.chk_verbose.config(text=t("Отладочный лог OpenVPN (применится при следующем подключении)"))
+        self.lang_label.config(text=t("Язык:"))
+        if self._status_msg:
+            text, color, kw = self._status_msg
+            self.set_status(text, color, **kw)
+        self._refresh_tray_menu()
+
     def _exit_clicked(self):
-        if self.active and not messagebox.askyesno(APP_NAME, "VPN подключён. Отключить и выйти из программы?"):
+        if self.active and not messagebox.askyesno(
+                APP_NAME, self.t("VPN подключён. Отключить и выйти из программы?")):
             return
         self._quit()
 
@@ -528,14 +711,14 @@ class App(tk.Tk):
 
     def _hide_adv(self):
         self.adv.pack_forget()
-        self.b_adv.config(text="Дополнительно ▾")
+        self.b_adv.config(text=self.t("Дополнительно ▾"))
         self.geometry("")                # вернуть компактный размер
         self.adv_open = False
 
     def _show_adv(self):
         if not self.adv_open:            # флаг ведём сами: winfo_ismapped() отстаёт от pack()
             self.adv.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-            self.b_adv.config(text="Дополнительно ▴")
+            self.b_adv.config(text=self.t("Дополнительно ▴"))
             self.geometry("720x560")
             self.adv_open = True
 
@@ -578,7 +761,7 @@ class App(tk.Tk):
                 pass
 
     def say(self, msg):
-        line = f"[{time.strftime('%H:%M:%S')}] {msg}\n"
+        line = f"[{time.strftime('%H:%M:%S')}] {self.t(msg)}\n"
         self._log_file(line)
         self.ui(lambda: self._append(line))
 
@@ -606,10 +789,12 @@ class App(tk.Tk):
         self.log.see("end")
         self.log.config(state="disabled")
 
-    def set_status(self, text, color):
+    def set_status(self, text, color, **kw):
+        """text — русский шаблон; kw подставляются после перевода ({name} и т.п.)."""
+        self._status_msg = (text, color, kw)
         def apply():
-            self.status.config(text=text, foreground=color)
-            self._tray_update(text, color)
+            self.status.config(text=self.t(text, **kw), foreground=color)
+            self._tray_update(self.t(text, **kw), color)
         self.ui(apply)
 
     # ---------- иконка и трей ----------
@@ -624,7 +809,8 @@ class App(tk.Tk):
             self._win_icon = tk.PhotoImage(data=base64.b64encode(buf.getvalue()))
             self.iconphoto(True, self._win_icon)
             menu = pystray.Menu(self._tray_items)   # меню пересобирается при update_menu()
-            self.tray = pystray.Icon("DGCloakVPN", self._icons["gray"], f"{APP_NAME}: отключено", menu)
+            self.tray = pystray.Icon("DGCloakVPN", self._icons["gray"],
+                                     f"{APP_NAME}: " + self.t("отключено"), menu)
             self.tray.run_detached()
         except Exception as e:  # noqa: BLE001
             self.tray = None
@@ -633,18 +819,19 @@ class App(tk.Tk):
     def _tray_items(self):
         MI = pystray.MenuItem
         idle = lambda it: not self.busy  # noqa: E731
-        yield MI("Открыть", lambda i, it: self.ui(self._show), default=True)
+        yield MI(self.t("Открыть"), lambda i, it: self.ui(self._show), default=True)
         if self.active:
-            yield MI(f"Отключить «{self.active['name']}»", lambda i, it: self.ui(self._toggle), enabled=idle)
+            yield MI(self.t("Отключить «{name}»", name=self.active["name"]),
+                     lambda i, it: self.ui(self._toggle), enabled=idle)
         else:
             names = [p["name"] for p in self.data["profiles"]]
             if self.cur_name in names:
-                yield MI(f"Подключить «{self.cur_name}»",
+                yield MI(self.t("Подключить «{name}»", name=self.cur_name),
                          lambda i, it: self.ui(self._toggle), enabled=idle)
             if names:
-                yield MI("Подключить", pystray.Menu(self._tray_profile_items), enabled=idle)
+                yield MI(self.t("Подключить"), pystray.Menu(self._tray_profile_items), enabled=idle)
         yield pystray.Menu.SEPARATOR
-        yield MI("Отключить VPN и выйти из программы", lambda i, it: self.ui(self._exit_clicked))
+        yield MI(self.t("Отключить VPN и выйти из программы"), lambda i, it: self.ui(self._exit_clicked))
 
     def _tray_profile_items(self):
         for p in list(self.data["profiles"]):
@@ -691,8 +878,9 @@ class App(tk.Tk):
         if self.tray and not self._hint_shown:
             self._hint_shown = True
             try:
-                self.tray.notify("Программа продолжает работать в трее. Выход: "
-                                 "правый клик по значку → «Отключить VPN и выйти из программы».", APP_NAME)
+                self.tray.notify(self.t("Программа продолжает работать в трее. Выход: "
+                                        "правый клик по значку → «Отключить VPN и выйти из программы»."),
+                                 APP_NAME)
             except Exception:  # noqa: BLE001
                 pass
 
@@ -753,14 +941,15 @@ class App(tk.Tk):
 
     def _delete(self):
         p = self._current()
-        if p and messagebox.askyesno("Удалить", f"Удалить профиль «{p['name']}»?"):
+        if p and messagebox.askyesno(self.t("Удалить"),
+                                     self.t("Удалить профиль «{name}»?", name=p["name"])):
             self.data["profiles"].remove(p)
             save_data(self.data)
             self._refresh_combo()
 
     def _paths(self):
         for key, title in (("ck_client", "ck-client.exe"), ("openvpn_exe", "openvpn.exe")):
-            path = filedialog.askopenfilename(title=f"Путь к {title}",
+            path = filedialog.askopenfilename(title=self.t("Путь к {t}", t=title),
                                               initialfile=self.data[key],
                                               filetypes=[("EXE", "*.exe")])
             if path:
@@ -776,7 +965,7 @@ class App(tk.Tk):
         else:
             p = self._current()
             if not p:
-                messagebox.showinfo("Нет профиля", "Сначала добавьте профиль кнопкой «+».")
+                messagebox.showinfo(self.t("Нет профиля"), self.t("Сначала добавьте профиль кнопкой «+»."))
                 return
             self.verb = self.verbose.get()
             self._run(lambda: self._connect(p))
@@ -804,7 +993,7 @@ class App(tk.Tk):
     def _finish(self):
         self.busy = False
         self._refresh_tray_menu()
-        self.btn.config(state="normal", text="Отключить" if self.active else "Подключить")
+        self.btn.config(state="normal", text=self.t("Отключить" if self.active else "Подключить"))
         self._set_locked(bool(self.active))
 
     def _pump(self, proc, tag):
@@ -974,7 +1163,7 @@ class App(tk.Tk):
         self.last_state = state
         self.say(f"Состояние OpenVPN: {state}")
         text, color = STATES.get(state, (state, "orange"))
-        self.set_status(text.format(name=p["name"]), color)
+        self.set_status(text, color, name=p["name"])
         if state == "CONNECTED":
             self.up.set()
 
