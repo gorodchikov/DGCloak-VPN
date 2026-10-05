@@ -720,7 +720,7 @@ class App(tk.Tk):
         self.lang_combo = ttk.Combobox(langf, state="readonly", width=8,
                                        values=[LANG_NAMES["ru"], LANG_NAMES["en"]])
         self.lang_combo.set(LANG_NAMES[self.lang()])
-        self.lang_combo.pack(side="left", padx=4)
+        self.lang_combo.pack(side="left", padx=(4, 0))  # правый край — по кнопке «Выход»
         self.lang_combo.bind("<<ComboboxSelected>>", self._on_lang_pick)
 
         # Скрываемая панель: лог и редко нужные настройки
