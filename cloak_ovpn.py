@@ -688,39 +688,43 @@ class App(tk.Tk):
     # ---------- UI ----------
     def _build(self):
         t = self.t
-        top = ttk.Frame(self)
-        top.pack(fill="x", padx=10, pady=(10, 6))
-        self.combo = ttk.Combobox(top, state="readonly", width=30)
-        self.combo.pack(side="left")
+        # Три строки — в одной grid-сетке: правая колонка выравнивает «Выход» и
+        # выбор языка по одному правому краю.
+        box = ttk.Frame(self)
+        box.pack(fill="x", padx=10, pady=(10, 10))
+        box.columnconfigure(0, weight=1)
+
+        self.combo = ttk.Combobox(box, state="readonly", width=30)
+        self.combo.grid(row=0, column=0, sticky="w", pady=(0, 6))
         self.combo.bind("<<ComboboxSelected>>", lambda e: self._sync_current())
-        self.b_add = ttk.Button(top, text="+", width=BTN_S, command=self._add)
-        self.b_edit = ttk.Button(top, text=t("Изм."), width=BTN_S, command=self._edit)
-        self.b_del = ttk.Button(top, text=t("Удал."), width=BTN_S, command=self._delete)
+        btns = ttk.Frame(box)
+        btns.grid(row=0, column=1, sticky="e", pady=(0, 6))
+        self.b_add = ttk.Button(btns, text="+", width=BTN_S, command=self._add)
+        self.b_edit = ttk.Button(btns, text=t("Изм."), width=BTN_S, command=self._edit)
+        self.b_del = ttk.Button(btns, text=t("Удал."), width=BTN_S, command=self._delete)
         for b in (self.b_add, self.b_edit, self.b_del):
             b.pack(side="left", padx=2)
-        self.b_exit = ttk.Button(top, text=t("Выход"), width=BTN_S, command=self._exit_clicked)
-        self.b_exit.pack(side="right")
+        self.b_exit = ttk.Button(btns, text=t("Выход"), width=BTN_S, command=self._exit_clicked)
+        self.b_exit.pack(side="left", padx=(2, 0))
 
-        mid = ttk.Frame(self)
-        mid.pack(fill="x", padx=10, pady=(0, 6))
+        mid = ttk.Frame(box)
+        mid.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 6))
         self.btn = ttk.Button(mid, text=t("Подключить"), width=BTN_W, command=self._toggle)
         self.btn.pack(side="left")
         self.status = ttk.Label(mid, text=t("Отключено"), foreground="gray", wraplength=380)
         self.status.pack(side="left", padx=12)
 
-        advrow = ttk.Frame(self)
-        advrow.pack(fill="x", padx=10, pady=(0, 10))
-        self.b_adv = ttk.Button(advrow, text=t("Дополнительно ▾"), width=BTN_W, command=self._toggle_adv)
-        self.b_adv.pack(side="left")
-        # выбор языка — в основном окне справа снизу
-        langf = ttk.Frame(advrow)
-        langf.pack(side="right")
+        self.b_adv = ttk.Button(box, text=t("Дополнительно ▾"), width=BTN_W, command=self._toggle_adv)
+        self.b_adv.grid(row=2, column=0, sticky="w")
+        # выбор языка — в основном окне справа снизу (та же колонка, что и «Выход»)
+        langf = ttk.Frame(box)
+        langf.grid(row=2, column=1, sticky="e")
         self.lang_label = ttk.Label(langf, text=t("Язык:"))
         self.lang_label.pack(side="left")
         self.lang_combo = ttk.Combobox(langf, state="readonly", width=8,
                                        values=[LANG_NAMES["ru"], LANG_NAMES["en"]])
         self.lang_combo.set(LANG_NAMES[self.lang()])
-        self.lang_combo.pack(side="left", padx=(4, 0))  # правый край — по кнопке «Выход»
+        self.lang_combo.pack(side="left", padx=(4, 0))
         self.lang_combo.bind("<<ComboboxSelected>>", self._on_lang_pick)
 
         # Скрываемая панель: лог и редко нужные настройки
