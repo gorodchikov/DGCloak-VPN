@@ -892,18 +892,23 @@ class App(tk.Tk):
         if self.active:
             yield MI(self.t("Отключить «{name}»", name=self.active["name"]),
                      lambda i, it: self.ui(self._toggle), enabled=idle)
+            skip = self.active["name"]
         else:
-            names = [p["name"] for p in self.data["profiles"]]
-            if self.cur_name in names:
+            skip = self.cur_name
+            if self.cur_name in [p["name"] for p in self.data["profiles"]]:
                 yield MI(self.t("Подключить «{name}»", name=self.cur_name),
                          lambda i, it: self.ui(self._toggle), enabled=idle)
-            if names:
-                yield MI(self.t("Подключить"), pystray.Menu(self._tray_profile_items), enabled=idle)
+        # подменю: остальные профили; при активном VPN выбор переключает на него
+        if any(p["name"] != skip for p in self.data["profiles"]):
+            yield MI(self.t("Подключить"), pystray.Menu(self._tray_profile_items), enabled=idle)
         yield pystray.Menu.SEPARATOR
         yield MI(self.t("Отключить VPN и выйти из программы"), lambda i, it: self.ui(self._exit_clicked))
 
     def _tray_profile_items(self):
+        skip = self.active["name"] if self.active else self.cur_name
         for p in list(self.data["profiles"]):
+            if p["name"] == skip:
+                continue
             yield pystray.MenuItem(p["name"], self._tray_connect_action(p["name"]),
                                    checked=self._tray_checked(p["name"]), radio=True)
 
@@ -914,14 +919,19 @@ class App(tk.Tk):
         return lambda it: name == self.cur_name
 
     def _connect_named(self, name):
-        """Выбрать профиль (он становится текущим) и подключиться — вызывается из меню трея."""
-        if self.busy or self.active:
+        """Выбрать профиль и подключиться; при активном VPN — переключиться на него."""
+        if self.busy:
             return
-        if name not in [p["name"] for p in self.data["profiles"]]:
+        p = next((x for x in self.data["profiles"] if x["name"] == name), None)
+        if not p:
             return
         self.combo.set(name)
         self._sync_current()
-        self._toggle()
+        self.verb = self.verbose.get()
+        if self.active:
+            self._run(lambda: (self._disconnect(), self._connect(p)))   # переключение
+        else:
+            self._run(lambda: self._connect(p))
 
     def _tray_update(self, text, color):
         if not self.tray:
