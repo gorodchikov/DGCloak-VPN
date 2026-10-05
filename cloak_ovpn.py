@@ -33,6 +33,7 @@ BTN_W = 16   # одинаковая ширина кнопок «Подключи
 BTN_S = 8    # одинаковая ширина маленьких кнопок (+, Изм., Удал., Выход)
 APP_DIR = os.path.join(os.environ.get("APPDATA", "."), "DGCloakVPN")
 DATA_FILE = os.path.join(APP_DIR, "data.json")
+PROFILES_DIR = os.path.join(APP_DIR, "profiles")  # сюда копируются файлы профилей при добавлении
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 DEFAULT_DATA = {
@@ -110,10 +111,14 @@ STRINGS_EN = {
         "Route all traffic via VPN (redirect-gateway local def1)",
     "Порт — локальный порт Cloak (-l); remote в .ovpn подставляется автоматически.\n"
     "IP-обход добавит маршрут через основной шлюз, чтобы трафик Cloak\n"
-    "не заворачивался в сам VPN.":
+    "не заворачивался в сам VPN. Файлы профиля копируются в папку\n"
+    "программы — исходные после этого можно удалить.":
         "Port — local Cloak port (-l); remote in .ovpn is injected automatically.\n"
         "Bypass IP adds a route via the main gateway so Cloak traffic\n"
-        "doesn't go into the VPN itself.",
+        "doesn't go into the VPN itself. Profile files are copied into the\n"
+        "program folder — the originals can be deleted.",
+    "Файлы профиля скопированы в папку данных программы.":
+        "Profile files copied to the program data folder.",
     # трей
     "Открыть": "Open",
     "Подключить «{name}»": "Connect «{name}»",
@@ -347,6 +352,68 @@ def download(url, dst, on_progress):
             on_progress(done, total)
 
 
+# директивы .ovpn, чьи значения — пути к файлам (ключи/cert-файлы рядом с профилем)
+_OVPN_FILE_RE = re.compile(
+    r"^\s*(ca|cert|key|tls-auth|tls-crypt|tls-crypt-v2|pkcs12|secret|dh|crl-verify|extra-certs)\s+(.+?)\s*$")
+
+
+def _under_profiles_dir(path):
+    return os.path.abspath(path).startswith(os.path.abspath(PROFILES_DIR) + os.sep)
+
+
+def import_profile_files(r):
+    """Скопировать файлы профиля (конфиг Cloak, .ovpn и его внешние ключи) в
+    PROFILES_DIR/<имя>/ и подставить новые пути в r — исходники можно удалить.
+    Возвращает список предупреждений."""
+    warnings = []
+    safe = re.sub(r"[^\w\-]+", "_", r.get("name", "")).strip("_") or "profile"
+    dest = os.path.join(PROFILES_DIR, safe)
+    try:
+        os.makedirs(dest, exist_ok=True)
+    except OSError as e:
+        return [f"не удалось создать папку {dest}: {e}"]
+    ovpn_src_dir = None
+    for key in ("ck_config", "ovpn"):
+        src = (r.get(key) or "").strip()
+        if not src or not os.path.isfile(src):
+            continue
+        src_abs = os.path.abspath(src)
+        if _under_profiles_dir(src_abs):
+            if key == "ovpn":
+                ovpn_src_dir = os.path.dirname(src_abs)
+            continue  # уже наша копия
+        dst = os.path.join(dest, os.path.basename(src_abs))
+        try:
+            shutil.copy2(src_abs, dst)
+        except OSError as e:
+            warnings.append(f"{key}: {e}")
+            continue
+        r[key] = dst
+        if key == "ovpn":
+            ovpn_src_dir = os.path.dirname(src_abs)
+    if ovpn_src_dir:  # внешние файлы, на которые ссылается .ovpn (ca/cert/key/ta и т.п.)
+        try:
+            with open(r["ovpn"], encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    m = _OVPN_FILE_RE.match(line)
+                    if not m:
+                        continue
+                    ref = m.group(2).strip()
+                    qm = re.match(r'"([^"]+)"', ref)
+                    if qm:
+                        ref = qm.group(1)
+                    cand = ref if os.path.isabs(ref) else os.path.join(ovpn_src_dir, ref)
+                    if not os.path.isfile(cand) and " " in ref:
+                        # tls-auth <файл> 1 — второй аргумент (направление ключа) не файл
+                        ref = ref.rsplit(None, 1)[0]
+                        cand = ref if os.path.isabs(ref) else os.path.join(ovpn_src_dir, ref)
+                    if os.path.isfile(cand) and not _under_profiles_dir(cand):
+                        shutil.copy2(cand, os.path.join(dest, os.path.basename(cand)))
+        except OSError as e:
+            warnings.append(f"ovpn: {e}")
+    return warnings
+
+
 class SetupDialog(tk.Toplevel):
     """Первый запуск / не найдены программы: автоустановка или ручные пути."""
 
@@ -495,7 +562,8 @@ class ProfileDialog(tk.Toplevel):
         ttk.Label(self, foreground="gray",
                   text=t("Порт — локальный порт Cloak (-l); remote в .ovpn подставляется автоматически.\n"
                          "IP-обход добавит маршрут через основной шлюз, чтобы трафик Cloak\n"
-                         "не заворачивался в сам VPN.")
+                         "не заворачивался в сам VPN. Файлы профиля копируются в папку\n"
+                         "программы — исходные после этого можно удалить.")
                   ).grid(row=n + 2, column=0, columnspan=3, padx=8, sticky="w")
         btns = ttk.Frame(self)
         btns.grid(row=n + 3, column=0, columnspan=3, pady=8)
@@ -599,10 +667,11 @@ class App(tk.Tk):
             self._suggest_profile()
 
     def _after_setup(self):
-        if not self.data["profiles"]:
-            self._suggest_profile()
+        self._suggest_profile()
 
     def _suggest_profile(self):
+        if self.data["profiles"]:
+            return
         if messagebox.askyesno(APP_NAME, self.t("Профили не добавлены. Добавить первый профиль сейчас?")):
             self._add()
 
@@ -921,19 +990,30 @@ class App(tk.Tk):
         d = ProfileDialog(self)
         self.wait_window(d)
         if d.result:
+            for w in import_profile_files(d.result):
+                self.say(f"Профиль: {w}")
             self.data["profiles"].append(d.result)
             save_data(self.data)
             self._refresh_combo(d.result["name"])
+            self.say("Файлы профиля скопированы в папку данных программы.")
 
     def _edit(self):
         p = self._current()
         if not p:
             return
+        old_dir = ""
+        if p.get("ovpn") and _under_profiles_dir(p["ovpn"]):
+            old_dir = os.path.dirname(os.path.abspath(p["ovpn"]))
         d = ProfileDialog(self, p)
         self.wait_window(d)
         if d.result:
             old = p["name"]
             p.update(d.result)
+            for w in import_profile_files(p):
+                self.say(f"Профиль: {w}")
+            new_dir = os.path.dirname(os.path.abspath(p.get("ovpn", "")))
+            if old_dir and old_dir != new_dir:  # профиль переименован — старые копии не нужны
+                shutil.rmtree(old_dir, ignore_errors=True)
             if self.data.get("last_profile") == old:
                 self.data["last_profile"] = p["name"]
             save_data(self.data)
@@ -944,6 +1024,8 @@ class App(tk.Tk):
         if p and messagebox.askyesno(self.t("Удалить"),
                                      self.t("Удалить профиль «{name}»?", name=p["name"])):
             self.data["profiles"].remove(p)
+            if p.get("ovpn") and _under_profiles_dir(p["ovpn"]):  # убрать нашу копию файлов
+                shutil.rmtree(os.path.dirname(os.path.abspath(p["ovpn"])), ignore_errors=True)
             save_data(self.data)
             self._refresh_combo()
 
