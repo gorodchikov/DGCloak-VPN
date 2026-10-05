@@ -11,11 +11,13 @@ import json
 import os
 import queue
 import re
+import shutil
 import socket
 import subprocess
 import threading
 import time
 import tkinter as tk
+import urllib.request
 from tkinter import filedialog, messagebox, ttk
 
 try:
@@ -140,6 +142,192 @@ def is_admin():
         return False
 
 
+CLOAK_API = "https://api.github.com/repos/cbeuw/Cloak/releases/latest"
+
+
+def find_openvpn():
+    """Готовый openvpn.exe: PATH, стандартные папки установки."""
+    cands = []
+    w = shutil.which("openvpn")
+    if w:
+        cands.append(w)
+    pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+    pfx = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    cands += [os.path.join(pf, "OpenVPN", "bin", "openvpn.exe"),
+              os.path.join(pfx, "OpenVPN", "bin", "openvpn.exe")]
+    for c in cands:
+        if os.path.isfile(c):
+            return os.path.normpath(c)
+    return ""
+
+
+def find_ck_client():
+    """ck-client в папке данных или PATH."""
+    cands = [os.path.join(APP_DIR, "ck-client.exe")]
+    w = shutil.which("ck-client")
+    if w:
+        cands.insert(0, w)
+    for c in cands:
+        if os.path.isfile(c):
+            return os.path.normpath(c)
+    return ""
+
+
+def find_winget():
+    """winget: PATH или WindowsApps (есть в Win11 и обычных Win10, нет на LTSC/Server)."""
+    w = shutil.which("winget")
+    if w:
+        return w
+    p = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WindowsApps", "winget.exe")
+    return p if os.path.isfile(p) else ""
+
+
+def exe_runs(path):
+    """Быстрый запуск бинарника: важно, что он выполняется и завершается (rc любой)."""
+    try:
+        subprocess.run([path, "--version"], stdin=subprocess.DEVNULL,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=10, creationflags=NO_WINDOW)
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def cloak_latest_url():
+    """Ссылка на свежий ck-client-windows-amd64*.exe из GitHub API (прямая ссылка не нужна)."""
+    req = urllib.request.Request(CLOAK_API, headers={"User-Agent": "DGCloakVPN"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        meta = json.loads(r.read().decode("utf-8"))
+    for a in meta.get("assets", []):
+        if re.match(r"ck-client-windows-amd64.*\.exe$", a.get("name", "")):
+            return a["browser_download_url"], int(a.get("size") or 0)
+    raise RuntimeError("В последнем релизе Cloak не найден ck-client-windows-amd64*.exe")
+
+
+def download(url, dst, on_progress):
+    """Скачать файл, вызывая on_progress(получено, всего)."""
+    req = urllib.request.Request(url, headers={"User-Agent": "DGCloakVPN"})
+    with urllib.request.urlopen(req, timeout=30) as r, open(dst, "wb") as f:
+        total = int(r.headers.get("Content-Length") or 0)
+        done = 0
+        while True:
+            chunk = r.read(256 * 1024)
+            if not chunk:
+                break
+            f.write(chunk)
+            done += len(chunk)
+            on_progress(done, total)
+
+
+class SetupDialog(tk.Toplevel):
+    """Первый запуск / не найдены программы: автоустановка или ручные пути."""
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.app = app
+        self.working = False
+        self.title("Настройка программ")
+        self.resizable(False, False)
+        self.ck_var = tk.StringVar()
+        self.ov_var = tk.StringVar()
+        self.status_var = tk.StringVar()
+        for i, var in enumerate((self.ov_var, self.ck_var)):
+            ttk.Label(self, textvariable=var).grid(row=i, column=0, columnspan=2,
+                                                   sticky="w", padx=12, pady=2)
+        self.progress = ttk.Progressbar(self, length=420, mode="determinate")
+        self.progress.grid(row=2, column=0, columnspan=2, padx=12, pady=(8, 2))
+        ttk.Label(self, textvariable=self.status_var, foreground="gray"
+                  ).grid(row=3, column=0, columnspan=2, sticky="w", padx=12)
+        btns = ttk.Frame(self)
+        btns.grid(row=4, column=0, columnspan=2, pady=10)
+        self.b_auto = ttk.Button(btns, text="Установить автоматически", command=self._auto)
+        self.b_auto.pack(side="left", padx=4)
+        self.b_manual = ttk.Button(btns, text="Указать пути вручную", command=self._manual)
+        self.b_manual.pack(side="left", padx=4)
+        self.b_close = ttk.Button(btns, text="Закрыть", command=self.destroy)
+        self.b_close.pack(side="left", padx=4)
+        ttk.Label(self, foreground="gray", wraplength=440, justify="left",
+                  text="Автоустановка: OpenVPN через winget, Cloak — свежий релиз с GitHub "
+                       "в %APPDATA%\\DGCloakVPN. Пути можно изменить позже: "
+                       "Дополнительно → «Пути к Cloak и OpenVPN…»."
+                  ).grid(row=5, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 10))
+        self.transient(app)
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.refresh()
+
+    def refresh(self):
+        d = self.app.data
+        for var, key, title in ((self.ov_var, "openvpn_exe", "OpenVPN"),
+                                (self.ck_var, "ck_client", "Cloak")):
+            path = d[key]
+            ok = os.path.isfile(path)
+            var.set(f"{'✔' if ok else '✖'} {title}: {path if ok else 'не найден'}")
+        self.b_auto.config(state="normal" if not self.working else "disabled")
+
+    def _manual(self):
+        self.app._paths()
+        self.refresh()
+
+    def _auto(self):
+        self.working = True
+        self.refresh()
+        threading.Thread(target=self._install, daemon=True).start()
+
+    def _say(self, text):
+        self.app.ui(lambda: self.status_var.set(text))
+        self.app.say("Установка: " + text)
+
+    def _set_progress(self, done, total):
+        if total:
+            self.app.ui(lambda: self.progress.config(value=done * 100 // total))
+
+    def _install(self):
+        app = self.app
+        try:
+            # Cloak: свежий релиз GitHub -> %APPDATA%\DGCloakVPN\ck-client.exe
+            if not os.path.isfile(app.data["ck_client"]):
+                self._say("скачиваю свежий ck-client с GitHub…")
+                try:
+                    url, _ = cloak_latest_url()
+                    dst = os.path.join(APP_DIR, "ck-client.exe")
+                    download(url, dst, self._set_progress)
+                    app.data["ck_client"] = os.path.normpath(dst)
+                except Exception as e:  # noqa: BLE001
+                    self._say(f"Cloak не скачался: {e}. Скачайте вручную: github.com/cbeuw/Cloak/releases")
+            # OpenVPN: winget install (у приложения права администратора)
+            if not os.path.isfile(app.data["openvpn_exe"]):
+                winget = find_winget()
+                if winget:
+                    self._say("устанавливаю OpenVPN через winget…")
+                    r = subprocess.run([winget, "install", "--id", "OpenVPNTechnologies.OpenVPN",
+                                        "-e", "--silent", "--accept-package-agreements",
+                                        "--accept-source-agreements"],
+                                       stdin=subprocess.DEVNULL, timeout=600,
+                                       creationflags=NO_WINDOW)
+                    if r.returncode != 0:
+                        self._say(f"winget вернул код {r.returncode} — установите OpenVPN вручную.")
+                    found = find_openvpn()
+                    if found:
+                        app.data["openvpn_exe"] = found
+                else:
+                    self._say("winget не найден. Установите OpenVPN Community вручную: "
+                              "openvpn.net/community-downloads/")
+            # проверка: бинарники должны запускаться
+            save_data(app.data)
+            for key, title in (("openvpn_exe", "OpenVPN"), ("ck_client", "Cloak")):
+                path = app.data[key]
+                if os.path.isfile(path) and not exe_runs(path):
+                    self._say(f"{title} есть, но не запускается: {path}")
+            self._say("готово")
+        finally:
+            self.working = False
+            app.ui(self.refresh)
+
+    def destroy(self):
+        super().destroy()
+        self.app._after_setup()
+
+
 class ProfileDialog(tk.Toplevel):
     FIELDS = [
         ("name", "Название", None),
@@ -256,6 +444,32 @@ class App(tk.Tk):
         if not is_admin():
             self.say("Внимание: нет прав администратора. OpenVPN не сможет создать адаптер — "
                      "запустите программу от имени администратора.")
+        self.after(400, self._first_run)
+
+    def _first_run(self):
+        """Первый запуск: подставить найденные пути; если чего-то нет — мастер установки.
+        Если программы на месте, а профилей нет — предложить добавить первый."""
+        if not os.path.isfile(self.data["ck_client"]):
+            found = find_ck_client()
+            if found:
+                self.data["ck_client"] = found
+        if not os.path.isfile(self.data["openvpn_exe"]):
+            found = find_openvpn()
+            if found:
+                self.data["openvpn_exe"] = found
+        save_data(self.data)
+        if not (os.path.isfile(self.data["ck_client"]) and os.path.isfile(self.data["openvpn_exe"])):
+            SetupDialog(self)
+        else:
+            self._suggest_profile()
+
+    def _after_setup(self):
+        if not self.data["profiles"]:
+            self._suggest_profile()
+
+    def _suggest_profile(self):
+        if messagebox.askyesno(APP_NAME, "Профили не добавлены. Добавить первый профиль сейчас?"):
+            self._add()
 
     # ---------- UI ----------
     def _build(self):
