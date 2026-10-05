@@ -1,0 +1,38 @@
+# -*- coding: utf-8 -*-
+# Версионный ресурс для DGCloakVPN.exe (используется PyInstaller --version-file).
+# Поля видны в свойствах файла → вкладка «Подробно».
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        '041904b0',  # ru-RU, UTF-16
+        [StringStruct('FileDescription', 'DGCloak VPN'),
+         StringStruct('FileVersion', '1.0'),
+         StringStruct('InternalName', 'DGCloakVPN'),
+         StringStruct('LegalCopyright', '© 2026 Dan Gorodchikov'),
+         StringStruct('OriginalFilename', 'DGCloakVPN.exe'),
+         StringStruct('ProductName', 'DGCloak VPN'),
+         StringStruct('ProductVersion', '1.0')]),
+      StringTable(
+        '040904b0',  # en-US, UTF-16
+        [StringStruct('FileDescription', 'DGCloak VPN'),
+         StringStruct('FileVersion', '1.0'),
+         StringStruct('InternalName', 'DGCloakVPN'),
+         StringStruct('LegalCopyright', '© 2026 Dan Gorodchikov'),
+         StringStruct('OriginalFilename', 'DGCloakVPN.exe'),
+         StringStruct('ProductName', 'DGCloak VPN'),
+         StringStruct('ProductVersion', '1.0')]),
+    ]),
+    VarFileInfo([VarStruct('Translation', [1049, 1200, 1033, 1200])])
+  ]
+)
