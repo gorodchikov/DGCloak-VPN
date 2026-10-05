@@ -27,7 +27,8 @@ except ImportError:
     HAS_TRAY = False
 
 APP_NAME = "DGCloak VPN"
-BTN_W = 16   # одинаковая ширина кнопок «Подключить/Отключить» и «Дополнительно»
+BTN_W = 16   # одинаковая ширина кнопок «Подключить/Отключить», «Дополнительно», «Копировать/Очистить лог»
+BTN_S = 8    # одинаковая ширина маленьких кнопок (+, Изм., Удал., Выход)
 APP_DIR = os.path.join(os.environ.get("APPDATA", "."), "DGCloakVPN")
 DATA_FILE = os.path.join(APP_DIR, "data.json")
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -173,8 +174,9 @@ class ProfileDialog(tk.Toplevel):
         ttk.Checkbutton(self, text="Весь трафик через VPN (redirect-gateway local def1)",
                         variable=self.full).grid(row=n + 1, column=1, sticky="w")
         ttk.Label(self, foreground="gray",
-                  text="В .ovpn: remote 127.0.0.1 <порт Cloak>. IP-обход добавит маршрут через\n"
-                       "основной шлюз, чтобы трафик Cloak не заворачивался в сам VPN."
+                  text="Порт — локальный порт Cloak (-l); remote в .ovpn подставляется автоматически.\n"
+                       "IP-обход добавит маршрут через основной шлюз, чтобы трафик Cloak\n"
+                       "не заворачивался в сам VPN."
                   ).grid(row=n + 2, column=0, columnspan=3, padx=8, sticky="w")
         btns = ttk.Frame(self)
         btns.grid(row=n + 3, column=0, columnspan=3, pady=8)
@@ -211,6 +213,7 @@ class App(tk.Tk):
         super().__init__()
         self.title(APP_NAME)
         self.minsize(470, 10)
+        self.resizable(False, False)  # фиксированный размер окна
         self.data = load_data()
         self.ck = None
         self.vpn = None
@@ -232,7 +235,14 @@ class App(tk.Tk):
         self._hint_shown = False
         try:
             os.makedirs(APP_DIR, exist_ok=True)
-            self.logfile = open(os.path.join(APP_DIR, "last.log"), "w", encoding="utf-8", buffering=1)
+            last_log = os.path.join(APP_DIR, "last.log")
+            if os.path.exists(last_log):
+                # ротация: храним лог текущего и предыдущего запуска (prev.log)
+                try:
+                    os.replace(last_log, os.path.join(APP_DIR, "prev.log"))
+                except OSError:
+                    pass
+            self.logfile = open(last_log, "w", encoding="utf-8", buffering=1)
         except OSError:
             self.logfile = None
         threading.excepthook = lambda a: self._report_exc(a.exc_type, a.exc_value, a.exc_traceback)
@@ -251,16 +261,15 @@ class App(tk.Tk):
     def _build(self):
         top = ttk.Frame(self)
         top.pack(fill="x", padx=10, pady=(10, 6))
-        ttk.Label(top, text="Профиль:").pack(side="left")
         self.combo = ttk.Combobox(top, state="readonly", width=30)
-        self.combo.pack(side="left", padx=6)
+        self.combo.pack(side="left")
         self.combo.bind("<<ComboboxSelected>>", lambda e: self._sync_current())
-        self.b_add = ttk.Button(top, text="+", width=3, command=self._add)
-        self.b_edit = ttk.Button(top, text="Изм.", width=5, command=self._edit)
-        self.b_del = ttk.Button(top, text="Удал.", width=5, command=self._delete)
+        self.b_add = ttk.Button(top, text="+", width=BTN_S, command=self._add)
+        self.b_edit = ttk.Button(top, text="Изм.", width=BTN_S, command=self._edit)
+        self.b_del = ttk.Button(top, text="Удал.", width=BTN_S, command=self._delete)
         for b in (self.b_add, self.b_edit, self.b_del):
             b.pack(side="left", padx=2)
-        ttk.Button(top, text="Выход", width=7, command=self._exit_clicked).pack(side="right")
+        ttk.Button(top, text="Выход", width=BTN_S, command=self._exit_clicked).pack(side="right")
 
         mid = ttk.Frame(self)
         mid.pack(fill="x", padx=10, pady=(0, 6))
@@ -278,10 +287,15 @@ class App(tk.Tk):
         self.adv = ttk.Frame(self)
         bar = ttk.Frame(self.adv)
         bar.pack(fill="x")
-        ttk.Button(bar, text="Копировать лог", command=self._copy_log).pack(side="left")
-        self.b_paths = ttk.Button(bar, text="Пути к программам…", command=self._paths)
-        self.b_paths.pack(side="left", padx=6)
-        ttk.Checkbutton(self.adv, text="Подробный лог OpenVPN (применится при следующем подключении)",
+        logbtns = ttk.Frame(bar)
+        logbtns.pack(side="left")
+        self.b_copy = ttk.Button(logbtns, text="Копировать лог", width=BTN_W, command=self._copy_log)
+        self.b_copy.pack()
+        self.b_clear = ttk.Button(logbtns, text="Очистить лог", width=BTN_W, command=self._clear_log)
+        self.b_clear.pack(pady=(4, 0))
+        self.b_paths = ttk.Button(bar, text="Пути к Cloak и OpenVPN…", command=self._paths)
+        self.b_paths.pack(side="left", padx=6, anchor="n")
+        ttk.Checkbutton(self.adv, text="Отладочный лог OpenVPN (применится при следующем подключении)",
                         variable=self.verbose).pack(anchor="w", pady=(6, 0))
         self.log = tk.Text(self.adv, height=16, state="disabled", wrap="word")
         self.log.pack(fill="both", expand=True, pady=(6, 0))
@@ -366,6 +380,12 @@ class App(tk.Tk):
         self.clipboard_append(self.log.get("1.0", "end"))
         self.say("Лог скопирован в буфер обмена.")
 
+    def _clear_log(self):
+        self.log.config(state="normal")
+        self.log.delete("1.0", "end")
+        self.log.config(state="disabled")
+        self.say("Лог очищен.")
+
     def _append(self, text):
         self.log.config(state="normal")
         self.log.insert("end", text)
@@ -405,12 +425,12 @@ class App(tk.Tk):
         else:
             names = [p["name"] for p in self.data["profiles"]]
             if self.cur_name in names:
-                yield MI(f"Подключить текущий: «{self.cur_name}»",
+                yield MI(f"Подключить «{self.cur_name}»",
                          lambda i, it: self.ui(self._toggle), enabled=idle)
             if names:
                 yield MI("Подключить", pystray.Menu(self._tray_profile_items), enabled=idle)
         yield pystray.Menu.SEPARATOR
-        yield MI("Выход", lambda i, it: self.ui(self._quit))
+        yield MI("Отключить VPN и выйти из программы", lambda i, it: self.ui(self._exit_clicked))
 
     def _tray_profile_items(self):
         for p in list(self.data["profiles"]):
@@ -457,8 +477,8 @@ class App(tk.Tk):
         if self.tray and not self._hint_shown:
             self._hint_shown = True
             try:
-                self.tray.notify("Программа продолжает работать в трее. "
-                                 "Выход: правый клик по значку → «Выход».", APP_NAME)
+                self.tray.notify("Программа продолжает работать в трее. Выход: "
+                                 "правый клик по значку → «Отключить VPN и выйти из программы».", APP_NAME)
             except Exception:  # noqa: BLE001
                 pass
 
@@ -582,6 +602,19 @@ class App(tk.Tk):
                     self.route_failed = True
                 self.say(f"{tag}: {line}")
 
+    def _runtime_ovpn(self, p):
+        """Копия .ovpn в папке данных с remote 127.0.0.1:<порт Cloak> из профиля.
+        Порт в настройках профиля — единственное место, где он задаётся: строки
+        remote из исходного .ovpn убираются, своя добавляется с proto по галочке UDP."""
+        with open(p["ovpn"], encoding="utf-8", errors="replace") as f:
+            lines = [ln for ln in f.read().splitlines() if not re.match(r"remote[ \t]", ln.lstrip())]
+        proto = "udp" if p.get("udp") else "tcp-client"
+        lines.append(f"remote 127.0.0.1 {p['port']} {proto}")
+        dst = os.path.join(APP_DIR, "runtime.ovpn")
+        with open(dst, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        return dst
+
     def _connect(self, p):
         ck_exe, ov_exe = self.data["ck_client"], self.data["openvpn_exe"]
         for path in (ck_exe, ov_exe, p["ck_config"], p["ovpn"]):
@@ -640,7 +673,7 @@ class App(tk.Tk):
         # 2. OpenVPN (консольный) — без GUI, статус через management
         self.set_status("Запуск OpenVPN…", "orange")
         mport = free_port()
-        ov_args = [ov_exe, "--config", p["ovpn"],
+        ov_args = [ov_exe, "--config", self._runtime_ovpn(p),
                    "--cd", os.path.dirname(os.path.abspath(p["ovpn"])),
                    "--management", "127.0.0.1", str(mport),
                    "--disable-dco"]  # DCO плохо дружит с локальным прокси
