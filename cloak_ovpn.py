@@ -34,6 +34,7 @@ BTN_S = 8    # одинаковая ширина маленьких кнопок
 APP_DIR = os.path.join(os.environ.get("APPDATA", "."), "DGCloakVPN")
 DATA_FILE = os.path.join(APP_DIR, "data.json")
 PROFILES_DIR = os.path.join(APP_DIR, "profiles")  # сюда копируются файлы профилей при добавлении
+PIDS_FILE = os.path.join(APP_DIR, "pids.json")    # PID наших ck-client/openvpn (для добивания зависших)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 DEFAULT_DATA = {
@@ -123,6 +124,7 @@ STRINGS_EN = {
     "Открыть": "Open",
     "Подключить «{name}»": "Connect «{name}»",
     "Отключить «{name}»": "Disconnect «{name}»",
+    "Отключить «{name}» и подключить": "Disconnect «{name}» and connect",
     "Отключить VPN и выйти из программы": "Disconnect VPN and exit",
     "Программа продолжает работать в трее. Выход: "
     "правый клик по значку → «Отключить VPN и выйти из программы».":
@@ -266,6 +268,45 @@ def find_procs(exe_name):
         if len(parts) > 1 and parts[0].lower() == exe_name.lower():
             pids.append(parts[1])
     return pids
+
+
+def pid_running(pid, exe_name):
+    """Жив ли процесс с этим PID и ожидаемым именем exe (защита от повторного использования PID)."""
+    try:
+        out = subprocess.run(["tasklist", "/FI", f"PID eq {int(pid)}", "/FO", "CSV", "/NH"],
+                             capture_output=True, text=True, timeout=10,
+                             stdin=subprocess.DEVNULL, creationflags=NO_WINDOW).stdout
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return False
+    for line in out.splitlines():
+        parts = [x.strip('"') for x in line.split('","')]
+        if len(parts) > 1 and parts[0].lower() == exe_name.lower():
+            return True
+    return False
+
+
+def kill_pid(pid):
+    """Завершить процесс по PID вместе с дочерними."""
+    subprocess.run(["taskkill", "/F", "/T", "/PID", str(int(pid))],
+                   capture_output=True, timeout=10, stdin=subprocess.DEVNULL,
+                   creationflags=NO_WINDOW)
+
+
+def load_pids():
+    try:
+        with open(PIDS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_pids(d):
+    try:
+        os.makedirs(APP_DIR, exist_ok=True)
+        with open(PIDS_FILE, "w", encoding="utf-8") as f:
+            json.dump(d, f)
+    except OSError:
+        pass
 
 
 def is_admin():
@@ -529,10 +570,12 @@ class ProfileDialog(tk.Toplevel):
         ("name", "Название", None),
         ("ck_config", "Cloak конфиг (.json)", [("JSON", "*.json"), ("Все", "*.*")]),
         ("ovpn", "OpenVPN профиль (.ovpn)", [("OVPN", "*.ovpn"), ("Все", "*.*")]),
+    ]
+    ADV_FIELDS = [
         ("port", "Локальный порт Cloak (-l)", None),
         ("server", "Сервер Cloak (-s), если не в конфиге", None),
         ("server_port", "Порт сервера Cloak (-p)", None),
-        ("bypass_ip", "IP сервера Cloak: исключить из туннеля", None),
+        ("bypass_ip", "IP сервера Cloak: исключить (пусто = из ck-конфига)", None),
     ]
 
     def __init__(self, parent, profile=None):
@@ -544,33 +587,66 @@ class ProfileDialog(tk.Toplevel):
         self.result = None
         p = profile or {}
         self.vars = {}
-        for i, (key, label, ftypes) in enumerate(self.FIELDS):
-            ttk.Label(self, text=t(label)).grid(row=i, column=0, sticky="w", padx=8, pady=4)
-            v = tk.StringVar(value=str(p.get(key, "1984" if key == "port" else "")))
+        r = 0
+        for key, label, ftypes in self.FIELDS:
+            ttk.Label(self, text=t(label)).grid(row=r, column=0, sticky="w", padx=8, pady=4)
+            v = tk.StringVar(value=str(p.get(key, "")))
             self.vars[key] = v
-            ttk.Entry(self, textvariable=v, width=48).grid(row=i, column=1, padx=4)
+            ttk.Entry(self, textvariable=v, width=48).grid(row=r, column=1, padx=4)
             if ftypes:
                 ttk.Button(self, text="…", width=3,
-                           command=lambda v=v, t=ftypes: self._browse(v, t)).grid(row=i, column=2, padx=4)
+                           command=lambda v=v, t=ftypes: self._browse(v, t)).grid(row=r, column=2, padx=4)
+            r += 1
+        # редко нужные поля — под раскрывашкой, чтобы не пугать обилием настроек
+        self._adv_open = False
+        self.b_adv = ttk.Button(self, text=t("Дополнительно ▾"), command=self._toggle_adv)
+        self.b_adv.grid(row=r, column=0, columnspan=3, sticky="w", padx=8, pady=(2, 0))
+        r += 1
+        self.advf = ttk.Frame(self)
+        self.advf.grid(row=r, column=0, columnspan=3, sticky="ew")
+        for i, (key, label, ftypes) in enumerate(self.ADV_FIELDS):
+            ttk.Label(self.advf, text=t(label)).grid(row=i, column=0, sticky="w", padx=8, pady=4)
+            v = tk.StringVar(value=str(p.get(key, "1984" if key == "port" else "")))
+            self.vars[key] = v
+            ttk.Entry(self.advf, textvariable=v, width=48).grid(row=i, column=1, padx=4)
         self.udp = tk.BooleanVar(value=p.get("udp", False))
         self.full = tk.BooleanVar(value=p.get("full_tunnel", True))
-        n = len(self.FIELDS)
-        ttk.Checkbutton(self, text=t("UDP-режим (-u, для OpenVPN по UDP)"),
+        n = len(self.ADV_FIELDS)
+        ttk.Checkbutton(self.advf, text=t("UDP-режим (-u, для OpenVPN по UDP)"),
                         variable=self.udp).grid(row=n, column=1, sticky="w", pady=4)
-        ttk.Checkbutton(self, text=t("Весь трафик через VPN (redirect-gateway local def1)"),
+        ttk.Checkbutton(self.advf, text=t("Весь трафик через VPN (redirect-gateway local def1)"),
                         variable=self.full).grid(row=n + 1, column=1, sticky="w")
-        ttk.Label(self, foreground="gray",
+        ttk.Label(self.advf, foreground="gray",
                   text=t("Порт — локальный порт Cloak (-l); remote в .ovpn подставляется автоматически.\n"
                          "IP-обход добавит маршрут через основной шлюз, чтобы трафик Cloak\n"
                          "не заворачивался в сам VPN. Файлы профиля копируются в папку\n"
                          "программы — исходные после этого можно удалить.")
                   ).grid(row=n + 2, column=0, columnspan=3, padx=8, sticky="w")
+        r += 1
         btns = ttk.Frame(self)
-        btns.grid(row=n + 3, column=0, columnspan=3, pady=8)
+        btns.grid(row=r, column=0, columnspan=3, pady=8)
         ttk.Button(btns, text=t("Сохранить"), command=self._ok).pack(side="left", padx=4)
         ttk.Button(btns, text=t("Отмена"), command=self.destroy).pack(side="left", padx=4)
+        # у сохранённого профиля с нестандартными расширенными настройками раскрываем их сразу
+        adv_filled = (str(p.get("port", "1984")) not in ("", "1984") or p.get("server")
+                      or p.get("server_port") or p.get("bypass_ip") or p.get("udp")
+                      or not p.get("full_tunnel", True))
+        if adv_filled:
+            self._toggle_adv()
+        else:
+            self.advf.grid_remove()
         self.transient(parent)
         self.grab_set()
+
+    def _toggle_adv(self):
+        self._adv_open = not self._adv_open
+        if self._adv_open:
+            self.advf.grid()
+        else:
+            self.advf.grid_remove()
+        self.b_adv.config(text=self.t("Дополнительно ▴" if self._adv_open else "Дополнительно ▾"))
+        self.update_idletasks()
+        self.geometry(f"{self.winfo_reqwidth()}x{self.winfo_reqheight()}")  # поджать высоту
 
     def _browse(self, var, ftypes):
         ftypes = [(self.t(lbl), pat) for lbl, pat in ftypes]
@@ -687,30 +763,44 @@ class App(tk.Tk):
     # ---------- UI ----------
     def _build(self):
         t = self.t
-        top = ttk.Frame(self)
-        top.pack(fill="x", padx=10, pady=(10, 6))
-        self.combo = ttk.Combobox(top, state="readonly", width=30)
-        self.combo.pack(side="left")
+        # Три строки — в одной grid-сетке: правая колонка выравнивает «Выход» и
+        # выбор языка по одному правому краю.
+        box = ttk.Frame(self)
+        box.pack(fill="x", padx=10, pady=(10, 10))
+        box.columnconfigure(0, weight=1)
+
+        self.combo = ttk.Combobox(box, state="readonly", width=30)
+        self.combo.grid(row=0, column=0, sticky="w", pady=(0, 6))
         self.combo.bind("<<ComboboxSelected>>", lambda e: self._sync_current())
-        self.b_add = ttk.Button(top, text="+", width=BTN_S, command=self._add)
-        self.b_edit = ttk.Button(top, text=t("Изм."), width=BTN_S, command=self._edit)
-        self.b_del = ttk.Button(top, text=t("Удал."), width=BTN_S, command=self._delete)
+        btns = ttk.Frame(box)
+        btns.grid(row=0, column=1, sticky="e", pady=(0, 6))
+        self.b_add = ttk.Button(btns, text="+", width=BTN_S, command=self._add)
+        self.b_edit = ttk.Button(btns, text=t("Изм."), width=BTN_S, command=self._edit)
+        self.b_del = ttk.Button(btns, text=t("Удал."), width=BTN_S, command=self._delete)
         for b in (self.b_add, self.b_edit, self.b_del):
             b.pack(side="left", padx=2)
-        self.b_exit = ttk.Button(top, text=t("Выход"), width=BTN_S, command=self._exit_clicked)
-        self.b_exit.pack(side="right")
+        self.b_exit = ttk.Button(btns, text=t("Выход"), width=BTN_S, command=self._exit_clicked)
+        self.b_exit.pack(side="left", padx=(2, 0))
 
-        mid = ttk.Frame(self)
-        mid.pack(fill="x", padx=10, pady=(0, 6))
+        mid = ttk.Frame(box)
+        mid.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 6))
         self.btn = ttk.Button(mid, text=t("Подключить"), width=BTN_W, command=self._toggle)
         self.btn.pack(side="left")
         self.status = ttk.Label(mid, text=t("Отключено"), foreground="gray", wraplength=380)
         self.status.pack(side="left", padx=12)
 
-        advrow = ttk.Frame(self)
-        advrow.pack(fill="x", padx=10, pady=(0, 10))
-        self.b_adv = ttk.Button(advrow, text=t("Дополнительно ▾"), width=BTN_W, command=self._toggle_adv)
-        self.b_adv.pack(side="left")
+        self.b_adv = ttk.Button(box, text=t("Дополнительно ▾"), width=BTN_W, command=self._toggle_adv)
+        self.b_adv.grid(row=2, column=0, sticky="w")
+        # выбор языка — в основном окне справа снизу (та же колонка, что и «Выход»)
+        langf = ttk.Frame(box)
+        langf.grid(row=2, column=1, sticky="e")
+        self.lang_label = ttk.Label(langf, text=t("Язык:"))
+        self.lang_label.pack(side="left")
+        self.lang_combo = ttk.Combobox(langf, state="readonly", width=8,
+                                       values=[LANG_NAMES["ru"], LANG_NAMES["en"]])
+        self.lang_combo.set(LANG_NAMES[self.lang()])
+        self.lang_combo.pack(side="left", padx=(4, 0))
+        self.lang_combo.bind("<<ComboboxSelected>>", self._on_lang_pick)
 
         # Скрываемая панель: лог и редко нужные настройки
         self.adv = ttk.Frame(self)
@@ -724,15 +814,6 @@ class App(tk.Tk):
         self.b_clear.pack(pady=(4, 0))
         self.b_paths = ttk.Button(bar, text=t("Пути к Cloak и OpenVPN…"), command=self._paths)
         self.b_paths.pack(side="left", padx=6, anchor="n")
-        langf = ttk.Frame(bar)
-        langf.pack(side="right", anchor="n")
-        self.lang_label = ttk.Label(langf, text=t("Язык:"))
-        self.lang_label.pack(side="left")
-        self.lang_combo = ttk.Combobox(langf, state="readonly", width=8,
-                                       values=[LANG_NAMES["ru"], LANG_NAMES["en"]])
-        self.lang_combo.set(LANG_NAMES[self.lang()])
-        self.lang_combo.pack(side="left", padx=4)
-        self.lang_combo.bind("<<ComboboxSelected>>", self._on_lang_pick)
         self.chk_verbose = ttk.Checkbutton(
             self.adv, text=t("Отладочный лог OpenVPN (применится при следующем подключении)"),
             variable=self.verbose)
@@ -890,24 +971,32 @@ class App(tk.Tk):
         idle = lambda it: not self.busy  # noqa: E731
         yield MI(self.t("Открыть"), lambda i, it: self.ui(self._show), default=True)
         if self.active:
-            yield MI(self.t("Отключить «{name}»", name=self.active["name"]),
-                     lambda i, it: self.ui(self._toggle), enabled=idle)
-            skip = self.active["name"]
+            # один пункт: отключить и/или переключиться — отдельное «Отключить» путало
+            yield MI(self.t("Отключить «{name}» и подключить", name=self.active["name"]),
+                     pystray.Menu(self._tray_connected_items), enabled=idle)
         else:
-            skip = self.cur_name
             if self.cur_name in [p["name"] for p in self.data["profiles"]]:
                 yield MI(self.t("Подключить «{name}»", name=self.cur_name),
                          lambda i, it: self.ui(self._toggle), enabled=idle)
-        # подменю: остальные профили; при активном VPN выбор переключает на него
-        if any(p["name"] != skip for p in self.data["profiles"]):
-            yield MI(self.t("Подключить"), pystray.Menu(self._tray_profile_items), enabled=idle)
+            # подменю: профили кроме выбранного (для него есть кнопка выше)
+            if any(p["name"] != self.cur_name for p in self.data["profiles"]):
+                yield MI(self.t("Подключить"), pystray.Menu(self._tray_profile_items), enabled=idle)
         yield pystray.Menu.SEPARATOR
         yield MI(self.t("Отключить VPN и выйти из программы"), lambda i, it: self.ui(self._exit_clicked))
 
     def _tray_profile_items(self):
-        skip = self.active["name"] if self.active else self.cur_name
         for p in list(self.data["profiles"]):
-            if p["name"] == skip:
+            if p["name"] == self.cur_name:
+                continue
+            yield pystray.MenuItem(p["name"], self._tray_connect_action(p["name"]),
+                                   checked=self._tray_checked(p["name"]), radio=True)
+
+    def _tray_connected_items(self):
+        """Подменю при активном VPN: простое отключение и переключение на другой профиль."""
+        yield pystray.MenuItem(self.t("Отключить"), lambda i, it: self.ui(self._toggle))
+        yield pystray.Menu.SEPARATOR
+        for p in list(self.data["profiles"]):
+            if p["name"] == self.active["name"]:
                 continue
             yield pystray.MenuItem(p["name"], self._tray_connect_action(p["name"]),
                                    checked=self._tray_checked(p["name"]), radio=True)
@@ -1110,11 +1199,43 @@ class App(tk.Tk):
             f.write("\n".join(lines) + "\n")
         return dst
 
+    def _bypass_ip(self, p):
+        """IP сервера Cloak для обходного маршрута. Приоритет — ручной
+        bypass_ip; иначе берётся RemoteHost из ck-конфига (домен резолвится
+        при каждом подключении — смена IP сервера не ломает обход)."""
+        if p.get("bypass_ip"):
+            return p["bypass_ip"]
+        try:
+            with open(p["ck_config"], encoding="utf-8") as f:
+                host = json.load(f).get("RemoteHost", "")
+        except Exception:
+            return None
+        if not host:
+            return None
+        try:
+            ip = socket.gethostbyname(host)
+        except OSError:
+            self.say(f"Не удалось резолвить RemoteHost «{host}» — обход не добавлен.")
+            return None
+        if ip != host:
+            self.say(f"Обходной маршрут до сервера: {host} → {ip}")
+        return ip
+
     def _connect(self, p):
         ck_exe, ov_exe = self.data["ck_client"], self.data["openvpn_exe"]
         for path in (ck_exe, ov_exe, p["ck_config"], p["ovpn"]):
             if not os.path.isfile(path):
                 raise FileNotFoundError(path)
+        # UDP-режим определяется самим ck-конфигом ("UDP": true), галочка
+        # профиля — лишь фолбэк для конфигов без этого поля. Иначе рассинхрон:
+        # ck-client слушает UDP, а клиент ждёт TCP-пробу → «не поднял порт».
+        try:
+            with open(p["ck_config"], encoding="utf-8") as f:
+                if json.load(f).get("UDP") and not p.get("udp"):
+                    self.say("В ck-конфиге UDP:true — включаю UDP-режим автоматически.")
+                    p = dict(p, udp=True)
+        except Exception:
+            pass
         self.up.clear()
         self.last_state = None
         self.route_failed = False
@@ -1125,6 +1246,19 @@ class App(tk.Tk):
         if not loopback_ok():
             raise RuntimeError("Локальный адрес 127.0.0.1 не отвечает — сломана таблица маршрутов "
                                "(обычно после аварийного завершения OpenVPN). Перезагрузите ПК.")
+        # добить свои процессы, оставшиеся от аварийного прошлого запуска (по сохранённым PID)
+        saved = load_pids()
+        killed = []
+        for key, exe in (("ck_pid", ck_exe), ("vpn_pid", ov_exe)):
+            pid = saved.get(key)
+            if pid and pid_running(pid, os.path.basename(exe)):
+                kill_pid(pid)
+                killed.append(f"{os.path.basename(exe)} (PID {pid})")
+        save_pids({})
+        if killed:
+            self.say("Завершил оставшиеся от прошлого запуска: " + ", ".join(killed))
+            time.sleep(1)  # дать портам освободиться
+        # чужие процессы с такими же именами — как раньше, предупреждение
         for exe in (ck_exe, ov_exe):
             pids = find_procs(os.path.basename(exe))
             if pids:
@@ -1172,8 +1306,13 @@ class App(tk.Tk):
                    "--cd", os.path.dirname(os.path.abspath(p["ovpn"])),
                    "--management", "127.0.0.1", str(mport),
                    "--disable-dco"]  # DCO плохо дружит с локальным прокси
-        if p.get("bypass_ip"):
-            ov_args += ["--route", p["bypass_ip"], "255.255.255.255", "net_gateway"]
+        bypass = self._bypass_ip(p)
+        if bypass:
+            ov_args += ["--route", bypass, "255.255.255.255", "net_gateway"]
+        elif p.get("full_tunnel", True):
+            self.say("ВНИМАНИЕ: обходной маршрут до сервера Cloak не задан "
+                     "(ни bypass_ip, ни RemoteHost) — при полном туннеле "
+                     "транспорт зациклится через ~25 с!")
         if p.get("full_tunnel", True):
             # Флаг local: не создавать маршрут до remote. У нас remote = 127.0.0.1,
             # и без этого флага OpenVPN при выходе удаляет системный маршрут loopback.
@@ -1185,6 +1324,7 @@ class App(tk.Tk):
                                     stderr=subprocess.STDOUT, text=True, errors="replace",
                                     creationflags=NO_WINDOW)
         threading.Thread(target=self._pump, args=(self.vpn, "openvpn"), daemon=True).start()
+        save_pids({"ck_pid": self.ck.pid, "vpn_pid": self.vpn.pid})
         threading.Thread(target=self._mgmt_loop, args=(mport, self.vpn, p), daemon=True).start()
 
         t0 = time.time()
@@ -1296,6 +1436,7 @@ class App(tk.Tk):
             self._mon_stop.set()
         self._stop_vpn()
         self._stop_ck()
+        save_pids({})
         self.active = None
 
     def _stop_vpn(self):
