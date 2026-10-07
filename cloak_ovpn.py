@@ -270,6 +270,27 @@ def find_procs(exe_name):
     return pids
 
 
+def proc_cmdlines(exe_name):
+    """{pid: командная строка} процессов с таким именем exe (PowerShell CIM)."""
+    ps = ("Get-CimInstance Win32_Process -Filter \"Name='%s'\" | "
+          "ForEach-Object { $_.ProcessId.ToString() + '|' + $_.CommandLine }"
+          % exe_name)
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive",
+                              "-Command", ps],
+                             capture_output=True, text=True, timeout=15,
+                             stdin=subprocess.DEVNULL,
+                             creationflags=NO_WINDOW).stdout
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    res = {}
+    for line in out.splitlines():
+        pid, _, cmd = line.partition("|")
+        if pid.strip().isdigit():
+            res[pid.strip()] = cmd.strip()
+    return res
+
+
 def pid_running(pid, exe_name):
     """Жив ли процесс с этим PID и ожидаемым именем exe (защита от повторного использования PID)."""
     try:
@@ -1278,9 +1299,15 @@ class App(tk.Tk):
         if killed:
             self.say("Завершил оставшиеся от прошлого запуска: " + ", ".join(killed))
             time.sleep(1)  # дать портам освободиться
-        # чужие процессы с такими же именами — как раньше, предупреждение
+        # чужие процессы с такими же именами — как раньше, предупреждение.
+        # ck-client в режиме admin-API (флаг -a) локальный порт не занимает —
+        # это админка, с клиентом не конфликтует → пропускаем.
         for exe in (ck_exe, ov_exe):
             pids = find_procs(os.path.basename(exe))
+            if exe is ck_exe and pids:
+                cls = proc_cmdlines(os.path.basename(exe))
+                pids = [p for p in pids
+                        if not re.search(r"(?:^|\s)-a(?:\s|$)", cls.get(p, ""))]
             if pids:
                 raise RuntimeError(f"Уже запущен {os.path.basename(exe)} (PID {', '.join(pids)}). "
                                    "Завершите процесс и повторите.")
