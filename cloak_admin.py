@@ -1010,6 +1010,8 @@ class App(tk.Tk):
         self.steps_tv.column("#0", width=320)
         self.steps_tv.column("st", width=70, anchor="center")
         self.steps_tv.column("note", width=220)
+        # активный шаг — крупный шрифт, чтобы спиннер был заметен
+        self.steps_tv.tag_configure("spin", font=("", 20))
         self.steps_tv.grid(row=row, column=0, sticky="nsew", **pad)
         f.rowconfigure(row, weight=1)
         f.columnconfigure(0, weight=1)
@@ -1174,6 +1176,10 @@ class App(tk.Tk):
         self._spin_key = key
         self._spin_i = 0
         self._spin_t0 = self._spin_hb = time.time()
+        try:
+            self.steps_tv.item(key, tags=("spin",))
+        except tk.TclError:
+            pass  # строки нет (юзер переключил сервер)
         self._spin_tick()
 
     def _spin_stop(self):
