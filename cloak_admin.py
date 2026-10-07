@@ -1274,26 +1274,32 @@ class App(tk.Tk):
             ssh.preflight()
             self.say("=== Аудит статусов на «%s» ===" % s["name"])
             out = ssh.run_script("probe.sh", timeout=120)
-            known = dict(self.STEPS)
-            st = {}
-            for m in re.finditer(r"===STEP_(\w+)===\s*\n(\w+)\|([^\n]*)", out):
-                key, stt, note = m.group(1), m.group(2), m.group(3).strip()
-                if key in known:
-                    st[key] = {"st": stt, "note": note}
-                    self.say("  %s → %s: %s" % (key, stt, note))
-            if not st:
-                self.say("!! probe.sh не вернул данных")
-                return
-            s["steps"] = st
-            if "reboot" in st.get("sysupd", {}).get("note", ""):
-                s["reboot_required"] = True
-            else:
-                s.pop("reboot_required", None)
-            s["deployed"] = st.get("cloak", {}).get("st") == "ok"
-            save_data(self.data)
-            self.ui(self._fill_steps)
-            self.ui(self._refresh_servers)
+            if self._apply_probe(s, out):
+                self.ui(self._fill_steps)
+                self.ui(self._refresh_servers)
         self._worker(work)
+
+    def _apply_probe(self, s, out):
+        """Разобрать вывод probe.sh → steps/deployed/reboot_required.
+        Возвращает False, если probe не выдал ни одного шага."""
+        known = dict(self.STEPS)
+        st = {}
+        for m in re.finditer(r"===STEP_(\w+)===\s*\n(\w+)\|([^\n]*)", out):
+            key, stt, note = m.group(1), m.group(2), m.group(3).strip()
+            if key in known:
+                st[key] = {"st": stt, "note": note}
+                self.say("  %s → %s: %s" % (key, stt, note))
+        if not st:
+            self.say("!! probe.sh не вернул данных")
+            return False
+        s["steps"] = st
+        if "reboot" in st.get("sysupd", {}).get("note", ""):
+            s["reboot_required"] = True
+        else:
+            s.pop("reboot_required", None)
+        s["deployed"] = st.get("cloak", {}).get("st") == "ok"
+        save_data(self.data)
+        return True
 
     def _srv_purge(self):
         """Полный сброс сервера: purge-dgcloak.sh по SSH + чистка реестра."""
@@ -1743,18 +1749,24 @@ class App(tk.Tk):
         s = self._sel_srv()
         if not s:
             return
-        if not s.get("deployed"):
-            messagebox.showinfo(
-                APP_NAME,
-                "Сервер «%s» по реестру не развёрнут — ключей там нет.\n"
-                "Сначала «Развернуть всё».\n\n"
-                "Если сервер развёрнут вне админки — нажми "
-                "«Проверить статусы», флаг обновится." % s["name"])
-            return
 
         def work():
             ssh = SSH(s, self.say)
             ssh.preflight()
+            if not s.get("deployed"):
+                # флага нет — проверяем реальное состояние сервера:
+                # вдруг развёрнут вне админки или реестр сброшен
+                self.say("=== Аудит статусов на «%s» ===" % s["name"])
+                out = ssh.run_script("probe.sh", timeout=120)
+                if self._apply_probe(s, out):
+                    self.ui(self._fill_steps)
+                    self.ui(self._refresh_servers)
+                if not s.get("deployed"):
+                    msg = ("Сервер «%s» не развёрнут — ключей нет.\n"
+                           "Сначала «Развернуть всё»." % s["name"])
+                    self.say("!! %s" % msg)
+                    self.ui(lambda m=msg: messagebox.showinfo(APP_NAME, m))
+                    return
             out = ssh.run(
                 "echo PUB:$(%scat /etc/ck-server/publickey.txt 2>/dev/null); "
                 "echo AUID:$(%scat /etc/ck-server/adminuid.txt 2>/dev/null); "
