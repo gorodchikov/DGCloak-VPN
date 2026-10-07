@@ -1030,7 +1030,7 @@ class App(tk.Tk):
         self._all_buttons.append(big)
         self._mk_btn(bf, "Только выбранный шаг",
                      self._step_run_sel).pack(side="left", padx=2)
-        self._mk_btn(bf, "Сбросить статусы", self._steps_reset).pack(side="left", padx=2)
+        self._mk_btn(bf, "Проверить статусы", self._steps_reset).pack(side="left", padx=2)
         self._mk_btn(bf, "Управление фаерволом", self._fw_ports).pack(side="left", padx=2)
         b_imp = self._mk_btn(bf, "Подтянуть ключи", self._do_import)
         b_imp.pack(side="left", padx=2)
@@ -1165,12 +1165,36 @@ class App(tk.Tk):
                                          r.get("note", "")))
 
     def _steps_reset(self):
+        """Проверить статусы: read-only аудит каждого шага на сервере."""
         s = self._sel_srv()
         if not s:
             return
-        s.pop("steps", None)
-        save_data(self.data)
-        self._fill_steps()
+
+        def work():
+            ssh = SSH(s, self.say)
+            ssh.preflight()
+            self.say("=== Аудит статусов на «%s» ===" % s["name"])
+            out = ssh.run_script("probe.sh", timeout=120)
+            known = dict(self.STEPS)
+            st = {}
+            for m in re.finditer(r"===STEP_(\w+)===\s*\n(\w+)\|([^\n]*)", out):
+                key, stt, note = m.group(1), m.group(2), m.group(3).strip()
+                if key in known:
+                    st[key] = {"st": stt, "note": note}
+                    self.say("  %s → %s: %s" % (key, stt, note))
+            if not st:
+                self.say("!! probe.sh не вернул данных")
+                return
+            s["steps"] = st
+            if "reboot" in st.get("sysupd", {}).get("note", ""):
+                s["reboot_required"] = True
+            else:
+                s.pop("reboot_required", None)
+            s["deployed"] = st.get("cloak", {}).get("st") == "ok"
+            save_data(self.data)
+            self.ui(self._fill_steps)
+            self.ui(self._refresh_servers)
+        self._worker(work)
 
     # ---- анимация «выполняется» + heartbeat ----
     # canvas-дуга (270°) поверх ячейки «Статус»: вращается по часовой,
