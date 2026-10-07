@@ -105,20 +105,34 @@ allow|deny)
             firewall-cmd --reload ;;
         nftables-dg)
             if [ "$ACTION" = allow ]; then
+                # идемпотентно: правило на этот порт уже есть (ssh/cloak) — не дублируем
+                nft list chain inet dgcloak input 2>/dev/null \
+                  | grep "$PROTO dport $PORT " >/dev/null || \
                 nft add rule inet dgcloak input "$PROTO" dport "$PORT" ct state new accept comment \"manual\"
             else
-                H=$(nft -a list table inet dgcloak | grep "$PROTO dport $PORT " | grep -oP 'handle \K\d+' | head -1)
-                [ -n "$H" ] && nft delete rule inet dgcloak input handle "$H" || echo "правило не найдено"
+                # порт мог быть открыт несколькими правилами — снимаем ВСЕ
+                n=0
+                while H=$(nft -a list chain inet dgcloak input 2>/dev/null \
+                          | grep "$PROTO dport $PORT " \
+                          | grep -oP 'handle \K\d+' | head -1) && [ -n "$H" ]; do
+                    nft delete rule inet dgcloak input handle "$H"; n=$((n+1))
+                done
+                [ "$n" -gt 0 ] || echo "правило не найдено"
             fi
             nft list ruleset > /etc/nftables.conf ;;
         nftables)
             echo "!! чужой ruleset nftables — правьте вручную на сервере"; exit 1 ;;
         iptables-persistent|iptables-custom)
             if [ "$ACTION" = allow ]; then
+                iptables -C INPUT -p "$PROTO" --dport "$PORT" \
+                    -m conntrack --ctstate NEW -j ACCEPT 2>/dev/null || \
                 iptables -A INPUT -p "$PROTO" --dport "$PORT" -m conntrack --ctstate NEW -j ACCEPT
             else
-                iptables -D INPUT -p "$PROTO" --dport "$PORT" -j ACCEPT 2>/dev/null \
-                 || iptables -D INPUT -p "$PROTO" --dport "$PORT" -m conntrack --ctstate NEW -j ACCEPT
+                # убираем ВСЕ accept-правила на этот порт (дупликаты возможны)
+                while iptables -D INPUT -p "$PROTO" --dport "$PORT" \
+                        -m conntrack --ctstate NEW -j ACCEPT 2>/dev/null \
+                   || iptables -D INPUT -p "$PROTO" --dport "$PORT" \
+                        -j ACCEPT 2>/dev/null; do :; done
             fi
             netfilter-persistent save >/dev/null 2>&1 \
               || iptables-save > /etc/iptables/rules.v4 2>/dev/null \

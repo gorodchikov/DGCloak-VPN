@@ -836,6 +836,10 @@ class App(tk.Tk):
         self.uiq = queue.Queue()
         self.busy = False
         self._ports_dlg = None
+        self._spin_key = None     # ключ шага, который сейчас крутится
+        self._spin_i = 0
+        self._spin_t0 = 0.0
+        self._spin_hb = 0.0
         self._build()
         self._refresh_servers()
         self.after(100, self._drain)
@@ -1128,10 +1132,43 @@ class App(tk.Tk):
         save_data(self.data)
         self._fill_steps()
 
+    # ---- анимация «выполняется» + heartbeat ----
+    SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    def _spin_start(self, key):
+        self._spin_key = key
+        self._spin_i = 0
+        self._spin_t0 = self._spin_hb = time.time()
+        self._spin_tick()
+
+    def _spin_stop(self):
+        self._spin_key = None
+
+    def _spin_tick(self):
+        """Крутит спиннер в статусе шага + heartbeat в лог (главный поток)."""
+        k = self._spin_key
+        if k is None:
+            return
+        try:
+            vals = list(self.steps_tv.item(k, "values"))
+        except tk.TclError:
+            vals = []  # строки нет (юзер переключил сервер)
+        if vals:
+            vals[0] = self.SPIN[self._spin_i % len(self.SPIN)]
+            self.steps_tv.item(k, values=tuple(vals))
+        self._spin_i += 1
+        el = time.time() - self._spin_t0
+        if el - self._spin_hb >= 30:
+            self._spin_hb = el
+            self.say("  …выполняется уже %d мин %d с — процесс жив, "
+                     "ждём ответа сервера" % (el // 60, int(el) % 60))
+        self.after(150, self._spin_tick)
+
     def _run_step(self, s, key):
         title = dict(self.STEPS)[key]
         self.say("=== Шаг: %s ===" % title)
         st = s.setdefault("steps", {})
+        self.ui(self._spin_start, key)
         try:
             ssh = SSH(s, self.say)
             stt, note = getattr(self, "_step_" + key)(ssh, s)
@@ -1140,6 +1177,7 @@ class App(tk.Tk):
             self.say("  ОШИБКА: %s" % e)
         st[key] = {"st": stt, "note": note}
         save_data(self.data)
+        self.ui(self._spin_stop)
         self.ui(self._fill_steps)
         self.say("  → %s: %s" % (stt, note))
         return stt in ("ok", "warn", "skip")
@@ -1313,9 +1351,16 @@ class App(tk.Tk):
                         "apt update + full-upgrade + autoremove на «%s»?\n"
                         "Может занять несколько минут." % s["name"]):
             return "skip", "отменено пользователем"
-        out = ssh.run_script("sysupdate.sh", timeout=1800)
-        for ln in out.strip().splitlines()[-8:]:
-            self.say("  " + ln)
+        # стримим вывод apt в лог — на свежем ISO апдейтов сотни,
+        # без живого вывода шаг выглядит зависшим
+        lines = []
+        rc = ssh.run_script_stream(
+            "sysupdate.sh", "",
+            lambda l: (lines.append(l), self.say("  " + l)),
+            timeout=1800)
+        if rc != 0:
+            return "fail", "sysupdate rc=%s" % rc
+        out = "\n".join(lines)
         if "===REBOOT===" in out:
             return "warn", "обновлено, нужен reboot"
         return "ok", "обновлено"
@@ -1333,7 +1378,11 @@ class App(tk.Tk):
                             "Не хватает пакетов: %s\nПоставить (apt install)?"
                             % ", ".join(missing)):
                 return "warn", "не хватает: %s" % ",".join(missing)
-            ssh.run_script("pkgs.sh", "install", timeout=600)
+            rc = ssh.run_script_stream(
+                "pkgs.sh", "install",
+                lambda l: self.say("  " + l), timeout=600)
+            if rc != 0:
+                return "fail", "pkgs install rc=%s" % rc
             out = ssh.run_script("pkgs.sh", "check", timeout=90)
             missing = [l.split("=")[0] for l in
                        parse_section(out, "PKGS").splitlines()
@@ -1344,7 +1393,11 @@ class App(tk.Tk):
 
     def _step_ovpn(self, ssh, s):
         proto = self.v_proto.get()
-        ssh.run_script("deploy-openvpn.sh", proto, timeout=900)
+        rc = ssh.run_script_stream(
+            "deploy-openvpn.sh", proto,
+            lambda l: self.say("  " + l), timeout=900)
+        if rc != 0:
+            return "fail", "deploy-openvpn rc=%s" % rc
         s["proto"] = proto
         return "ok", "proto=%s, mgmt :7505" % proto
 
