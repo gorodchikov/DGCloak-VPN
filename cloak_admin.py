@@ -135,6 +135,42 @@ def find_ck_client(data):
                     [BASE_DIR])
 
 
+CLOAK_API = "https://api.github.com/repos/cbeuw/Cloak/releases/latest"
+
+
+def cloak_release_url():
+    """Прямая ссылка на свежий ck-client-windows-amd64*.exe."""
+    req = urllib.request.Request(CLOAK_API, headers={"User-Agent": APP_NAME})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        meta = json.loads(r.read().decode("utf-8"))
+    for a in meta.get("assets", []):
+        if re.match(r"ck-client-windows-amd64.*\.exe$", a.get("name", "")):
+            return a["browser_download_url"], int(a.get("size") or 0)
+    raise RuntimeError("в последнем релизе Cloak нет ck-client-windows-amd64*.exe")
+
+
+def download_ck_client(say):
+    """Скачать ck-client.exe в APP_DIR (как делает клиент при первом запуске)."""
+    url, size = cloak_release_url()
+    dst = os.path.join(APP_DIR, "ck-client.exe")
+    os.makedirs(APP_DIR, exist_ok=True)
+    say("  скачиваю ck-client с GitHub: %s" % url.split("/")[-1])
+    req = urllib.request.Request(url, headers={"User-Agent": APP_NAME})
+    done = 0
+    next_mark = 1024 * 1024
+    with urllib.request.urlopen(req, timeout=30) as r, open(dst, "wb") as f:
+        while True:
+            chunk = r.read(256 * 1024)
+            if not chunk:
+                break
+            f.write(chunk)
+            done += len(chunk)
+            if done >= next_mark:
+                say("  …%.1f / %.1f МБ" % (done / 1e6, (size or done) / 1e6))
+                next_mark = done + 1024 * 1024
+    return dst
+
+
 def valid_cn(name):
     return bool(re.fullmatch(r"[A-Za-z0-9_-]+", name or ""))
 
@@ -1711,8 +1747,13 @@ class App(tk.Tk):
     def _api(self, s):
         ck = find_ck_client(self.data)
         if not ck:
-            raise CloakAPIErr("Не найден ck-client.exe — укажи путь в data.json "
-                              "или положи рядом")
+            try:
+                ck = download_ck_client(self.say)
+            except Exception as e:
+                raise CloakAPIErr(
+                    "Не найден ck-client.exe и не скачался (%s) — "
+                    "укажи путь в data.json или положи рядом" % e)
+            self.say("  ck-client.exe → %s" % ck)
         if not s.get("admin_uid") or not s.get("pubkey"):
             raise CloakAPIErr("Нет admin_uid/pubkey — сделай «Импорт» или деплой")
         return CloakAPI(ck, s, self.say)
