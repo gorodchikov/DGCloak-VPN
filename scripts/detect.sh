@@ -48,7 +48,8 @@ echo "EXT_IF=$EXT_IF"
 ip -4 addr show "$EXT_IF" 2>/dev/null | grep -oP 'inet \K[\d.]+' | head -1
 
 echo "===PUBIP==="
-curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || echo "?"
+curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || echo -n "?"
+echo
 
 echo "===PORT443==="
 ss -tlnp 2>/dev/null | grep ':443 ' || echo "free"
