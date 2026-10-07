@@ -8,17 +8,18 @@
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
-SSH_PORTS=${1:?usage: deploy-net-iptables.sh <ssh_port,...>}
+SSH_PORTS=${1:?usage: deploy-net-iptables.sh <ssh_port,...> [cloak_port]}
+CK_PORT=${2:-443}
 EXT_IF=$(ip route show default | awk '{print $5; exit}')
-echo "EXT_IF=$EXT_IF SSH_PORTS=$SSH_PORTS"
+echo "EXT_IF=$EXT_IF SSH_PORTS=$SSH_PORTS CK_PORT=$CK_PORT"
 
 echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-dgcloak-vpn.conf
 sysctl -w net.ipv4.ip_forward=1 >/dev/null
 
 # iptables-persistent ставим явно (он снесёт ufw по Conflicts, если тот вдруг есть).
 # DPkg::Lock::Timeout: unattended-upgrades на свежем VPS может держать лок
-apt-get -o DPkg::Lock::Timeout=300 update -qq
-apt-get -o DPkg::Lock::Timeout=300 install -y -qq iptables-persistent
+apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false update -qq
+apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false install -y -qq iptables-persistent
 
 {
 cat <<EOF
@@ -36,7 +37,7 @@ for p in ${SSH_PORTS//,/ }; do
     echo "-A INPUT -p tcp --dport $p -m conntrack --ctstate NEW -j ACCEPT"
 done
 cat <<EOF
--A INPUT -p tcp --dport 443 -m conntrack --ctstate NEW -j ACCEPT
+-A INPUT -p tcp --dport $CK_PORT -m conntrack --ctstate NEW -j ACCEPT
 -A FORWARD -i tun0 -o $EXT_IF -j ACCEPT
 -A FORWARD -i $EXT_IF -o tun0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 COMMIT

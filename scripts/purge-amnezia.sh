@@ -40,11 +40,11 @@ if [ "$LEFT_C" = "0" ] && [ "$LEFT_I" = "0" ]; then
     systemctl disable docker.socket docker.service containerd.service 2>/dev/null || true
     docker network prune -f 2>/dev/null || true
     docker volume prune -f 2>/dev/null || true
-    apt-get -o DPkg::Lock::Timeout=300 purge -y \
+    apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false purge -y \
         docker.io docker-ce docker-ce-cli containerd containerd.io runc || true
-    dpkg -l | grep -qE '^ii  (docker|containerd)' && \
-        apt-get -o DPkg::Lock::Timeout=300 purge -y docker.io containerd || true
-    apt-get -o DPkg::Lock::Timeout=300 autoremove -y --purge || true
+    dpkg -l | grep -E '^ii  (docker|containerd)' >/dev/null && \
+        apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false purge -y docker.io containerd || true
+    apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false autoremove -y --purge || true
     rm -rf /var/lib/docker /var/lib/containerd /etc/docker /etc/containerd \
            /opt/containerd /run/docker /run/docker.sock /run/containerd 2>/dev/null || true
     for iface in docker0 $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' \

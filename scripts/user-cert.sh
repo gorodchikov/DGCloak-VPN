@@ -14,11 +14,9 @@ done
 [ -n "$CADIR" ] || { echo "!! openvpn-ca не найден (ни /root, ни /home/*/openvpn-ca)"; exit 1; }
 cd "$CADIR"
 if [ ! -f "pki/issued/${USER_NAME}.crt" ]; then
-    # easyrsa/openssl могут читать stdin больше одного раза и на ровном EOF
-    # падают → многострочный printf вместо одиночного echo (буфер умещается
-    # в пайп, SIGPIPE не будет)
-    printf '\n%.0s' $(seq 50) | ./easyrsa gen-req "$USER_NAME" nopass
-    printf 'yes\n%.0s' $(seq 50) | ./easyrsa sign-req client "$USER_NAME"
+    # --batch: без интерактива (printf-stdin ломался на SIGPIPE/pipefail)
+    ./easyrsa --batch gen-req "$USER_NAME" nopass
+    ./easyrsa --batch sign-req client "$USER_NAME"
     echo "cert: создан $USER_NAME"
 else
     echo "cert: уже существует $USER_NAME"

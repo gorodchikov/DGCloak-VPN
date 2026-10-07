@@ -12,32 +12,50 @@ if [ "$OVPN_PROTO" != "udp" ] && [ "$OVPN_PROTO" != "tcp" ]; then
 fi
 
 # DPkg::Lock::Timeout: unattended-upgrades на свежем VPS может держать лок apt
-apt-get -o DPkg::Lock::Timeout=300 update -qq
-apt-get -o DPkg::Lock::Timeout=300 install -y -qq openvpn easy-rsa
+apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false update -qq
+apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false install -y -qq openvpn easy-rsa
 
 CADIR=/root/openvpn-ca
-if [ ! -d "$CADIR" ]; then make-cadir "$CADIR"; fi
+if [ ! -d "$CADIR" ]; then
+    if command -v make-cadir >/dev/null 2>&1; then
+        make-cadir "$CADIR"
+    else
+        # make-cadir — debian-хелпер; на части систем его нет — копируем вручную
+        mkdir -p "$CADIR"
+        cp -r /usr/share/easy-rsa/* "$CADIR/"
+    fi
+fi
 cd "$CADIR"
 
-if [ ! -d pki ]; then
-    # stdin easyrsa/openssl: многострочный printf (см. user-cert.sh)
-    ./easyrsa init-pki
-    printf '\n%.0s' $(seq 50) | ./easyrsa build-ca nopass
-    printf '\n%.0s' $(seq 50) | ./easyrsa gen-req server nopass
-    printf 'yes\n%.0s' $(seq 50) | ./easyrsa sign-req server server
-    ./easyrsa gen-dh
-    ./easyrsa gen-crl
-    openvpn --genkey secret ta.key
-    install -m600 -o root -g root pki/private/server.key /etc/openvpn/server/server.key
-    install -m644 -o root -g root pki/ca.crt /etc/openvpn/server/ca.crt
-    install -m644 -o root -g root pki/issued/server.crt /etc/openvpn/server/server.crt
-    install -m644 -o root -g root pki/dh.pem /etc/openvpn/server/dh.pem
-    install -m644 -o root -g root pki/crl.pem /etc/openvpn/server/crl.pem
-    install -m600 -o root -g root ta.key /etc/openvpn/server/ta.key
+gen_ta() {
+    # openvpn >=2.5: --genkey secret f; openvpn 2.4: --genkey --secret f
+    openvpn --genkey secret "$1" 2>/dev/null \
+        || openvpn --genkey --secret "$1"
+}
+
+if [ ! -f pki/issued/server.crt ] || [ ! -f pki/private/server.key ]; then
+    # неполная PKI (прошлый прогон оборвался) — чистый рестарт
+    [ -d pki ] && rm -rf pki
+    # --batch: без интерактива; printf-stdin ломался на SIGPIPE/pipefail
+    ./easyrsa --batch init-pki
+    ./easyrsa --batch build-ca nopass
+    ./easyrsa --batch gen-req server nopass
+    ./easyrsa --batch sign-req server server
+    ./easyrsa --batch gen-dh
+    ./easyrsa --batch gen-crl
+    gen_ta ta.key
     echo "PKI: создана"
 else
     echo "PKI: уже есть, пропускаю генерацию"
 fi
+# материалы в /etc/openvpn/server — всегда (идемпотентно, даже после обрыва)
+[ -f ta.key ] || gen_ta ta.key
+install -m600 -o root -g root pki/private/server.key /etc/openvpn/server/server.key
+install -m644 -o root -g root pki/ca.crt /etc/openvpn/server/ca.crt
+install -m644 -o root -g root pki/issued/server.crt /etc/openvpn/server/server.crt
+install -m644 -o root -g root pki/dh.pem /etc/openvpn/server/dh.pem
+install -m644 -o root -g root pki/crl.pem /etc/openvpn/server/crl.pem
+install -m600 -o root -g root ta.key /etc/openvpn/server/ta.key
 
 mkdir -p /etc/openvpn/server/ccd
 
@@ -48,6 +66,7 @@ if [ ! -f /etc/openvpn/server/mgmt.pass ]; then
 fi
 
 cat > /etc/openvpn/server/server.conf <<EOF
+cd /etc/openvpn/server
 port 1194
 proto $OVPN_PROTO
 local 127.0.0.1

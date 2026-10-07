@@ -168,10 +168,34 @@ build.bat
   host key принимается автоматически (TOFU: сначала `-batch`, при «not cached» —
   повтор с `y` на stdin). Скрипты заливаются pscp в `/tmp/dgadm-*`, затем
   `sudo bash` (подразумевается NOPASSWD sudo или root). CRLF вычищается sed'ом.
-- **Деплой** — пайплайн: `detect.sh` (аудит) → `purge-amnezia.sh` (если docker) →
-  `deploy-openvpn.sh` (PKI+server.conf+mgmt:7505) → сеть (`deploy-net-ufw.sh` при
-  активном ufw, иначе `deploy-net-iptables.sh <ssh_port>`) → `deploy-cloak.sh`
-  (ключи PUB/ADMIN_UID парсятся из вывода в реестр) → опционально `mss-clamp.sh`.
+- **Деплой** — 9 шагов (UI: большая кнопка «Развернуть всё» + отдельные шаги):
+  SSH → ключевая авторизация → аудит (`detect.sh`, гейт по ОС: apt-дистры вне
+  матрицы — «на свой страх») → фаервол (`fw-detect.sh` → `fw-install.sh` при
+  `none`, иначе существующий бэкенд) → `sysupdate.sh` → `pkgs.sh` →
+  `deploy-openvpn.sh` (PKI+server.conf+mgmt:7505) → NAT (`nat-enable.sh` /
+  `deploy-net-ufw.sh` / `deploy-net-iptables.sh <ssh_ports> <ck_port>` /
+  firewalld inline) → `deploy-cloak.sh` (PUB/ADMIN_UID → реестр).
+- **Фаерволы**: единый фронт `fw-manage.sh` (`list`/`ports`/`allow`/`deny`) поверх
+  nftables-dg (наша таблица `inet dgcloak`), ufw, firewalld, iptables-persistent,
+  чужих iptables (только чтение). В `ports` firewalld-сервисы (ssh→22,
+  dhcpv6-client→546) раскрываются в порты через `--info-service`.
+- **Грабли скриптов (важно):**
+  - `set -o pipefail` + `| grep -q` = флаки: ранний выход grep'а → SIGPIPE
+    производителю → rc=141 вместо 0 (на старых nft 0.9.x почти всегда).
+    Правило: в пайпе `| grep 'pat' >/dev/null`, без `-q`.
+  - Порядок детекции: `iptables-persistent` (файл rules.v4) проверять РАНЬШЕ
+    чужого nftables — на iptables-nft-системах его правила видны в `nft list`.
+  - Порт Cloak из GUI (`v_ckport`) должен доезжать везде: `fw-install.sh $2`,
+    `deploy-net-iptables.sh $2`, `deploy-cloak.sh $4` (BindAddr+проверка),
+    admin-API `RemotePort`, метки в диалоге портов. В `_step_nat` после NAT —
+    всегда `fw-manage.sh allow tcp <ck_port>` (бэкенд-агностично).
+  - plink без консоли не отвечает на host-key prompt: парсим fingerprint из
+    batch-вывода и повторяем с `-hostkey` ПЕРЕД target-аргументом.
+  - OpenVPN 2.4 (Ubuntu 20.04): `openvpn --genkey --secret f` (не `secret f`),
+    easy-rsa только через `--batch` (printf-stdin → SIGPIPE), в server.conf
+    нужен `cd /etc/openvpn/server` для относительных путей.
+  - Debian 11 в архиве: apt нужен `-o Acquire::Check-Valid-Until=false` и
+    `archive.debian.org` вместо deb.debian.org.
 - **Юзеры Cloak — локальный `ck-client.exe -a <AdminUID>`** (класс `CloakAPI`):
   пишет временный конфиг (`UDP:false` обязательно — с `true` API не поднимается;
   `LocalPort` — реальный свободный порт, `"0"` НЕ работает — API висит на :0);
@@ -194,7 +218,7 @@ build.bat
 1. **Структура и качество:** разнести `cloak_ovpn.py` на модули (конфиг/профили, запуск процессов, сетевые утилиты, GUI, трей), вынести построение аргументов Cloak/OpenVPN в чистые функции и покрыть тестами; CI на GitHub Actions (`windows-latest`: `py_compile`, сборка exe).
 2. **Клиент:** пароль на management-порт; поддержка `auth-user-pass`; автоподключение при старте; импорт клиентского пакета (`.ovpn` + `ckclient.json`) одной кнопкой; переключение профиля без ручного отключения.
 3. **Серверное management-приложение** — реализуется, см. раздел «Серверная админка (`cloak_admin.py`)» выше. Исходные принятые решения:
-   - Целевые ОС: Ubuntu 24.04 LTS и 26.04 LTS; **без Docker** (пакет OpenVPN, `ck-server`, сервисы systemd).
+   - Целевые ОС: **Ubuntu 20.04/22.04/24.04/26.04 LTS и Debian 11/12/13**; **без Docker** (пакет OpenVPN, `ck-server`, сервисы systemd).
    - Параметры SSH (хост, порт, пользователь, ключ/пароль/ssh-agent) **настраиваемые, ничего не зашито**. Приложение не должно менять конфигурацию/порт SSH и не может «запирать» пользователя на сервере.
    - Пользователь = сертификат OpenVPN + UID Cloak: создание, отзыв, лимиты (срок/трафик/скорость), выгрузка клиентского пакета.
    - Статус, обновление, удаление, резервные копии конфигов перед изменениями; сначала аудит (только чтение), потом изменения.
@@ -204,3 +228,4 @@ build.bat
    - Перед кодом приложения — эталонное ручное развёртывание OpenVPN+Cloak на тестовой VM с документированием точного рецепта (это спецификация для кода): чек-лист `docs/server-setup.md`. Свериться с актуальными доками Cloak и OpenVPN, а не с памятью.
    - **Управление юзерами Cloak — через admin-API, без SSH** (проверено по cbeuw/Cloak и cbeuw/Cloak-panel): на машине админа `ck-client -a <AdminUID>` поднимает локальный HTTP-эндпоинт; `GET/POST/DELETE /admin/users[/<uid-b64url>]` — список/создание (лимиты: SessionsCap, UpRate, DownRate, UpCredit, DownCredit, ExpiryTime)/удаление. UID — 16 байт base64. Юзеры с лимитами живут в `userinfo.db` (DatabasePath); `BypassUID` в ckserver.json — безлимитные (требует рестарта, основным механизмом не делать). SSH нужен для установки, PKI/CRL и статуса.
    - Перед реализацией сверяться с актуальной документацией Cloak и OpenVPN, а не с памятью.
+4. **Локализация (ПОСЛЕДНИЙ этап — только после полной отладки!):** финальный публичный продукт (клиент `cloak_ovpn.py` + админка `cloak_admin.py`) переводится полностью на английский, включая логи и тексты серверных скриптов. Клиент уже имеет механизм (`STRINGS_EN` + `t()`, поле `language` в data.json) — админку делать по тому же образцу. Пока вся разработка и UI — на русском.

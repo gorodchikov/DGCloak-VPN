@@ -1,11 +1,12 @@
 #!/bin/bash
 # Этап 3: ck-server (docs/server-setup.md, п.3).
-# Использование: sudo bash deploy-cloak.sh <mask_domain> [proto] [ck_ver]
+# Использование: sudo bash deploy-cloak.sh <mask_domain> [proto] [ck_ver] [port]
 set -euo pipefail
 
-MASK_DOMAIN=${1:?usage: deploy-cloak.sh <mask_domain> [proto] [ck_ver]}
+MASK_DOMAIN=${1:?usage: deploy-cloak.sh <mask_domain> [proto] [ck_ver] [port]}
 OVPN_PROTO=${2:-udp}          # udp|tcp — совпадает с proto в server.conf и "UDP" у клиента
 CK_VER=${3:-2.12.0}
+CK_PORT=${4:-443}             # внешний TCP-порт Cloak (BindAddr + проверка listen)
 
 # архитектура бинарника по uname -m (VPS бывают arm64 — Oracle, Ampere и т.п.)
 case "$(uname -m)" in
@@ -33,7 +34,7 @@ if [ ! -f /etc/ck-server/ckserver.json ]; then
     cat > /etc/ck-server/ckserver.json <<EOF
 {
   "ProxyBook": { "openvpn": ["$OVPN_PROTO", "127.0.0.1:1194"] },
-  "BindAddr": [":443"],
+  "BindAddr": [":$CK_PORT"],
   "BypassUID": [],
   "RedirAddr": "$MASK_DOMAIN",
   "PrivateKey": "$PRIV",
@@ -47,12 +48,13 @@ EOF
     chmod 600 /etc/ck-server/adminuid.txt
 else
     # Конфиг есть — обновим только маскировку/протокол, ключи не трогаем
-    python3 - "$MASK_DOMAIN" "$OVPN_PROTO" <<'PY'
+    python3 - "$MASK_DOMAIN" "$OVPN_PROTO" "$CK_PORT" <<'PY'
 import json, sys
 p = "/etc/ck-server/ckserver.json"
 c = json.load(open(p))
 c["RedirAddr"] = sys.argv[1]
 c["ProxyBook"] = {"openvpn": [sys.argv[2], "127.0.0.1:1194"]}
+c["BindAddr"] = [":%s" % sys.argv[3]]
 json.dump(c, open(p, "w"), indent=2)
 PY
 fi
@@ -87,9 +89,9 @@ systemctl enable --now ck-server
 systemctl restart ck-server
 sleep 2
 systemctl is-active ck-server
-if ! ss -tlpn | grep -q ':443 '; then
-    echo "!! ck-server не слушает :443"
-    ss -tlnp | grep ':443 ' && echo "!! порт 443 занят другим сервисом (см. выше)"
+if ! ss -tlpn | grep ":$CK_PORT " >/dev/null; then
+    echo "!! ck-server не слушает :$CK_PORT"
+    ss -tlnp | grep ":$CK_PORT " && echo "!! порт $CK_PORT занят другим сервисом (см. выше)"
     exit 1
 fi
 echo "===PUB==="; cat /etc/ck-server/publickey.txt

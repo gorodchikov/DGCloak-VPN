@@ -60,7 +60,7 @@ echo "===UFW==="
 if command -v ufw >/dev/null 2>&1; then ufw status 2>/dev/null | head -5; else echo "no ufw"; fi
 
 echo "===FIREWALLD==="
-if command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active firewalld 2>/dev/null | grep -q active; then
+if command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active firewalld 2>/dev/null | grep active >/dev/null; then
     echo "firewalld active"
 else
     echo "no firewalld"
@@ -85,5 +85,9 @@ echo "===FORWARD==="; sysctl -n net.ipv4.ip_forward 2>/dev/null || echo "?"
 
 echo "===DISK==="
 df -m / | awk 'NR==2{print "free_mb="$4}'
+
+echo "===MEM==="
+awk '/^MemTotal/{printf "mem_total_mb=%d\n", $2/1024}
+     /^MemAvailable/{printf "mem_avail_mb=%d\n", $2/1024}' /proc/meminfo
 
 echo "===DONE==="

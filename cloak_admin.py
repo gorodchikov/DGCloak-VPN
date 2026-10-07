@@ -143,6 +143,38 @@ def uid_to_b64url(uid):
     return uid.replace("+", "-").replace("/", "_")
 
 
+class Tooltip:
+    """Простой всплывающий текст при наведении на виджет."""
+
+    def __init__(self, widget, text):
+        self.text = text
+        self.tip = None
+        widget.bind("<Enter>", self._show)
+        widget.bind("<Leave>", self._hide)
+
+    def _show(self, _e=None):
+        if self.tip:
+            return
+        wgt = _e.widget if _e else None
+        if wgt is None:
+            return
+        x = wgt.winfo_rootx() + 16
+        y = wgt.winfo_rooty() + wgt.winfo_height() + 4
+        tw = tk.Toplevel(wgt)
+        tw.overrideredirect(True)
+        tw.attributes("-topmost", True)
+        tw.geometry("+%d+%d" % (x, y))
+        tk.Label(tw, text=self.text, bg="#ffffd8", fg="#222",
+                 relief="solid", bd=1, padx=6, pady=4,
+                 font=("", 9), justify="left").pack()
+        self.tip = tw
+
+    def _hide(self, _e=None):
+        if self.tip:
+            self.tip.destroy()
+            self.tip = None
+
+
 # ---------------------------------------------------------------- SSH layer
 
 class SSHErr(Exception):
@@ -225,13 +257,19 @@ class SSH:
                            creationflags=CREATE_NO_WINDOW)
         out = (p.stdout or "") + (p.stderr or "")
         if (self.backend == "putty" and p.returncode != 0
-                and "not cached" in out):
-            args2 = [a for a in args if a != "-batch"]
-            p = subprocess.run(args2,
-                               input=(input_text or "") + "\ny\n",
-                               capture_output=True, text=True, timeout=timeout,
-                               creationflags=CREATE_NO_WINDOW)
-            out = (p.stdout or "") + (p.stderr or "")
+                and "host key" in out and "-hostkey" not in args):
+            # plink в нон-консоли не читает 'y' со stdin — достаём fingerprint
+            # из текста промпта и повторяем с -hostkey (TOFU, без интерактива)
+            fp = re.search(r"fingerprint is:\s*\S+\s+\d+\s+(SHA256:\S+)", out)
+            if fp:
+                # -hostkey — опция, должна стоять ДО host (иначе уедет в remote-команду)
+                p = subprocess.run(args[:-2] + ["-hostkey", fp.group(1)]
+                                   + args[-2:],
+                                   input=input_text or "", capture_output=True,
+                                   text=True, encoding="utf-8", errors="replace",
+                                   timeout=timeout,
+                                   creationflags=CREATE_NO_WINDOW)
+                out = (p.stdout or "") + (p.stderr or "")
         return p.returncode, out
 
     def run(self, cmd, timeout=120):
@@ -262,7 +300,9 @@ class SSH:
                              creationflags=CREATE_NO_WINDOW)
         t0 = time.time()
         assert p.stdout is not None
+        seen = []
         for line in p.stdout:
+            seen.append(line)
             on_line(line.rstrip("\n"))
             if timeout and time.time() - t0 > timeout:
                 p.kill()
@@ -270,15 +310,24 @@ class SSH:
         p.wait(timeout=10)
         out_tail = ""
         if self.backend == "putty" and p.returncode == 255:
-            # возможно host key не принят — повтор без -batch с 'y'
-            args2 = [a for a in args if a != "-batch"]
+            # ищем fingerprint в уже увиденном выводе → retry с -hostkey
+            mfp = re.search(r"fingerprint is:\s*\S+\s+\d+\s+(SHA256:\S+)",
+                            "".join(seen))
+            if mfp:
+                fp = mfp.group(1)
+            if fp:
+                args2 = args[:-2] + ["-hostkey", fp] + args[-2:]
+            else:
+                args2 = [a for a in args if a != "-batch"]
             p2 = subprocess.Popen(args2, stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT, text=True,
                                   encoding="utf-8", errors="replace",
-                                  stdin=subprocess.PIPE,
+                                  stdin=subprocess.PIPE if not fp
+                                  else subprocess.DEVNULL,
                                   creationflags=CREATE_NO_WINDOW)
             try:
-                out, _ = p2.communicate(input="y\n", timeout=timeout or 300)
+                out, _ = p2.communicate(input=None if fp else "y\n",
+                                        timeout=timeout or 300)
             except subprocess.TimeoutExpired:
                 p2.kill()
                 raise SSHErr("Таймаут: %s" % cmd[:80])
@@ -288,6 +337,17 @@ class SSH:
         if self.backend == "putty" and p.returncode == 255 and not out_tail:
             raise SSHErr("plink exit 255")
         return p.returncode
+
+    def install_pubkey(self, pubkey):
+        """Поставить публичный ключ в ~/.ssh/authorized_keys текущей
+        авторизацией (обычно пароль через plink)."""
+        safe = pubkey.strip().replace("'", "")
+        cmd = ("mkdir -p ~/.ssh && chmod 700 ~/.ssh && "
+               "touch ~/.ssh/authorized_keys && "
+               "grep -qxF '%s' ~/.ssh/authorized_keys || "
+               "echo '%s' >> ~/.ssh/authorized_keys; "
+               "chmod 600 ~/.ssh/authorized_keys") % (safe, safe)
+        self.run(cmd, timeout=30)
 
     def upload(self, local_path, remote_path):
         args = self._argv_upload(local_path, remote_path)
@@ -362,7 +422,7 @@ class CloakAPI:
             "BrowserSig": "firefox",
             "StreamTimeout": 300,
             "RemoteHost": s["host"],
-            "RemotePort": "443",
+            "RemotePort": str(s.get("ck_port") or "443"),
             "LocalHost": "127.0.0.1",
             "LocalPort": str(port),
             "UDP": False,          # admin-API — TCP, UDP:true ломает подъём
@@ -601,6 +661,125 @@ class UserDialog(simpledialog.Dialog):
         }
 
 
+class PortsDialog(tk.Toplevel):
+    """Управление портами фаервола: список правил + открыть/закрыть порт."""
+
+    def __init__(self, app, srv, rules_text):
+        super().__init__(app)
+        self.app = app
+        self.srv = srv
+        app._ports_dlg = self
+        self.protocol("WM_DELETE_WINDOW", self._close)
+        self.title("Управление фаерволом — %s" % srv["name"])
+        self.txt = tk.Text(self, width=72, height=16, font=("Consolas", 9))
+        self.txt.pack(fill="both", expand=True, padx=6, pady=6)
+        self._fill(rules_text)
+
+        bar = ttk.Frame(self)
+        bar.pack(fill="x", padx=6, pady=6)
+        ttk.Label(bar, text="Порт:").pack(side="left")
+        self.v_port = tk.StringVar()
+        ttk.Entry(bar, textvariable=self.v_port, width=7).pack(side="left", padx=4)
+        self.v_proto = tk.StringVar(value="tcp")
+        ttk.Combobox(bar, textvariable=self.v_proto, width=5,
+                     values=["tcp", "udp"], state="readonly").pack(side="left")
+        ttk.Button(bar, text="Открыть",
+                   command=lambda: self._act("allow")).pack(side="left", padx=4)
+        ttk.Button(bar, text="Закрыть",
+                   command=lambda: self._act("deny")).pack(side="left")
+        ttk.Button(bar, text="Обновить",
+                   command=self._reload).pack(side="left", padx=10)
+
+    def _port_label(self, proto, port, cm):
+        """Человеческий комментарий к открытому порту (зависит от деплоя)."""
+        s = self.srv
+        ssh_ports = {str(p) for p in
+                     [s.get("ssh_port", 22)] + s.get("sshd_ports", [])}
+        ck_port = str(s.get("ck_port")
+                      or self.app.v_ckport.get().strip() or "443")
+        if proto == "tcp" and port in ssh_ports:
+            return "SSH — не удалять"
+        if proto == "tcp" and port == ck_port:
+            return "Cloak VPN — не удалять"
+        if proto == "udp" and port in ("68", "546"):
+            return "DHCP-клиент — не удалять"
+        return self.COMMENT_RU.get(cm) or "пользовательский порт"
+
+    COMMENT_RU = {"ssh": "SSH — не удалять", "cloak": "Cloak VPN — не удалять",
+                  "dhcp": "DHCP-клиент — не удалять",
+                  "dhcpv6-client": "DHCPv6-клиент — не удалять"}
+
+    def _fill(self, out):
+        fw = ""
+        rows = []
+        seen = set()
+        notes = []
+        for line in out.splitlines():
+            line = line.strip()
+            m = re.match(r"OPEN\s+(\w+)\s+(\d+)\s*(.*)", line)
+            if m:
+                proto, port, cm = m.groups()
+                if (port, proto) in seen:  # ufw дублирует правила для v6
+                    continue
+                seen.add((port, proto))
+                rows.append((port, proto,
+                             self._port_label(proto, port, cm)))
+            elif line.startswith("FW="):
+                fw = line[3:]
+            elif line and not line.startswith("==="):
+                notes.append(line)
+        t = "Фаервол: %s\n\nПорты, открытые снаружи:\n\n" % (fw or "?")
+        if rows:
+            t += "\n".join("   %-9s %s" % ("%s/%s" % (p, pr), cm)
+                           for p, pr, cm in sorted(rows, key=lambda r: int(r[0])))
+        else:
+            t += "   (нет открытых портов)"
+        t += "\n\nОстальные входящие соединения закрыты."
+        if notes:
+            t += "\n\n" + "\n".join(notes)
+        self.txt.config(state="normal")
+        self.txt.delete("1.0", "end")
+        self.txt.insert("end", t)
+        self.txt.config(state="disabled")
+
+    def _close(self):
+        self.app._ports_dlg = None
+        self.destroy()
+
+    def _reload(self):
+        def work():
+            ssh = SSH(self.srv, self.app.say)
+            out = ssh.run_script("fw-manage.sh", "ports", timeout=60)
+            self.app.ui(lambda: self._fill(out))
+        self.app._worker(work)
+
+    def _act(self, action):
+        port = self.v_port.get().strip()
+        if not port.isdigit() or not (1 <= int(port) <= 65535):
+            messagebox.showerror(APP_NAME, "Порт: число 1-65535", parent=self)
+            return
+        proto = self.v_proto.get()
+        if action == "deny":
+            lbl = self._port_label(proto, port, "")
+            if "не удалять" in lbl:
+                if not messagebox.askyesno(
+                        APP_NAME,
+                        "Порт %s/%s помечен «%s».\nЗакрытие может отрезать "
+                        "доступ к серверу или VPN.\n\nВсё равно закрыть?"
+                        % (port, proto, lbl), parent=self):
+                    return
+
+        def work():
+            ssh = SSH(self.srv, self.app.say)
+            out = ssh.run_script("fw-manage.sh",
+                                 "%s %s %s" % (action, proto, port),
+                                 timeout=60)
+            self.app.say("fw: %s" % out.strip().splitlines()[-1][:120])
+            out = ssh.run_script("fw-manage.sh", "ports", timeout=60)
+            self.app.ui(lambda: self._fill(out))
+        self.app._worker(work)
+
+
 class App(tk.Tk):
 
     def __init__(self):
@@ -610,6 +789,7 @@ class App(tk.Tk):
         self.data = load_data()
         self.uiq = queue.Queue()
         self.busy = False
+        self._ports_dlg = None
         self._build()
         self._refresh_servers()
         self.after(100, self._drain)
@@ -703,59 +883,78 @@ class App(tk.Tk):
         return b
 
     # ---- вкладка «Развёртывание» ----
+    STEPS = [
+        ("ssh",    "1. SSH-подключение (auth + sudo без пароля)"),
+        ("key",    "2. Ключевая авторизация (генерация, если пароль)"),
+        ("audit",  "3. Аудит ОС и окружения"),
+        ("fw",     "4. Фаервол (аудит → установка/настройка)"),
+        ("sysupd", "5. Обновление системы (apt full-upgrade)"),
+        ("pkgs",   "6. Пакеты (OpenVPN, Easy-RSA, nftables…)"),
+        ("ovpn",   "7. OpenVPN + PKI (Easy-RSA, server.conf, mgmt)"),
+        ("nat",    "8. Маршрутизация и NAT"),
+        ("cloak",  "9. Cloak server (маскировка, ключи)"),
+    ]
+    # статусы шага в s["steps"][key] = {"st": ok|warn|fail|skip, "note": str}
+
     def _tab_deploy(self, nb):
         f = ttk.Frame(nb)
         nb.add(f, text="Развёртывание")
         pad = {"padx": 6, "pady": 4}
 
         row = 0
-        ttk.Label(f, text="Домен маскировки (RedirAddr/ServerName):").grid(
-            row=row, column=0, sticky="w", **pad)
+        optf = ttk.Frame(f)
+        optf.grid(row=row, column=0, sticky="w", **pad)
+        ttk.Label(optf, text="Маскировка:").pack(side="left")
         self.v_mask = tk.StringVar(value="www.bing.com")
-        ttk.Entry(f, textvariable=self.v_mask, width=28).grid(row=row, column=1, **pad)
-
-        row += 1
-        ttk.Label(f, text="Протокол OpenVPN↔Cloak:").grid(row=row, column=0, sticky="w", **pad)
+        ttk.Entry(optf, textvariable=self.v_mask, width=22).pack(side="left", padx=4)
+        ttk.Label(optf, text="Протокол OpenVPN:").pack(side="left", padx=(10, 0))
         self.v_proto = tk.StringVar(value="udp")
-        fr = ttk.Frame(f)
-        fr.grid(row=row, column=1, sticky="w")
-        ttk.Radiobutton(fr, text="UDP (быстрее)", value="udp",
-                        variable=self.v_proto).pack(side="left")
-        ttk.Radiobutton(fr, text="TCP", value="tcp",
-                        variable=self.v_proto).pack(side="left")
+        ttk.Combobox(optf, textvariable=self.v_proto, width=6, state="readonly",
+                     values=["udp", "tcp"]).pack(side="left")
+        ttk.Label(optf, text="(TCP — не рекомендуется, медленнее)",
+                  foreground="#a33").pack(side="left", padx=(2, 0))
+        ttk.Label(optf, text="Cloak порт:").pack(side="left", padx=(10, 0))
+        self.v_ckport = tk.StringVar(value="443")
+        ttk.Entry(optf, textvariable=self.v_ckport, width=6).pack(side="left")
 
         row += 1
-        self.v_purge = tk.BooleanVar(value=True)
-        ttk.Checkbutton(f, text="Сначала снести Amnezia (чужой docker не трогаем)",
-                        variable=self.v_purge).grid(row=row, column=0,
-                                                  columnspan=2, sticky="w", **pad)
-
-        row += 1
-        self.v_mss = tk.BooleanVar(value=False)
-        ttk.Checkbutton(f, text="MSS-clamp 800 (лечение PMTUD-blackhole; только по симптому!)",
-                        variable=self.v_mss).grid(row=row, column=0,
-                                                  columnspan=2, sticky="w", **pad)
-
-        row += 1
-        self.v_first_user = tk.BooleanVar(value=True)
-        ttk.Checkbutton(f, text="Создать юзера после деплоя:",
-                        variable=self.v_first_user).grid(row=row, column=0, sticky="w", **pad)
-        self.v_first_name = tk.StringVar(value="user1")
-        ttk.Entry(f, textvariable=self.v_first_name, width=20).grid(row=row, column=1,
-                                                                  sticky="w", **pad)
+        self.steps_tv = ttk.Treeview(f, columns=("st", "note"),
+                                     show="tree headings", height=11)
+        self.steps_tv.heading("#0", text="Шаг")
+        self.steps_tv.heading("st", text="Статус")
+        self.steps_tv.heading("note", text="Комментарий")
+        self.steps_tv.column("#0", width=320)
+        self.steps_tv.column("st", width=70, anchor="center")
+        self.steps_tv.column("note", width=220)
+        self.steps_tv.grid(row=row, column=0, sticky="nsew", **pad)
+        f.rowconfigure(row, weight=1)
+        f.columnconfigure(0, weight=1)
 
         row += 1
         bf = ttk.Frame(f)
-        bf.grid(row=row, column=0, columnspan=2, sticky="w", **pad)
-        self._mk_btn(bf, "Аудит сервера", self._do_audit).pack(side="left", padx=2)
-        self._mk_btn(bf, "Развернуть", self._do_deploy).pack(side="left", padx=2)
-        self._mk_btn(bf, "Подтянуть ключи (импорт)", self._do_import).pack(side="left", padx=2)
+        bf.grid(row=row, column=0, sticky="w", **pad)
+        big = tk.Button(bf, text="▶  Развернуть всё", command=self._step_run_all,
+                        font=("", 10, "bold"), bg="#2d7", fg="white",
+                        activebackground="#2a6", padx=10, pady=2)
+        big.pack(side="left", padx=(2, 10))
+        self._all_buttons.append(big)
+        self._mk_btn(bf, "Только выбранный шаг",
+                     self._step_run_sel).pack(side="left", padx=2)
+        self._mk_btn(bf, "Сбросить статусы", self._steps_reset).pack(side="left", padx=2)
+        self._mk_btn(bf, "Управление фаерволом", self._fw_ports).pack(side="left", padx=2)
+        b_imp = self._mk_btn(bf, "Подтянуть ключи", self._do_import)
+        b_imp.pack(side="left", padx=2)
+        Tooltip(b_imp,
+                "Если сервер уже настроен (вручную или другой версией\n"
+                "программы) — эта кнопка забирает с него ключи Cloak,\n"
+                "не переустанавливая ничего. После этого сервером можно\n"
+                "управлять: юзеры, бандлы, статусы.")
 
         row += 1
-        ttk.Label(f, text="Деплой НЕ трогает SSH-порт. Перед развёртыванием\n"
-                          "убедись, что SSH доступен по указанному порту.",
-                  foreground="#666").grid(row=row, column=0, columnspan=2,
-                                          sticky="w", **pad)
+        ttk.Label(f, text="✓ готово   ⚠ обрати внимание   ✗ ошибка   – пропущен   … не выполнялся\n"
+                          "Шаги идут сверху вниз; «Выполнить всё» пропускает готовые.",
+                  foreground="#666", justify="left").grid(
+            row=row, column=0, sticky="w", **pad)
 
     # ---- вкладка «Пользователи» ----
     def _tab_users(self, nb):
@@ -802,6 +1001,7 @@ class App(tk.Tk):
             self.v_mask.set(s.get("mask_domain", "www.bing.com"))
             self.v_proto.set(s.get("proto", "udp"))
             self._fill_users_local(s)
+            self._fill_steps()
 
     def _fill_users_local(self, s):
         """Мгновенный вид по локальному реестру (без SSH). UID/expiry
@@ -848,173 +1048,350 @@ class App(tk.Tk):
             save_data(self.data)
             self._refresh_servers()
 
-    # ---- аудит ----
-    def _do_audit(self):
+    # ---- движок шагов ----
+    def ask(self, title, text):
+        """messagebox.askyesno из рабочего потока — маршалится в UI-поток."""
+        ev = threading.Event()
+        box = []
+
+        def q():
+            try:
+                box.append(messagebox.askyesno(title, text))
+            finally:
+                ev.set()
+        self.ui(q)
+        ev.wait()
+        return bool(box and box[0])
+
+    def _fill_steps(self):
+        s = self._sel_srv_silent()
+        st = (s or {}).get("steps", {})
+        self.steps_tv.delete(*self.steps_tv.get_children())
+        mark = {"ok": "✓", "warn": "⚠", "fail": "✗", "skip": "–"}
+        for key, title in self.STEPS:
+            r = st.get(key, {})
+            self.steps_tv.insert("", "end", iid=key, text=title,
+                                 values=(mark.get(r.get("st"), "…"),
+                                         r.get("note", "")))
+
+    def _steps_reset(self):
+        s = self._sel_srv()
+        if not s:
+            return
+        s.pop("steps", None)
+        save_data(self.data)
+        self._fill_steps()
+
+    def _run_step(self, s, key):
+        title = dict(self.STEPS)[key]
+        self.say("=== Шаг: %s ===" % title)
+        st = s.setdefault("steps", {})
+        try:
+            ssh = SSH(s, self.say)
+            stt, note = getattr(self, "_step_" + key)(ssh, s)
+        except Exception as e:
+            stt, note = "fail", (str(e).splitlines() or ["?"])[-1][:140]
+            self.say("  ОШИБКА: %s" % e)
+        st[key] = {"st": stt, "note": note}
+        save_data(self.data)
+        self.ui(self._fill_steps)
+        self.say("  → %s: %s" % (stt, note))
+        return stt in ("ok", "warn", "skip")
+
+    def _step_run_sel(self):
+        s = self._sel_srv()
+        if not s:
+            return
+        sel = self.steps_tv.selection()
+        if not sel:
+            messagebox.showinfo(APP_NAME, "Выбери шаг в таблице")
+            return
+        key = sel[0]
+        self._worker(lambda: self._run_step(s, key))
+
+    def _step_run_all(self):
         s = self._sel_srv()
         if not s:
             return
 
         def work():
-            self.say("Аудит %s (%s:%s)…" % (s["name"], s["host"],
-                                          s.get("ssh_port", 22)))
-            ssh = SSH(s, self.say)
-            ssh.preflight()
-            out = ssh.run_script("detect.sh", timeout=60)
-            for ln in out.splitlines():
-                self.say("  " + ln)
-            m = re.search(r"EXT_IF=(\S+)", out)
-            if m:
-                s["ext_if"] = m.group(1)
-            pub = parse_section(out, "PUBIP")
-            if pub and pub != "?":
-                s["public_ip"] = pub
-            save_data(self.data)
-            self.say("Аудит завершён.")
+            for key, _t in self.STEPS:
+                if s.get("steps", {}).get(key, {}).get("st") == "ok":
+                    continue
+                if not self._run_step(s, key):
+                    self.say("Остановился на шаге «%s». Исправь и продолжай — "
+                             "завершённые шаги не повторятся." % key)
+                    break
+            self.say("=== Проход завершён ===")
         self._worker(work)
 
-    # ---- деплой ----
-    def _do_deploy(self):
-        s = self._sel_srv()
-        if not s:
-            return
+    # ---- шаги ----
+    def _step_ssh(self, ssh, s):
+        ssh.preflight()
+        out = ssh.run("echo U=$(id -un) H=$(hostname)", timeout=20)
+        return "ok", out.strip().replace("\n", " ")
+
+    def _step_key(self, ssh, s):
+        if s.get("key") or s.get("ppk"):
+            return "ok", "уже ключевая авторизация"
+        if not s.get("password"):
+            return "fail", "нет ни пароля, ни ключа"
+        if not self.ask(APP_NAME,
+                        "Сгенерировать ключ ed25519 и поставить на «%s»?\n"
+                        "Пароль останется как запасной вход." % s["name"]):
+            return "skip", "отменено пользователем"
+        kg = find_exe(["ssh-keygen.exe", "ssh-keygen"],
+                      [r"C:\Windows\System32\OpenSSH"])
+        if not kg:
+            raise SSHErr("не найден ssh-keygen (Windows OpenSSH)")
+        kd = os.path.join(APP_DIR, "keys")
+        os.makedirs(kd, exist_ok=True)
+        kp = os.path.join(kd, "%s_ed25519" % re.sub(r"[^\w-]", "_", s["name"]))
+        if not os.path.isfile(kp):
+            r = subprocess.run([kg, "-t", "ed25519", "-N", "", "-f", kp],
+                               capture_output=True, text=True, timeout=30,
+                               creationflags=CREATE_NO_WINDOW)
+            if r.returncode != 0:
+                raise SSHErr("ssh-keygen: %s" % (r.stderr or r.stdout))
+        pub = open(kp + ".pub", encoding="ascii").read().strip()
+        self.say("  ставлю публичный ключ на сервер…")
+        ssh.install_pubkey(pub)
+        # проверка: вход по ключу отдельным подключением
+        s2 = dict(s)
+        s2["key"] = kp
+        SSH(s2, self.say).preflight()
+        s["key"] = kp
+        save_data(self.data)
+        return "ok", "ключ установлен: %s" % os.path.basename(kp)
+
+    def _step_audit(self, ssh, s):
+        out = ssh.run_script("detect.sh", timeout=60)
+        for ln in out.splitlines():
+            self.say("  " + ln)
+        pkg = parse_section(out, "PKG").strip()
+        ossec = parse_section(out, "OS")
+        osid = re.search(r"ID=(\S+)", ossec)
+        ver = re.search(r"VERSION=(\S+)", ossec)
+        arch = parse_section(out, "ARCH").strip()
+        m = re.search(r"EXT_IF=(\S+)", out)
+        if m:
+            s["ext_if"] = m.group(1)
+        pub = parse_section(out, "PUBIP")
+        if pub and pub != "?":
+            s["public_ip"] = pub
+        sshd = [l.strip() for l in parse_section(out, "SSHD_PORTS").splitlines()
+                if l.strip().isdigit()]
+        if sshd:
+            s["sshd_ports"] = sshd
+        s["has_docker"] = ("docker" in out.lower()
+                           and "no docker" not in out.lower())
+        m = re.search(r"free_mb=(\d+)", parse_section(out, "DISK"))
+        if m:
+            s["disk_free_mb"] = int(m.group(1))
+        m = re.search(r"mem_avail_mb=(\d+)", parse_section(out, "MEM"))
+        if m:
+            s["mem_avail_mb"] = int(m.group(1))
+        save_data(self.data)
+        if pkg != "apt":
+            return "fail", "не apt-дистрибутив (pkg=%s) — не поддерживается" % pkg
+        os_id = osid.group(1) if osid else "?"
+        os_ver = ver.group(1) if ver else "?"
+        supported = {"ubuntu": {"20.04", "22.04", "24.04", "26.04"},
+                     "debian": {"11", "12", "13"}}
+        if os_id not in supported or os_ver not in supported[os_id]:
+            if not self.ask(
+                    APP_NAME,
+                    "«%s»: %s %s не из поддерживаемых\n"
+                    "(Ubuntu 20.04/22.04/24.04/26.04, Debian 11/12/13).\n\n"
+                    "Продолжить на свой страх и риск?"
+                    % (s["name"], os_id, os_ver)):
+                return "fail", "%s %s не поддерживается" % (os_id, os_ver)
+        res = []
+        if s.get("disk_free_mb", 9999) < 400:
+            res.append("мало места на диске: %d МБ" % s["disk_free_mb"])
+        if s.get("mem_avail_mb", 9999) < 128:
+            res.append("мало RAM: %d МБ свободно" % s["mem_avail_mb"])
+        txt = "%s %s / %s" % (os_id, os_ver, arch)
+        if res:
+            return "warn", "%s; %s" % (txt, "; ".join(res))
+        return "ok", txt
+
+    def _step_fw(self, ssh, s):
+        out = ssh.run_script("fw-detect.sh", timeout=60)
+        m = re.search(r"FW=(\S+)", parse_section(out, "FW_BACKEND"))
+        fw = m.group(1) if m else "none"
+        s["fw_backend"] = fw
+        for ln in ("--- правила ---\n" + parse_section(out, "FW_RULES")
+                   + "\n--- слушают снаружи (tcp) ---\n"
+                   + parse_section(out, "LISTEN_TCP")).splitlines():
+            self.say("  " + ln)
+        if fw == "none":
+            ports = sorted({str(s.get("ssh_port", 22))}
+                           | set(s.get("sshd_ports", [])), key=int)
+            ck = self.v_ckport.get().strip() or "443"
+            if not self.ask(
+                    APP_NAME,
+                    "На «%s» фаервола нет. Поставить nftables?\n\n"
+                    "INPUT DROP + разрешены: SSH (%s), Cloak tcp/%s, ICMP.\n"
+                    "Остальные входящие закроются. Анти-локаут: если SSH умрёт,\n"
+                    "правила сами откатятся через 120 секунд."
+                    % (s["name"], ",".join(ports), ck)):
+                return "skip", "фаервола нет, установка отменена"
+            ssh.run_script("fw-install.sh", "%s %s" % (",".join(ports), ck),
+                           timeout=300)
+            # canary: на сервере 120с откат; новое ssh-подключение подтверждает
+            ssh.run("touch /tmp/dgcloak-fw-ok", timeout=30)
+            self.say("  firewall подтверждён (rollback отменён)")
+            s["fw_backend"] = "nftables-dg"
+            s["ck_port"] = ck
+            return "ok", "nftables: ssh=%s cloak=%s" % (",".join(ports), ck)
+        if fw == "iptables-custom":
+            return "warn", "чужие правила iptables — смотри «Управление фаерволом»"
+        return "ok", fw
+
+    def _step_sysupd(self, ssh, s):
+        # full-upgrade качает .deb в кэш — проверяем место свежим запросом
+        try:
+            free = int(ssh.run("df -m / | awk 'NR==2{print $4}'",
+                               timeout=15).strip())
+            s["disk_free_mb"] = free
+        except Exception:
+            free = s.get("disk_free_mb", 0)
+        if free and free < 1024 and not self.ask(
+                APP_NAME,
+                "На «%s» свободно %d МБ на диске.\n"
+                "Обновлению может не хватить места (нужно ~1 ГБ).\n\n"
+                "Продолжить?" % (s["name"], free)):
+            return "skip", "мало места на диске (%d МБ)" % free
+        if not self.ask(APP_NAME,
+                        "apt update + full-upgrade + autoremove на «%s»?\n"
+                        "Может занять несколько минут." % s["name"]):
+            return "skip", "отменено пользователем"
+        out = ssh.run_script("sysupdate.sh", timeout=1800)
+        for ln in out.strip().splitlines()[-8:]:
+            self.say("  " + ln)
+        if "===REBOOT===" in out:
+            return "warn", "обновлено, нужен reboot"
+        return "ok", "обновлено"
+
+    def _step_pkgs(self, ssh, s):
+        out = ssh.run_script("pkgs.sh", "check", timeout=90)
+        for ln in out.splitlines():
+            self.say("  " + ln)
+        missing = [l.split("=")[0] for l in
+                   parse_section(out, "PKGS").splitlines()
+                   if l.strip().endswith("=-")]
+        latest = parse_section(out, "CK_LATEST").strip()
+        if missing:
+            if not self.ask(APP_NAME,
+                            "Не хватает пакетов: %s\nПоставить (apt install)?"
+                            % ", ".join(missing)):
+                return "warn", "не хватает: %s" % ",".join(missing)
+            ssh.run_script("pkgs.sh", "install", timeout=600)
+            out = ssh.run_script("pkgs.sh", "check", timeout=90)
+            missing = [l.split("=")[0] for l in
+                       parse_section(out, "PKGS").splitlines()
+                       if l.strip().endswith("=-")]
+        if missing:
+            return "fail", "не встали: %s" % ",".join(missing)
+        return "ok", "все пакеты есть; cloak latest: %s" % (latest or "?")
+
+    def _step_ovpn(self, ssh, s):
+        proto = self.v_proto.get()
+        ssh.run_script("deploy-openvpn.sh", proto, timeout=900)
+        s["proto"] = proto
+        return "ok", "proto=%s, mgmt :7505" % proto
+
+    def _step_nat(self, ssh, s):
+        fw = s.get("fw_backend")
+        if not fw:
+            out = ssh.run_script("fw-detect.sh", timeout=60)
+            m = re.search(r"FW=(\S+)", parse_section(out, "FW_BACKEND"))
+            fw = m.group(1) if m else "none"
+            s["fw_backend"] = fw
+        ck = str(s.get("ck_port") or self.v_ckport.get().strip() or "443")
+        if fw == "ufw":
+            ssh.run_script("deploy-net-ufw.sh", timeout=300)
+        elif fw in ("nftables-dg", "nftables"):
+            ssh.run_script("nat-enable.sh", timeout=120)
+        elif fw == "firewalld":
+            ssh.run("%sbash -c 'firewall-cmd --permanent --add-masquerade "
+                    "--zone=public && firewall-cmd --reload && "
+                    "echo net.ipv4.ip_forward=1 "
+                    "> /etc/sysctl.d/99-dgcloak-vpn.conf && "
+                    "sysctl -w net.ipv4.ip_forward=1'" % ssh.sudo, timeout=60)
+        elif fw in ("iptables-persistent", "iptables-custom"):
+            ports = sorted({str(s.get("ssh_port", 22))}
+                           | set(s.get("sshd_ports", [])), key=int)
+            ssh.run_script("deploy-net-iptables.sh",
+                           "%s %s" % (",".join(ports), ck),
+                           timeout=300)
+            ssh.run("touch /tmp/dgcloak-fw-ok", timeout=30)
+            self.say("  firewall подтверждён (rollback отменён)")
+        elif fw == "none":
+            return "fail", "фаервола нет — сначала выполни шаг «Фаервол»"
+        else:
+            return "fail", "неизвестный фаервол: %s" % fw
+        # порт Cloak должен быть открыт снаружи на любом бэкенде
+        try:
+            ssh.run_script("fw-manage.sh", "allow tcp %s" % ck, timeout=60)
+            s["ck_port"] = ck
+        except Exception as e:
+            return "warn", ("NAT ok (%s), но порт Cloak %s/tcp не открылся: %s"
+                            % (fw, ck, str(e)[:80]))
+        return "ok", "NAT через %s, Cloak tcp/%s открыт" % (fw, ck)
+
+    def _step_cloak(self, ssh, s):
         mask = self.v_mask.get().strip() or "www.bing.com"
         proto = self.v_proto.get()
-        do_purge = self.v_purge.get()
-        do_mss = self.v_mss.get()
-        make_user = self.v_first_user.get()
-        first_name = self.v_first_name.get().strip() or "user1"
+        ck = str(s.get("ck_port") or self.v_ckport.get().strip() or "443")
+        # sudo: без него ss -p прячет имена чужих процессов → ложный "занят"
+        busy = ssh.run("%sss -tlnp | grep ':%s ' || echo free"
+                       % (ssh.sudo, ck), timeout=20)
+        if "free" not in busy and "ck-server" not in busy:
+            if s.get("has_docker") or "docker" in busy.lower():
+                if not self.ask(APP_NAME,
+                                "Порт 443 занят (Amnezia/docker).\n"
+                                "Снести Amnezia? Чужие контейнеры не трогаем."):
+                    return "fail", "443 занят, чистка отменена"
+                ssh.run_script("purge-amnezia.sh", timeout=600)
+            else:
+                return "fail", "443 занят чужим сервисом: %s" % busy.strip()[:100]
+        out = ssh.run_script("deploy-cloak.sh",
+                             "%s %s %s %s" % (mask, proto, CK_VERSION, ck),
+                             timeout=300)
+        pub_k = parse_section(out, "PUB")
+        admin_uid = parse_section(out, "ADMIN_UID")
+        if pub_k and admin_uid:
+            s["pubkey"] = pub_k
+            s["admin_uid"] = admin_uid
+            s["mask_domain"] = mask
+            s["proto"] = proto
+            s["ck_ver"] = CK_VERSION
+            s["ck_port"] = ck
+            s["deployed"] = True
+            save_data(self.data)
+            return "ok", "ключи получены, маскировка %s" % mask
+        return "fail", "нет PUB/ADMIN_UID в выводе deploy-cloak"
 
-        done_stage = s.get("deploy_stage", -1)
-        resume = ""
-        if done_stage >= 0:
-            resume = ("\n\nПрошлый деплой дошёл до этапа %s — "
-                      "продолжу с него (этапы 0-%s пропущу)."
-                      % (done_stage + 1, done_stage))
-        if not messagebox.askyesno(
-                APP_NAME,
-                "Развернуть OpenVPN+Cloak на «%s» (%s)?\n\n"
-                "Маскировка: %s\nПротокол: %s\nЧистка Amnezia/Docker: %s\n"
-                "MSS-clamp: %s\n\nSSH-порт %s не трогаем.%s" %
-                (s["name"], s["host"], mask, proto,
-                 "да" if do_purge else "нет",
-                 "да" if do_mss else "нет", s.get("ssh_port", 22), resume)):
+    # ---- управление портами фаервола ----
+    def _fw_ports(self):
+        s = self._sel_srv()
+        if not s:
+            return
+        dlg = getattr(self, "_ports_dlg", None)
+        if dlg is not None and dlg.winfo_exists():
+            dlg.lift()
+            dlg.focus_force()
             return
 
         def work():
-            log = self.say
-            log("=== Деплой на %s (%s) ===" % (s["name"], s["host"]))
-            ssh = SSH(s, log)
-            stage = s.get("deploy_stage", -1)  # индекс последнего УСПЕШНОГО
-
-            def mark(n):
-                s["deploy_stage"] = n
-                save_data(self.data)
-
-            # 0. гейт: SSH жив + sudo без пароля
-            ssh.preflight()
-
-            # 1. аудит
-            if stage < 1:
-                log("[1/6] Аудит…")
-            out = ssh.run_script("detect.sh", timeout=60)
-            has_docker = "docker" in out.lower() and "no docker" not in out.lower()
-            ufw_active = bool(re.search(r"Status: active", out))
-            log("  docker=%s ufw_active=%s" % (has_docker, ufw_active))
-            pkg = parse_section(out, "PKG").strip()
-            osid = re.search(r"ID=(\S+)", parse_section(out, "OS"))
-            arch = parse_section(out, "ARCH").strip()
-            log("  os=%s pkg=%s arch=%s" % (osid.group(1) if osid else "?",
-                                            pkg, arch))
-            if pkg != "apt":
-                raise SSHErr("Деплой умеет только Debian/Ubuntu (apt). "
-                             "На сервере пакетный менеджер: %s" % pkg)
-            sshd_ports = [l.strip() for l in
-                          parse_section(out, "SSHD_PORTS").splitlines()
-                          if l.strip().isdigit()]
-            m = re.search(r"EXT_IF=(\S+)", out)
-            if m:
-                s["ext_if"] = m.group(1)
-            pub = parse_section(out, "PUBIP")
-            if pub and pub != "?":
-                s["public_ip"] = pub
-            if stage < 1:
-                mark(1)
-
-            # 2. чистка
-            if stage < 2:
-                if has_docker:
-                    if do_purge:
-                        log("[2/6] Чистка Amnezia/Docker…")
-                        ssh.run_script("purge-amnezia.sh", timeout=600)
-                    else:
-                        log("!! Docker есть, чистка отключена — 443 может быть занят")
-                mark(2)
-
-            # 3. openvpn
-            if stage < 3:
-                log("[3/6] OpenVPN + PKI…")
-                ssh.run_script("deploy-openvpn.sh", proto, timeout=900)
-                mark(3)
-
-            # 4. сеть
-            if stage < 4:
-                log("[4/6] Сеть и NAT…")
-                if ufw_active:
-                    ssh.run_script("deploy-net-ufw.sh", timeout=300)
-                else:
-                    # все реальные порты sshd + порт подключения (DNAT!)
-                    ports = sorted({str(s["ssh_port"])} | set(sshd_ports),
-                                   key=int)
-                    ssh.run_script("deploy-net-iptables.sh",
-                                   ",".join(ports), timeout=300)
-                    # canary: на сервере стоит 120с откат firewall;
-                    # если НОВОЕ ssh-подключение живо — откат отменяем
-                    ssh.run("touch /tmp/dgcloak-fw-ok", timeout=30)
-                    log("  firewall подтверждён (rollback отменён)")
-                mark(4)
-
-            # 5. cloak
-            if stage < 5:
-                log("[5/6] ck-server (маскировка: %s, proto %s)…" % (mask, proto))
-                out = ssh.run_script("deploy-cloak.sh",
-                                     "%s %s %s" % (mask, proto, CK_VERSION),
-                                     timeout=300)
-                pub_k = parse_section(out, "PUB")
-                admin_uid = parse_section(out, "ADMIN_UID")
-                if pub_k and admin_uid:
-                    s["pubkey"] = pub_k
-                    s["admin_uid"] = admin_uid
-                    s["mask_domain"] = mask
-                    s["proto"] = proto
-                    s["ck_ver"] = CK_VERSION
-                    log("  ключи сохранены (AdminUID получен)")
-                else:
-                    log("!! не удалось прочитать PUB/ADMIN_UID из вывода")
-                mark(5)
-
-            # 6. mss + юзер
-            if do_mss and stage < 6:
-                log("[6/6] MSS-clamp 800…")
-                try:
-                    ssh.run_script("mss-clamp.sh", timeout=120)
-                except Exception as e:
-                    log("  mss-clamp пропущен: %s" % e)
-
-            if make_user and s.get("admin_uid"):
-                log("Создаю первого юзера «%s»…" % first_name)
-                try:
-                    self._create_user_impl(ssh, s, first_name, FAR_FUTURE, 16)
-                except Exception as e:
-                    log("  юзер не создан: %s (сделаешь вручную)" % e)
-
-            s.pop("deploy_stage", None)
-            s["deployed"] = bool(s.get("admin_uid"))
-            save_data(self.data)
-            log("=== Деплой завершён ===")
-            self.ui(self._refresh_servers)
-
+            ssh = SSH(s, self.say)
+            out = ssh.run_script("fw-manage.sh", "ports", timeout=60)
+            self.ui(lambda: PortsDialog(self, s, out))
         self._worker(work)
 
+    # ---- импорт ключей с развёрнутого хоста ----
     def _do_import(self):
         """Подтянуть pubkey/admin_uid с уже развёрнутого сервера."""
         s = self._sel_srv()
@@ -1028,8 +1405,8 @@ class App(tk.Tk):
                 "echo PUB:$(%scat /etc/ck-server/publickey.txt 2>/dev/null); "
                 "echo AUID:$(%scat /etc/ck-server/adminuid.txt 2>/dev/null); "
                 % (ssh.sudo, ssh.sudo) +
-                "grep '^proto ' /etc/openvpn/server/server.conf 2>/dev/null; "
-                "grep RedirAddr /etc/ck-server/ckserver.json 2>/dev/null")
+                "grep '^proto ' /etc/openvpn/server/server.conf 2>/dev/null || true; "
+                "grep RedirAddr /etc/ck-server/ckserver.json 2>/dev/null || true")
             pub = re.search(r"PUB:(\S+)", out)
             auid = re.search(r"AUID:(\S+)", out)
             if pub and auid and pub.group(1) != "" and auid.group(1) != "":
@@ -1224,8 +1601,8 @@ class App(tk.Tk):
             out = ssh.run(
                 "%sbash -c 'CADIR=$(ls -d /root/openvpn-ca "
                 "/home/*/openvpn-ca 2>/dev/null | head -1) && cd \"$CADIR\" && "
-                "printf \"yes\\n%.0s\" $(seq 50) | ./easyrsa revoke %s && "
-                "./easyrsa gen-crl && "
+                "./easyrsa --batch revoke %s && "
+                "./easyrsa --batch gen-crl && "
                 "install -m644 pki/crl.pem /etc/openvpn/server/crl.pem'"
                 % (ssh.sudo, cn), timeout=60)
             self.say("  сертификат отозван")
@@ -1308,5 +1685,21 @@ class App(tk.Tk):
         self._worker(work)
 
 
+def single_instance_ok():
+    """Второй экземпляр админки не запускаем (mutex, Windows)."""
+    try:
+        import ctypes
+        ctypes.windll.kernel32.CreateMutexW(
+            None, False, "Local\\DGCloakAdminSingleton")
+        if ctypes.windll.kernel32.GetLastError() == 183:  # ALREADY_EXISTS
+            ctypes.windll.user32.MessageBoxW(
+                0, "DGCloak Admin уже запущен.", APP_NAME, 0x40)
+            return False
+    except Exception:
+        pass  # не Windows или нет ctypes — не блокируем
+    return True
+
+
 if __name__ == "__main__":
-    App().mainloop()
+    if single_instance_ok():
+        App().mainloop()
