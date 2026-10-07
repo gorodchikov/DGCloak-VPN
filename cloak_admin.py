@@ -1270,7 +1270,12 @@ class App(tk.Tk):
                     except Exception:
                         pass  # соединение рвётся при перезагрузке — это норма
                     s.pop("reboot_required", None)
+                    st = s.setdefault("steps", {})
+                    if st.get("sysupd", {}).get("st") == "warn":
+                        st["sysupd"] = {"st": "ok",
+                                        "note": "обновлено, reboot отправлен"}
                     save_data(self.data)
+                    self.ui(self._fill_steps)
                     self.say("  сервер уходит на перезагрузку")
         self._worker(work)
 
