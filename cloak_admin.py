@@ -1743,6 +1743,14 @@ class App(tk.Tk):
         s = self._sel_srv()
         if not s:
             return
+        if not s.get("deployed"):
+            messagebox.showinfo(
+                APP_NAME,
+                "Сервер «%s» по реестру не развёрнут — ключей там нет.\n"
+                "Сначала «Развернуть всё».\n\n"
+                "Если сервер развёрнут вне админки — нажми "
+                "«Проверить статусы», флаг обновится." % s["name"])
+            return
 
         def work():
             ssh = SSH(s, self.say)
