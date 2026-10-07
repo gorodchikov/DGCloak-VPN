@@ -366,12 +366,19 @@ class SSH:
         По паролю работаем через sudo -S + пароль в stdin (pw не в argv —
         не светится в ps на сервере)."""
         out = self.run("echo PF:$(id -u):$("
-                       "sudo -n true 2>/dev/null && echo np || echo nop)",
-                       timeout=30)
+                       "command -v sudo >/dev/null 2>&1 && "
+                       "{ sudo -n true 2>/dev/null && echo np || echo nop; } || "
+                       "echo missing)", timeout=30)
         if "PF:0:" in out:
             self.sudo = ""
             self.srv["sudo_mode"] = "root"
             return
+        if ":missing" in out:
+            raise SSHErr(
+                "на сервере не установлен sudo.\n"
+                "Под root в консоли VM: apt install -y sudo && "
+                "usermod -aG sudo <юзер>\n"
+                "или разреши вход root по SSH и логинься как root.")
         if ":np" in out:
             self.sudo = "sudo -n "
             self.srv["sudo_mode"] = "np"
