@@ -204,6 +204,9 @@ class SSH:
         if srv.get("sudo_mode") == "pw" and srv.get("password"):
             self.sudo = "sudo -S -p '' "
             self.sudo_pw = srv["password"]
+        # ключ отвергнут сервером (VM пересоздана) → с этого момента
+        # вся работа по паролю через plink, пока объект жив
+        self._auth_pw = False
         if srv.get("key"):
             self.backend = "openssh"
             # Системный OpenSSH приоритетнее Git-овского из PATH: MSYS2-ssh
@@ -224,8 +227,14 @@ class SSH:
     def _target(self):
         return "%s@%s" % (self.srv.get("user", "ubuntu"), self.srv["host"])
 
+    def _find_putty(self):
+        if not self.plink:
+            self.plink, self.pscp = find_putty()
+        return self.plink, self.pscp
+
     def _argv(self, cmd):
-        if self.backend == "openssh":
+        if (self.backend == "openssh" and not self._auth_pw
+                and self.srv.get("key")):
             # -n (stdin=/dev/null) ломает sudo -S: пароль не доедет.
             # Отключаем, когда есть пароль юзера (потенциально нужен sudo -S).
             no_stdin = [] if self.srv.get("password") else ["-n"]
@@ -234,8 +243,9 @@ class SSH:
                     "-o", "ConnectTimeout=15",
                     "-i", self.srv["key"], "-p", str(self.srv.get("ssh_port", 22)),
                     self._target(), cmd]
-        a = [self.plink, "-batch"]
-        if self.srv.get("ppk"):
+        plink, _ = self._find_putty()
+        a = [plink, "-batch"]
+        if self.srv.get("ppk") and not self._auth_pw:
             a += ["-i", self.srv["ppk"]]
         elif self.srv.get("password"):
             a += ["-pw", self.srv["password"]]
@@ -243,12 +253,14 @@ class SSH:
         return a
 
     def _argv_upload(self, local_path, remote_path):
-        if self.backend == "openssh":
+        if (self.backend == "openssh" and not self._auth_pw
+                and self.srv.get("key")):
             return [self.scp_exe, "-B", "-o", "StrictHostKeyChecking=accept-new",
                     "-i", self.srv["key"], "-P", str(self.srv.get("ssh_port", 22)),
                     local_path, "%s:%s" % (self._target(), remote_path)]
-        a = [self.pscp, "-batch"]
-        if self.srv.get("ppk"):
+        _, pscp = self._find_putty()
+        a = [pscp, "-batch"]
+        if self.srv.get("ppk") and not self._auth_pw:
             a += ["-i", self.srv["ppk"]]
         elif self.srv.get("password"):
             a += ["-pw", self.srv["password"]]
@@ -256,9 +268,8 @@ class SSH:
               local_path, "%s:%s" % (self._target(), remote_path)]
         return a
 
-    def _spawn(self, args, input_text=None, timeout=180):
-        """Запуск. Для plink — авто-принятие host key (TOFU): сначала -batch,
-        при 'host key is not cached' — повтор с ответом 'y'."""
+    def _try(self, args, input_text, timeout):
+        """Один запуск + TOFU retry по fingerprint для plink-семейства."""
         # stdin=PIPE обязателен: в --noconsole exe нет консольного stdin,
         # наследование битого хэндла роняет ssh/scp молча с пустым выводом
         p = subprocess.run(args, input=input_text or "", capture_output=True,
@@ -266,7 +277,8 @@ class SSH:
                            timeout=timeout,
                            creationflags=CREATE_NO_WINDOW)
         out = (p.stdout or "") + (p.stderr or "")
-        if (self.backend == "putty" and p.returncode != 0
+        base = os.path.basename(args[0]).lower()
+        if (base.startswith(("plink", "pscp")) and p.returncode != 0
                 and "host key" in out and "-hostkey" not in args):
             # plink в нон-консоли не читает 'y' со stdin — достаём fingerprint
             # из текста промпта и повторяем с -hostkey (TOFU, без интерактива)
@@ -281,6 +293,27 @@ class SSH:
                                    creationflags=CREATE_NO_WINDOW)
                 out = (p.stdout or "") + (p.stderr or "")
         return p.returncode, out
+
+    def _spawn(self, args, input_text=None, timeout=180):
+        """Запуск с фолбэком: ключ openssh отвергнут сервером
+        (VM пересоздана/снапшот откачен) → повтор по паролю через plink."""
+        rc, out = self._try(args, input_text, timeout)
+        if (rc != 0 and self.backend == "openssh"
+                and self.srv.get("password")
+                and "Permission denied" in out):
+            plink, pscp = self._find_putty()
+            if plink and pscp:
+                exe = pscp if os.path.basename(args[0]).lower().startswith("scp") \
+                      else plink
+                alt = [exe, "-batch", "-pw", self.srv["password"],
+                       "-P", str(self.srv.get("ssh_port", 22))] + args[-2:]
+                rc2, out2 = self._try(alt, input_text, timeout)
+                if rc2 == 0:
+                    # ключ мёртв — весь объект дальше работает по паролю
+                    self._auth_pw = True
+                    self.log("  ключ отвергнут сервером — работаю по паролю")
+                    return rc2, out2
+        return rc, out
 
     def run(self, cmd, timeout=120):
         args = self._argv(cmd)
@@ -349,7 +382,8 @@ class SSH:
                 raise SSHErr("Таймаут %s с: %s" % (timeout, cmd[:80]))
         p.wait(timeout=10)
         out_tail = ""
-        if self.backend == "putty" and p.returncode == 255:
+        is_plink = os.path.basename(args[0]).lower().startswith("plink")
+        if is_plink and p.returncode == 255:
             # ищем fingerprint в уже увиденном выводе → retry с -hostkey
             mfp = re.search(r"fingerprint is:\s*\S+\s+\d+\s+(SHA256:\S+)",
                             "".join(seen))
@@ -380,7 +414,7 @@ class SSH:
             for line in (out or "").splitlines():
                 on_line(line)
             out_tail = out or ""
-        if self.backend == "putty" and p.returncode == 255 and not out_tail:
+        if is_plink and p.returncode == 255 and not out_tail:
             raise SSHErr("plink exit 255")
         return p.returncode
 
@@ -1217,7 +1251,15 @@ class App(tk.Tk):
 
     def _step_key(self, ssh, s):
         if s.get("key") or s.get("ppk"):
-            return "ok", "уже ключевая авторизация"
+            # проверяем, что ключ реально работает — VM могли откатить
+            # на снапшот без него (ключ «мёртв», пароль спасает как фолбэк)
+            s2 = dict(s); s2["password"] = None
+            try:
+                SSH(s2, self.say).run("true", timeout=15)
+                return "ok", "уже ключевая авторизация"
+            except Exception:
+                self.say("  сохранённый ключ отвергнут — ставлю новый")
+                s.pop("key", None); s.pop("ppk", None)
         if not s.get("password"):
             return "fail", "нет ни пароля, ни ключа"
         if not self.ask(APP_NAME,
