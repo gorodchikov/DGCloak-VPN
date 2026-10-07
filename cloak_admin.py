@@ -1167,7 +1167,8 @@ class App(tk.Tk):
         self._fill_steps()
 
     # ---- анимация «выполняется» + heartbeat ----
-    SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    # квадрат из точек, вращение по часовой: низ → лево → верх → право
+    SPIN = ("⣀⣀⣀", "⡇⡇⡇", "⠉⠉⠉", "⢸⢸⢸")
 
     def _spin_start(self, key):
         self._spin_key = key
