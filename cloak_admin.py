@@ -874,6 +874,9 @@ class App(tk.Tk):
         self._spin_i = 0
         self._spin_t0 = 0.0
         self._spin_hb = 0.0
+        self._logs = {}           # name -> [строки лога]
+        self._log_name = None     # чей лог показан
+        self._log_ctx = None      # на каком сервере идёт операция
         self._build()
         self._refresh_servers()
         self.after(100, self._drain)
@@ -896,10 +899,29 @@ class App(tk.Tk):
 
     def say(self, msg):
         line = "[%s] %s" % (time.strftime("%H:%M:%S"), msg)
-        def w():
-            self.logw.insert("end", line + "\n")
-            self.logw.see("end")
-        self.ui(w)
+        # активная операция пишет в журнал СВОЕГО сервера, даже если
+        # юзер переключил выбор; без операции — в показанный журнал
+        name = self._log_ctx or self._log_name
+        if name is not None:
+            self._logs.setdefault(name, []).append(line)
+        if name == self._log_name or name is None:
+            def w():
+                self.logw.insert("end", line + "\n")
+                self.logw.see("end")
+            self.ui(w)
+
+    def _log_load(self, name):
+        """Показать журнал сервера (вызывается при выборе в списке)."""
+        self.logw.delete("1.0", "end")
+        if self._log_ctx and self._log_ctx != name:
+            self.logw.insert("end", "…идёт операция на «%s» — её "
+                                    "лог пишется в её журнал…\n\n"
+                                    % self._log_ctx)
+        lines = self._logs.get(name)
+        if lines:
+            self.logw.insert("end", "\n".join(lines) + "\n")
+        self.logw.see("end")
+        self.logframe.config(text="Лог — %s" % name)
 
     def _set_busy(self, b):
         self.busy = b
@@ -915,11 +937,13 @@ class App(tk.Tk):
         self.ui(lambda: self._set_busy(True))
 
         def run():
+            self._log_ctx = self._log_name  # операция пишет в её журнал
             try:
                 fn()
             except Exception as e:
                 self.say("ОШИБКА: %s" % e)
             finally:
+                self._log_ctx = None
                 self.busy = False
                 self.ui(lambda: self._set_busy(False))
         threading.Thread(target=run, daemon=True).start()
@@ -952,7 +976,7 @@ class App(tk.Tk):
         self._tab_users(nb)
 
         # --- лог ---
-        bot = ttk.LabelFrame(self, text="Лог")
+        bot = self.logframe = ttk.LabelFrame(self, text="Лог")
         bot.pack(fill="both", padx=6, pady=(0, 6))
         self.logw = tk.Text(bot, height=12, wrap="none",
                             font=("Consolas", 9))
@@ -1088,6 +1112,8 @@ class App(tk.Tk):
     def _on_srv_select(self):
         s = self._sel_srv_silent()
         if s:
+            self._log_name = s["name"]
+            self._log_load(s["name"])
             self.v_mask.set(s.get("mask_domain", "www.bing.com"))
             self.v_proto.set(s.get("proto", "udp"))
             self._fill_users_local(s)
