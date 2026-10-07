@@ -871,6 +871,7 @@ class App(tk.Tk):
         self.busy = False
         self._ports_dlg = None
         self._spin_key = None     # ключ шага, который сейчас крутится
+        self._spin_srv = None     # сервер, на котором идёт операция
         self._spin_i = 0
         self._spin_t0 = 0.0
         self._spin_hb = 0.0
@@ -1226,8 +1227,9 @@ class App(tk.Tk):
     # canvas-дуга (270°) поверх ячейки «Статус»: вращается по часовой,
     # 8 кадров × 45° × 125 мс = 1 с на оборот
 
-    def _spin_start(self, key):
+    def _spin_start(self, key, srv_name=None):
         self._spin_key = key
+        self._spin_srv = srv_name   # спиннер виден только в таблице СВОЕГО сервера
         self._spin_i = 0
         self._spin_t0 = self._spin_hb = time.time()
         self._spin_tick()
@@ -1241,10 +1243,16 @@ class App(tk.Tk):
         k = self._spin_key
         if k is None:
             return
-        try:
-            bb = self.steps_tv.bbox(k, "st")
-        except tk.TclError:
-            bb = None  # строки нет (юзер переключил сервер)
+        # iid шагов одинаковы у всех серверов — рисуем дугу только
+        # если показана таблица того сервера, где идёт операция
+        cur = self._sel_srv_silent()
+        visible = cur is not None and cur.get("name") == self._spin_srv
+        bb = None
+        if visible:
+            try:
+                bb = self.steps_tv.bbox(k, "st")
+            except tk.TclError:
+                bb = None  # строки нет
         if bb:
             x, y, w, h = bb
             self.spin_cv.place(x=x, y=y, width=w, height=h)
@@ -1269,7 +1277,7 @@ class App(tk.Tk):
         title = dict(self.STEPS)[key]
         self.say("=== Шаг: %s ===" % title)
         st = s.setdefault("steps", {})
-        self.ui(self._spin_start, key)
+        self.ui(self._spin_start, key, s["name"])
         try:
             ssh = SSH(s, self.say)
             stt, note = getattr(self, "_step_" + key)(ssh, s)
