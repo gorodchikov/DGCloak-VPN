@@ -623,7 +623,7 @@ def make_ckclient(srv, uid):
         "BrowserSig": "firefox",
         "StreamTimeout": 300,
         "RemoteHost": srv["host"],
-        "RemotePort": "443",
+        "RemotePort": str(srv.get("ck_port") or "443"),
         "LocalHost": "127.0.0.1",
         "LocalPort": "1984",
         "UDP": srv.get("proto", "udp") == "udp",

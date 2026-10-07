@@ -24,10 +24,19 @@ python -m PyInstaller --noconsole --icon app.ico --version-file version_info.txt
 
 if not exist "%OUT%\DGCloakAdmin.exe" (echo Сборка не выдала exe & exit /b 1)
 
+rem ck-client.exe рядом с exe — нужен admin-API Cloak (создание/удаление юзеров)
+set "CKSRC=%APPDATA%\DGCloakVPN\ck-client.exe"
+if exist "%CKSRC%" (
+    copy /y "%CKSRC%" "%OUT%\ck-client.exe" >nul
+) else (
+    echo ВНИМАНИЕ: ck-client.exe не найден в %APPDATA%\DGCloakVPN —
+    echo управление юзерами потребует путь в data.json: ck_client
+)
+
 rem Перенос готовой сборки поверх dist\ (при локе целевой папки staging остаётся целым)
 if exist "%DST%" rmdir /s /q "%DST%" 2>nul
 if exist "%DST%" (
-    echo dist\ занят (открыт в Проводнике или запущен exe?) —
+    echo dist\ занят ^(открыт в Проводнике или запущен exe?^) —
     echo собранная копия лежит в %OUT% — закрой окна и запусти батник ещё раз.
     exit /b 1
 )
