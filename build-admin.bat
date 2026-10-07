@@ -2,9 +2,38 @@
 rem Сборка DGCloakAdmin.exe (запускать на Windows, нужен Python с pip)
 rem Onedir: exe вместе со scripts\ (нужны для деплоя на серверы).
 rem Права администратора НЕ нужны (SSH/API только).
-python -m pip install --upgrade pyinstaller
-python cloak_icon.py app.ico
-python -m PyInstaller --noconsole --icon app.ico --version-file version_info.txt --add-data "scripts;scripts" --name DGCloakAdmin cloak_admin.py
+rem
+rem ВАЖНО: закрой DGCloakAdmin.exe и окна Проводника на dist\ перед сборкой —
+rem иначе PyInstaller снесёт папку наполовину и упадёт на залоченных файлах.
+rem Сборка идёт в build-out\ и копируется поверх dist\ только при успехе.
+setlocal
+set "OUT=build-out\DGCloakAdmin"
+set "DST=dist\DGCloakAdmin"
+
+tasklist /FI "IMAGENAME eq DGCloakAdmin.exe" | find /I "DGCloakAdmin.exe" >nul && (
+    echo ОШИБКА: DGCloakAdmin.exe запущен — закрой приложение и повтори.
+    exit /b 1
+)
+
+python -m pip install --upgrade pyinstaller || exit /b 1
+python cloak_icon.py app.ico || exit /b 1
+
+python -m PyInstaller --noconsole --icon app.ico --version-file version_info.txt ^
+    --add-data "scripts;scripts" --distpath build-out --workpath build ^
+    --name DGCloakAdmin cloak_admin.py || exit /b 1
+
+if not exist "%OUT%\DGCloakAdmin.exe" (echo Сборка не выдала exe & exit /b 1)
+
+rem Перенос готовой сборки поверх dist\ (при локе целевой папки staging остаётся целым)
+if exist "%DST%" rmdir /s /q "%DST%" 2>nul
+if exist "%DST%" (
+    echo dist\ занят (открыт в Проводнике или запущен exe?) —
+    echo собранная копия лежит в %OUT% — закрой окна и запусти батник ещё раз.
+    exit /b 1
+)
+move "%OUT%" "%DST%" >nul || (echo не удалось перенести в dist\ — сборка в %OUT% & exit /b 1)
+
 echo.
-echo Готово: dist\DGCloakAdmin\DGCloakAdmin.exe
+echo Готово: %DST%\DGCloakAdmin.exe
+endlocal
 pause
