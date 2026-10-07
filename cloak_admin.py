@@ -376,9 +376,11 @@ class SSH:
         if ":missing" in out:
             raise SSHErr(
                 "на сервере не установлен sudo.\n"
-                "В консоли VM под labadmin: su - (пароль root), затем\n"
-                "  apt install -y sudo && /usr/sbin/usermod -aG sudo <юзер>\n"
-                "или разреши вход root по SSH и логинься как root.")
+                "В консоли VM под %s: su - (пароль root), затем\n"
+                "  apt install -y sudo && /usr/sbin/usermod -aG sudo %s\n"
+                "или разреши вход root по SSH и логинься как root."
+                % (self.srv.get("user", "<юзер>"),
+                   self.srv.get("user", "<юзер>")))
         if ":np" in out:
             self.sudo = "sudo -n "
             self.srv["sudo_mode"] = "np"
