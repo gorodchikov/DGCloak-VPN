@@ -1056,6 +1056,7 @@ class App(tk.Tk):
         self._mk_btn(bf, "Только выбранный шаг",
                      self._step_run_sel).pack(side="left", padx=2)
         self._mk_btn(bf, "Проверить статусы", self._steps_reset).pack(side="left", padx=2)
+        self._mk_btn(bf, "Сбросить сервер", self._srv_purge).pack(side="left", padx=2)
         self._mk_btn(bf, "Управление фаерволом", self._fw_ports).pack(side="left", padx=2)
         b_imp = self._mk_btn(bf, "Подтянуть ключи", self._do_import)
         b_imp.pack(side="left", padx=2)
@@ -1227,6 +1228,36 @@ class App(tk.Tk):
             save_data(self.data)
             self.ui(self._fill_steps)
             self.ui(self._refresh_servers)
+        self._worker(work)
+
+    def _srv_purge(self):
+        """Полный сброс сервера: purge-dgcloak.sh по SSH + чистка реестра."""
+        s = self._sel_srv()
+        if not s:
+            return
+        if not messagebox.askyesno(
+                APP_NAME,
+                "Полный сброс «%s»:\n\n"
+                "будут удалены Cloak, OpenVPN, PKI, юзеры и наши\n"
+                "правила фаервола. SSH-доступ и твой юзер\n"
+                "НЕ затрагиваются — сервер можно развернуть заново.\n\n"
+                "Продолжить?" % s["name"]):
+            return
+
+        def work():
+            ssh = SSH(s, self.say)
+            self.say("=== Полный сброс «%s» ===" % s["name"])
+            ck = str(s.get("ck_port") or "443")
+            rc = ssh.run_script_stream(
+                "purge-dgcloak.sh", ck,
+                lambda l: self.say("  " + l), timeout=600)
+            for k in ("deployed", "pubkey", "admin_uid", "users",
+                      "steps", "reboot_required", "fw_backend"):
+                s.pop(k, None)
+            save_data(self.data)
+            self.ui(self._fill_steps)
+            self.ui(self._refresh_servers)
+            self.say("=== Сброс завершён (rc=%s) ===" % rc)
         self._worker(work)
 
     # ---- анимация «выполняется» + heartbeat ----
