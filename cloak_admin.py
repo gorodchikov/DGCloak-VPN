@@ -1429,6 +1429,13 @@ class App(tk.Tk):
                         "10–30 минут — прогресс виден в логе.\n"
                         "Если обновление потребует перезагрузку,\n"
                         "приложение предложит её в конце." % s["name"]):
+            # отказались от апгрейда — но pending reboot мог остаться
+            # с прошлого прогона; тогда статус должен остаться «нужен reboot»
+            if "REBOOT" in ssh.run("test -f /var/run/reboot-required "
+                                   "&& echo REBOOT || true", timeout=15):
+                s["reboot_required"] = True
+                save_data(self.data)
+                return "warn", "обновлено ранее, нужен reboot"
             return "skip", "отменено пользователем"
         # стримим вывод apt в лог — на свежем ISO апдейтов сотни,
         # без живого вывода шаг выглядит зависшим
