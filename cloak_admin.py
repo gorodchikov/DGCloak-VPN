@@ -1230,6 +1230,7 @@ class App(tk.Tk):
         save_data(self.data)
         self.ui(self._spin_stop)
         self.ui(self._fill_steps)
+        self.ui(self._refresh_servers)  # deployed-галочка в списке
         self.say("  → %s: %s" % (stt, note))
         return stt in ("ok", "warn", "skip")
 
