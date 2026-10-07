@@ -914,11 +914,24 @@ class App(tk.Tk):
         self._logs = {}           # name -> [строки лога]
         self._log_name = None     # чей лог показан
         self._log_ctx = None      # на каком сервере идёт операция
+        self._fix_ctrl_bindings()
         self._build()
         self._refresh_servers()
         self.after(100, self._drain)
 
     # ---- UI plumbing (как в клиенте) ----
+    def _fix_ctrl_bindings(self):
+        """Tk шлёт кириллические keysym при русской раскладке — Ctrl+V
+        становится Ctrl+М и вставка молча не работает. Мапим обратно."""
+        evs = {"em": "<<Paste>>", "es": "<<Copy>>",
+               "che": "<<Cut>>", "ef": "<<SelectAll>>"}
+        for cls in ("Entry", "TEntry", "Text", "TCombobox",
+                    "Spinbox", "TSpinbox"):
+            for k, v in evs.items():
+                for ks in ("Cyrillic_" + k, "Cyrillic_" + k.upper()):
+                    self.bind_class(cls, "<Control-%s>" % ks,
+                                    lambda e, v=v: e.widget.event_generate(v))
+
     def ui(self, fn, *a):
         self.uiq.put((fn, a))
 

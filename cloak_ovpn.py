@@ -713,6 +713,7 @@ class App(tk.Tk):
         except OSError:
             self.logfile = None
         threading.excepthook = lambda a: self._report_exc(a.exc_type, a.exc_value, a.exc_traceback)
+        self._fix_ctrl_bindings()
         self._build()
         self.update_idletasks()
         self.minsize(self.winfo_reqwidth(), 10)
@@ -902,6 +903,18 @@ class App(tk.Tk):
     # Любое обновление интерфейса из потоков идёт через очередь
     def ui(self, fn):
         self.uiq.put(fn)
+
+    def _fix_ctrl_bindings(self):
+        """Tk шлёт кириллические keysym при русской раскладке — Ctrl+V
+        становится Ctrl+М и вставка молча не работает. Мапим обратно."""
+        evs = {"em": "<<Paste>>", "es": "<<Copy>>",
+               "che": "<<Cut>>", "ef": "<<SelectAll>>"}
+        for cls in ("Entry", "TEntry", "Text", "TCombobox",
+                    "Spinbox", "TSpinbox"):
+            for k, v in evs.items():
+                for ks in ("Cyrillic_" + k, "Cyrillic_" + k.upper()):
+                    self.bind_class(cls, "<Control-%s>" % ks,
+                                    lambda e, v=v: e.widget.event_generate(v))
 
     def _log_file(self, line):
         if self.logfile:
