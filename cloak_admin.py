@@ -1258,6 +1258,20 @@ class App(tk.Tk):
                              "завершённые шаги не повторятся." % key)
                     break
             self.say("=== Проход завершён ===")
+            if s.get("reboot_required"):
+                if self.ask(APP_NAME,
+                            "Обновление системы на «%s» требует перезагрузки.\n"
+                            "Перезагрузить сервер сейчас?\n\n"
+                            "(поднимется через ~1 минуту; завершённые шаги "
+                            "деплоя повторять не нужно)" % s["name"]):
+                    self.say("  отправляю reboot…")
+                    try:
+                        SSH(s, self.say).run("reboot", timeout=15)
+                    except Exception:
+                        pass  # соединение рвётся при перезагрузке — это норма
+                    s.pop("reboot_required", None)
+                    save_data(self.data)
+                    self.say("  сервер уходит на перезагрузку")
         self._worker(work)
 
     # ---- шаги ----
@@ -1279,10 +1293,9 @@ class App(tk.Tk):
                 s.pop("key", None); s.pop("ppk", None)
         if not s.get("password"):
             return "fail", "нет ни пароля, ни ключа"
-        if not self.ask(APP_NAME,
-                        "Сгенерировать ключ ed25519 и поставить на «%s»?\n"
-                        "Пароль останется как запасной вход." % s["name"]):
-            return "skip", "отменено пользователем"
+        # ключ ставим без вопросов: операция безопасна,
+        # пароль остаётся запасным входом
+        self.say("  генерирую ключ ed25519…")
         kg = find_exe(["ssh-keygen.exe", "ssh-keygen"],
                       [r"C:\Windows\System32\OpenSSH"])
         if not kg:
@@ -1372,14 +1385,12 @@ class App(tk.Tk):
             ports = sorted({str(s.get("ssh_port", 22))}
                            | set(s.get("sshd_ports", [])), key=int)
             ck = self.v_ckport.get().strip() or "443"
-            if not self.ask(
-                    APP_NAME,
-                    "На «%s» фаервола нет. Поставить nftables?\n\n"
-                    "INPUT DROP + разрешены: SSH (%s), Cloak tcp/%s, ICMP.\n"
-                    "Остальные входящие закроются. Анти-локаут: если SSH умрёт,\n"
-                    "правила сами откатятся через 120 секунд."
-                    % (s["name"], ",".join(ports), ck)):
-                return "skip", "фаервола нет, установка отменена"
+            # ставим nftables без подтверждения: это суть деплоя,
+            # anti-lockout canary откатит правила при потере SSH
+            self.say("  фаервола нет — ставлю nftables "
+                     "(INPUT DROP + ssh %s + cloak tcp/%s; "
+                     "откат через 120 с при потере SSH)"
+                     % (",".join(ports), ck))
             ssh.run_script("fw-install.sh", "%s %s" % (",".join(ports), ck),
                            timeout=300)
             # canary: на сервере 120с откат; новое ssh-подключение подтверждает
@@ -1407,8 +1418,12 @@ class App(tk.Tk):
                 "Продолжить?" % (s["name"], free)):
             return "skip", "мало места на диске (%d МБ)" % free
         if not self.ask(APP_NAME,
-                        "apt update + full-upgrade + autoremove на «%s»?\n"
-                        "Может занять несколько минут." % s["name"]):
+                        "Полное обновление системы на «%s» "
+                        "(apt update + full-upgrade + autoremove)?\n\n"
+                        "На свежеустановленной системе это может занять\n"
+                        "10–30 минут — прогресс виден в логе.\n"
+                        "Если обновление потребует перезагрузку,\n"
+                        "приложение предложит её в конце." % s["name"]):
             return "skip", "отменено пользователем"
         # стримим вывод apt в лог — на свежем ISO апдейтов сотни,
         # без живого вывода шаг выглядит зависшим
@@ -1421,7 +1436,10 @@ class App(tk.Tk):
             return "fail", "sysupdate rc=%s" % rc
         out = "\n".join(lines)
         if "===REBOOT===" in out:
+            s["reboot_required"] = True
+            save_data(self.data)
             return "warn", "обновлено, нужен reboot"
+        s.pop("reboot_required", None)
         return "ok", "обновлено"
 
     def _step_pkgs(self, ssh, s):
@@ -1433,10 +1451,7 @@ class App(tk.Tk):
                    if l.strip().endswith("=-")]
         latest = parse_section(out, "CK_LATEST").strip()
         if missing:
-            if not self.ask(APP_NAME,
-                            "Не хватает пакетов: %s\nПоставить (apt install)?"
-                            % ", ".join(missing)):
-                return "warn", "не хватает: %s" % ",".join(missing)
+            self.say("  ставлю недостающие пакеты: %s" % ", ".join(missing))
             rc = ssh.run_script_stream(
                 "pkgs.sh", "install",
                 lambda l: self.say("  " + l), timeout=600)
