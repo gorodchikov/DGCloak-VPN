@@ -195,8 +195,15 @@ class SSH:
         self.log = log
         self.plink = self.pscp = self.ssh_exe = self.scp_exe = None
         # root не имеет sudo на Debian-minimal; для него префикс не нужен.
-        # -n: без пароля → сразу ошибка, а не подвисший промпт
+        # -n: без пароля → сразу ошибка, а не подвисший промпт.
+        # Режим sudo с паролем (sudo -S) определяет preflight() → self.sudo_pw.
         self.sudo = "" if srv.get("user") == "root" else "sudo -n "
+        self.sudo_pw = None  # пароль sudo, если юзер с sudo по паролю
+        # режим sudo, найденный preflight, кэшируется в srv["sudo_mode"] —
+        # каждый шаг создаёт новый SSH-объект, без кэша pw-режим терялся бы
+        if srv.get("sudo_mode") == "pw" and srv.get("password"):
+            self.sudo = "sudo -S -p '' "
+            self.sudo_pw = srv["password"]
         if srv.get("key"):
             self.backend = "openssh"
             # Системный OpenSSH приоритетнее Git-овского из PATH: MSYS2-ssh
@@ -219,7 +226,10 @@ class SSH:
 
     def _argv(self, cmd):
         if self.backend == "openssh":
-            return [self.ssh_exe, "-n", "-o", "BatchMode=yes",
+            # -n (stdin=/dev/null) ломает sudo -S: пароль не доедет.
+            # Отключаем, когда есть пароль юзера (потенциально нужен sudo -S).
+            no_stdin = [] if self.srv.get("password") else ["-n"]
+            return [self.ssh_exe] + no_stdin + ["-o", "BatchMode=yes",
                     "-o", "StrictHostKeyChecking=accept-new",
                     "-o", "ConnectTimeout=15",
                     "-i", self.srv["key"], "-p", str(self.srv.get("ssh_port", 22)),
@@ -274,21 +284,44 @@ class SSH:
 
     def run(self, cmd, timeout=120):
         args = self._argv(cmd)
-        rc, out = self._spawn(args, timeout=timeout)
+        # в режиме sudo-по-паролю шлём пароль в stdin — его прочитает sudo -S
+        inp = (self.sudo_pw + "\n") if self.sudo_pw else ""
+        rc, out = self._spawn(args, input_text=inp, timeout=timeout)
         if rc != 0:
             raise SSHErr("SSH rc=%s: %s" % (rc, out.strip()[:400] or "(пустой вывод)"))
         return out
 
     def preflight(self):
-        """Быстрый гейт перед деплоем: SSH жив + sudo доступен.
-        Бросает SSHErr с понятным текстом."""
+        """Быстрый гейт перед деплоем: SSH жив + root или sudo.
+        sudo бывает трёх видов: NOPASSWD, по паролю, недоступен.
+        По паролю работаем через sudo -S + пароль в stdin (pw не в argv —
+        не светится в ps на сервере)."""
         out = self.run("echo PF:$(id -u):$("
                        "sudo -n true 2>/dev/null && echo np || echo nop)",
                        timeout=30)
-        if "PF:0:" in out or ":np" in out:
+        if "PF:0:" in out:
+            self.sudo = ""
+            self.srv["sudo_mode"] = "root"
             return
-        raise SSHErr("sudo требует пароль — деплой повиснет.\n"
-                     "Дай юзеру NOPASSWD (visudo: user ALL=(ALL) NOPASSWD:ALL)\n"
+        if ":np" in out:
+            self.sudo = "sudo -n "
+            self.srv["sudo_mode"] = "np"
+            return
+        pw = self.srv.get("password")
+        if pw:
+            # -kS: принудительный промпт → пароль со stdin; проверяем один раз
+            rc, _o = self._spawn(self._argv("sudo -kS -p '' true"),
+                                 input_text=pw + "\n", timeout=30)
+            if rc == 0:
+                self.sudo = "sudo -S -p '' "
+                self.sudo_pw = pw
+                self.srv["sudo_mode"] = "pw"
+                self.log("  sudo с паролем — ок")
+                return
+            raise SSHErr("sudo отверг пароль или юзер не в sudoers.")
+        raise SSHErr("sudo требует пароль, а пароль не задан.\n"
+                     "Варианты: укажи пароль юзера в настройках сервера,\n"
+                     "дай NOPASSWD (visudo: user ALL=(ALL) NOPASSWD:ALL)\n"
                      "или логинься как root.")
 
     def run_stream(self, cmd, on_line, timeout=None):
@@ -296,8 +329,15 @@ class SSH:
         args = self._argv(cmd)
         p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              text=True, encoding="utf-8", errors="replace",
-                             stdin=subprocess.DEVNULL,
+                             stdin=subprocess.PIPE if self.sudo_pw
+                             else subprocess.DEVNULL,
                              creationflags=CREATE_NO_WINDOW)
+        if self.sudo_pw:
+            try:
+                p.stdin.write(self.sudo_pw + "\n")
+                p.stdin.close()
+            except (OSError, ValueError):
+                pass
         t0 = time.time()
         assert p.stdout is not None
         seen = []
@@ -313,20 +353,26 @@ class SSH:
             # ищем fingerprint в уже увиденном выводе → retry с -hostkey
             mfp = re.search(r"fingerprint is:\s*\S+\s+\d+\s+(SHA256:\S+)",
                             "".join(seen))
-            if mfp:
-                fp = mfp.group(1)
+            fp = mfp.group(1) if mfp else None
             if fp:
                 args2 = args[:-2] + ["-hostkey", fp] + args[-2:]
             else:
                 args2 = [a for a in args if a != "-batch"]
+            # stdin: пароль sudo (pw-режим) > 'y' для host-key промпта
+            if self.sudo_pw:
+                inp2, need_pipe = self.sudo_pw + "\n", True
+            elif fp:
+                inp2, need_pipe = None, False
+            else:
+                inp2, need_pipe = "y\n", True
             p2 = subprocess.Popen(args2, stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT, text=True,
                                   encoding="utf-8", errors="replace",
-                                  stdin=subprocess.PIPE if not fp
+                                  stdin=subprocess.PIPE if need_pipe
                                   else subprocess.DEVNULL,
                                   creationflags=CREATE_NO_WINDOW)
             try:
-                out, _ = p2.communicate(input=None if fp else "y\n",
+                out, _ = p2.communicate(input=inp2,
                                         timeout=timeout or 300)
             except subprocess.TimeoutExpired:
                 p2.kill()
@@ -884,7 +930,7 @@ class App(tk.Tk):
 
     # ---- вкладка «Развёртывание» ----
     STEPS = [
-        ("ssh",    "1. SSH-подключение (auth + sudo без пароля)"),
+        ("ssh",    "1. SSH-подключение (auth + права root/sudo)"),
         ("key",    "2. Ключевая авторизация (генерация, если пароль)"),
         ("audit",  "3. Аудит ОС и окружения"),
         ("fw",     "4. Фаервол (аудит → установка/настройка)"),
