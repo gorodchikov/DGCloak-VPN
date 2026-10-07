@@ -1098,10 +1098,16 @@ class App(tk.Tk):
 
     # ---- серверы ----
     def _refresh_servers(self):
+        # delete+insert сносит выделение — сохраняем его, иначе
+        # _sel_srv_silent() вернёт None и спиннер шага спрячется
+        sel = self.srv_list.curselection()
+        keep = sel[0] if sel else None
         self.srv_list.delete(0, "end")
         for s in self.data["servers"]:
             mark = " ✓" if s.get("deployed") else ""
             self.srv_list.insert("end", "%s%s" % (s["name"], mark))
+        if keep is not None and keep < self.srv_list.size():
+            self.srv_list.selection_set(keep)  # не генерит <<ListboxSelect>>
 
     def _sel_srv(self):
         i = self.srv_list.curselection()
