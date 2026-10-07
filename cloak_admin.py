@@ -1198,7 +1198,7 @@ class App(tk.Tk):
             self._spin_hb = el
             self.say("  …выполняется уже %d мин %d с — процесс жив, "
                      "ждём ответа сервера" % (el // 60, int(el) % 60))
-        self.after(150, self._spin_tick)
+        self.after(250, self._spin_tick)  # 4 кадра × 250 мс = 1 с на оборот
 
     def _run_step(self, s, key):
         title = dict(self.STEPS)[key]
