@@ -1010,8 +1010,12 @@ class App(tk.Tk):
         self.steps_tv.column("#0", width=320)
         self.steps_tv.column("st", width=70, anchor="center")
         self.steps_tv.column("note", width=220)
-        # активный шаг — крупный шрифт, чтобы спиннер был заметен
-        self.steps_tv.tag_configure("spin", font=("", 20))
+        # спиннер — canvas-дуга поверх ячейки «Статус» активного шага
+        self.spin_cv = tk.Canvas(self.steps_tv, bd=0, highlightthickness=0,
+                                 bg="white")
+        self._spin_arc = self.spin_cv.create_arc(
+            0, 0, 0, 0, start=0, extent=270, style="arc",
+            width=2.5, outline="#357")
         self.steps_tv.grid(row=row, column=0, sticky="nsew", **pad)
         f.rowconfigure(row, weight=1)
         f.columnconfigure(0, weight=1)
@@ -1169,21 +1173,18 @@ class App(tk.Tk):
         self._fill_steps()
 
     # ---- анимация «выполняется» + heartbeat ----
-    # половинки круга вращаются по часовой: лево → верх → право → низ
-    SPIN = ("◐", "◓", "◑", "◒")
+    # canvas-дуга (270°) поверх ячейки «Статус»: вращается по часовой,
+    # 8 кадров × 45° × 125 мс = 1 с на оборот
 
     def _spin_start(self, key):
         self._spin_key = key
         self._spin_i = 0
         self._spin_t0 = self._spin_hb = time.time()
-        try:
-            self.steps_tv.item(key, tags=("spin",))
-        except tk.TclError:
-            pass  # строки нет (юзер переключил сервер)
         self._spin_tick()
 
     def _spin_stop(self):
         self._spin_key = None
+        self.spin_cv.place_forget()
 
     def _spin_tick(self):
         """Крутит спиннер в статусе шага + heartbeat в лог (главный поток)."""
@@ -1191,19 +1192,28 @@ class App(tk.Tk):
         if k is None:
             return
         try:
-            vals = list(self.steps_tv.item(k, "values"))
+            bb = self.steps_tv.bbox(k, "st")
         except tk.TclError:
-            vals = []  # строки нет (юзер переключил сервер)
-        if vals:
-            vals[0] = self.SPIN[self._spin_i % len(self.SPIN)]
-            self.steps_tv.item(k, values=tuple(vals))
+            bb = None  # строки нет (юзер переключил сервер)
+        if bb:
+            x, y, w, h = bb
+            self.spin_cv.place(x=x, y=y, width=w, height=h)
+            d = min(w, h) - 6
+            cx, cy = w / 2, h / 2
+            self.spin_cv.coords(self._spin_arc,
+                                cx - d / 2, cy - d / 2, cx + d / 2, cy + d / 2)
+            # минус — по часовой (canvas считает углы против часовой)
+            self.spin_cv.itemconfigure(self._spin_arc,
+                                       start=(-45 * self._spin_i) % 360)
+        else:
+            self.spin_cv.place_forget()
         self._spin_i += 1
         el = time.time() - self._spin_t0
         if el - self._spin_hb >= 30:
             self._spin_hb = el
             self.say("  …выполняется уже %d мин %d с — процесс жив, "
                      "ждём ответа сервера" % (el // 60, int(el) % 60))
-        self.after(250, self._spin_tick)  # 4 кадра × 250 мс = 1 с на оборот
+        self.after(125, self._spin_tick)
 
     def _run_step(self, s, key):
         title = dict(self.STEPS)[key]
