@@ -905,16 +905,23 @@ class App(tk.Tk):
         self.uiq.put(fn)
 
     def _fix_ctrl_bindings(self):
-        """Tk шлёт кириллические keysym при русской раскладке — Ctrl+V
-        становится Ctrl+М и вставка молча не работает. Мапим обратно."""
-        evs = {"em": "<<Paste>>", "es": "<<Copy>>",
-               "che": "<<Cut>>", "ef": "<<SelectAll>>"}
+        """На русской раскладке Ctrl+V приходит с кириллическим keysym —
+        стандартный биндинг <Control-v> молча не срабатывает. Ловим
+        <Control-KeyPress> и смотрим keycode (он раскладке не зависит)."""
+        kc = {86: "<<Paste>>", 67: "<<Copy>>",  # V, C
+              88: "<<Cut>>", 65: "<<SelectAll>>"}  # X, A
+        latin = "vcxaVCXA"
+
+        def _ctrl(e, _kc=kc, _l=latin):
+            v = _kc.get(e.keycode)
+            # keysym латинский — отработает штатный <Control-v> и т.п.
+            if v and e.keysym not in _l:
+                e.widget.event_generate(v)
+                return "break"
+
         for cls in ("Entry", "TEntry", "Text", "TCombobox",
                     "Spinbox", "TSpinbox"):
-            for k, v in evs.items():
-                for ks in ("Cyrillic_" + k, "Cyrillic_" + k.upper()):
-                    self.bind_class(cls, "<Control-%s>" % ks,
-                                    lambda e, v=v: e.widget.event_generate(v))
+            self.bind_class(cls, "<Control-KeyPress>", _ctrl)
 
     def _log_file(self, line):
         if self.logfile:
