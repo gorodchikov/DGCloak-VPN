@@ -377,7 +377,7 @@ class SSH:
             raise SSHErr(
                 "на сервере не установлен sudo.\n"
                 "В консоли VM под labadmin: su - (пароль root), затем\n"
-                "  apt install -y sudo && usermod -aG sudo <юзер>\n"
+                "  apt install -y sudo && /usr/sbin/usermod -aG sudo <юзер>\n"
                 "или разреши вход root по SSH и логинься как root.")
         if ":np" in out:
             self.sudo = "sudo -n "
