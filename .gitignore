@@ -17,6 +17,7 @@ build/
 dist/
 build2/
 dist2/
+build-out/
 nul                # артефакт Windows-редиректа "> nul" в git-bash
 
 # --- Тесты / линтеры / покрытие ---
