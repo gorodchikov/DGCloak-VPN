@@ -9,7 +9,7 @@ DGCloak Admin — управление серверами OpenVPN over Cloak.
   - чистка наследия Amnezia/Docker;
   - управление юзерами: сертификат OpenVPN (easyrsa) + UID Cloak (admin-API);
   - отзыв, удаление, мгновенное отключение (kill через management OpenVPN);
-  - экспорт клиентских бандлов (.ovpn + ckclient-*.json).
+  - экспорт клиентских конфигов (.dgcloak).
 
 SSH-слой — внешние plink/pscp (ppk нативно). Юзеры Cloak — через локальный
 `ck-client.exe -a` (admin-API), без SSH.
@@ -715,7 +715,7 @@ def make_dgcloak(srv, name, uid, mats, mask=None):
 
 
 def write_user_bundle(s, name, uid, mats, dst, mask=None):
-    """Бандл юзера — один файл <name>.dgcloak (cloak+ovpn в одном JSON).
+    """Конфиг юзера — один файл <name>.dgcloak (cloak+ovpn в одном JSON).
     Сырые .ovpn/ckclient при желании вытаскиваются из него же."""
     os.makedirs(dst, exist_ok=True)
     with open(os.path.join(dst, "%s.dgcloak" % name), "w",
@@ -1219,7 +1219,7 @@ class App(tk.Tk):
                 "Если сервер уже настроен (вручную или другой версией\n"
                 "программы) — эта кнопка забирает с него ключи Cloak,\n"
                 "не переустанавливая ничего. После этого сервером можно\n"
-                "управлять: юзеры, бандлы, статусы.")
+                "управлять: юзеры, конфиги, статусы.")
 
         row += 1
         ttk.Label(f, text="✓ готово   ⚠ обрати внимание   ✗ ошибка   – пропущен   … не выполнялся\n"
@@ -1251,7 +1251,7 @@ class App(tk.Tk):
         self._mk_btn(bf, "Изменить…", self._user_edit).pack(side="left", padx=2)
         self._mk_btn(bf, "Отключить сейчас", self._user_kill).pack(side="left", padx=2)
         self._mk_btn(bf, "Отозвать и удалить", self._user_revoke).pack(side="left", padx=2)
-        self._mk_btn(bf, "Экспорт бандла…", self._user_export).pack(side="left", padx=2)
+        self._mk_btn(bf, "Экспорт конфига…", self._user_export).pack(side="left", padx=2)
 
     # ---- серверы ----
     def _refresh_servers(self):
@@ -1970,7 +1970,7 @@ class App(tk.Tk):
         return cn, rec, uid
 
     def _create_user_impl(self, ssh, s, name, expiry, sessions, mask=""):
-        """Полный цикл: сертификат на сервере + UID через admin-API + бандл."""
+        """Полный цикл: сертификат на сервере + UID через admin-API + конфиг."""
         # 1. сертификат
         self.vsay("  user-cert.sh «%s»…" % name)
         out = ssh.run_script("user-cert.sh", name, timeout=120)
@@ -1987,7 +1987,7 @@ class App(tk.Tk):
             uid = api.create_user(sessions_cap=sessions, expiry=expiry)
         finally:
             api.stop()
-        # 3. бандл
+        # 3. конфиг
         bundle = os.path.join(BUNDLES_DIR, s["name"], name)
         write_user_bundle(s, name, uid, mats, bundle, mask)
         # 4. запись в реестр
@@ -1997,7 +1997,8 @@ class App(tk.Tk):
                       "sessions": sessions, "mask": mask,
                       "created": time.strftime("%Y-%m-%d")})
         save_data(self.data)
-        self.say("Юзер «%s» создан. Бандл: %s" % (name, bundle))
+        self.say("Юзер «%s» создан. Конфиг: %s"
+                 % (name, os.path.join(bundle, "%s.dgcloak" % name)))
         return bundle
 
     def _user_create(self):
@@ -2046,14 +2047,15 @@ class App(tk.Tk):
             rec.update({"sessions": r["sessions"], "expiry": r["expiry"],
                         "mask": r["mask"]})
             save_data(self.data)
-            # маскировка живёт в бандле — перевыпускаем локальную копию
+            # маскировка живёт в конфиге — перевыпускаем локальную копию
             out = ssh.run_script("user-cert.sh", cn, timeout=60)
             mats = parse_cert_bundle(out)
             bundle = os.path.join(BUNDLES_DIR, s["name"], cn)
             write_user_bundle(s, cn, uid, mats, bundle, r["mask"])
-            self.say("Юзер «%s» обновлён. Бандл перевыпущен: %s\n"
+            self.say("Юзер «%s» обновлён. Конфиг перевыпущен: %s\n"
                      "  (маскировка меняется только в новом .dgcloak — "
-                     "выдай его юзеру)" % (cn, bundle))
+                     "выдай его юзеру)"
+                     % (cn, os.path.join(bundle, "%s.dgcloak" % cn)))
             self.ui(self._users_refresh)
         self._worker(work)
 
@@ -2161,7 +2163,7 @@ class App(tk.Tk):
             messagebox.showinfo(APP_NAME, "«%s» не из нашего реестра — "
                                 "пересоздай через «Создать»" % cn)
             return
-        dst = filedialog.askdirectory(title="Куда сложить бандл «%s»" % cn)
+        dst = filedialog.askdirectory(title="Куда сложить конфиг «%s»" % cn)
         if not dst:
             return
 
@@ -2172,7 +2174,8 @@ class App(tk.Tk):
             bundle = os.path.join(dst, cn)
             write_user_bundle(s, cn, rec["uid"], mats, bundle,
                               rec.get("mask") or "")
-            self.say("Бандл «%s» → %s" % (cn, bundle))
+            self.say("Конфиг «%s» → %s"
+                     % (cn, os.path.join(bundle, "%s.dgcloak" % cn)))
         self._worker(work)
 
 
