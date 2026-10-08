@@ -1827,7 +1827,8 @@ class App(tk.Tk):
         osid = re.search(r"ID=(\S+)", ossec)
         ver = re.search(r"VERSION=(\S+)", ossec)
         arch = parse_section(out, "ARCH").strip()
-        m = re.search(r"EXT_IF=(\S+)", out)
+        # ^ обязателен: иначе первым матчится маркер ===EXT_IF=== → "=="
+        m = re.search(r"^EXT_IF=(\S+)", out, re.M)
         if m:
             s["ext_if"] = m.group(1)
         pub = parse_section(out, "PUBIP")
@@ -2100,8 +2101,8 @@ class App(tk.Tk):
                 "printf PUB:; cat /etc/ck-server/publickey.txt 2>/dev/null; echo; "
                 "printf AUID:; cat /etc/ck-server/adminuid.txt 2>/dev/null; echo; "
                 "grep \"^proto \" /etc/openvpn/server/server.conf 2>/dev/null; "
-                "grep RedirAddr /etc/ck-server/ckserver.json 2>/dev/null; "
-                "true'" % ssh.sudo, timeout=30)
+                "grep -A1 -E \"RedirAddr|BindAddr\" /etc/ck-server/ckserver.json "
+                "2>/dev/null; true'" % ssh.sudo, timeout=30)
             pub = re.search(r"PUB:(\S+)", out)
             auid = re.search(r"AUID:(\S+)", out)
             if pub and auid and pub.group(1) != "" and auid.group(1) != "":
@@ -2114,6 +2115,11 @@ class App(tk.Tk):
                 m = re.search(r'"RedirAddr":\s*"([^"]+)"', out)
                 if m:
                     s["mask_domain"] = m.group(1)
+                # порт Cloak — иначе после переезда конфиги юзеров
+                # получат 443 вместо реального
+                m = re.search(r'"BindAddr":\s*\[\s*"[^"]*:(\d+)"', out)
+                if m:
+                    s["ck_port"] = m.group(1)
                 n = self._pull_users(ssh, s)
                 save_data(self.data)
                 self.say("Импорт: ключи подтянуты с «%s»%s"
