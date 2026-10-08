@@ -1069,7 +1069,7 @@ class PortsDialog(tk.Toplevel):
             ssh = SSH(self.srv, self.app.say)
             out = ssh.run_script("fw-manage.sh", "ports", timeout=60)
             self.app.ui(lambda: self._fill(out))
-        self.app._worker(work)
+        self.app._worker(work, ctx=self.srv["name"])
 
     def _act(self, action):
         port = self.v_port.get().strip()
@@ -1103,7 +1103,7 @@ class PortsDialog(tk.Toplevel):
                             " (%s)" % notes if notes else ""))
             out = ssh.run_script("fw-manage.sh", "ports", timeout=60)
             self.app.ui(lambda: self._fill(out))
-        self.app._worker(work)
+        self.app._worker(work, ctx=self.srv["name"])
 
 
 class App(tk.Tk):
@@ -1302,26 +1302,39 @@ class App(tk.Tk):
         if self._log_name:
             self._log_load(self._log_name)
 
-    def _copy_log(self, w_):
+    def _mark_log(self, tab, msg):
+        """Отметка о локальном действии с журналом (копирование/очистка)
+        — пишется в журнал ПОКАЗАННОГО сервера в видимый канал,
+        мимо контекста чужой операции (_log_ctx/_op_tab)."""
+        line = "[%s] %s" % (time.strftime("%H:%M:%S"), msg)
+        if self._log_name is not None:
+            self._logs.setdefault(self._log_name, []).append(
+                (line, False, tab))
+        w_ = self.logw_usr if tab == "users" else self.logw_dep
+        w_.insert("end", line + "\n")
+        w_.see("end")
+
+    def _copy_log(self, tab):
+        w_ = self.logw_usr if tab == "users" else self.logw_dep
         txt = w_.get("1.0", "end").rstrip()
         self.clipboard_clear()
         self.clipboard_append(txt)
-        self.say("Лог скопирован в буфер (%d символов)" % len(txt))
+        self._mark_log(tab, "Лог скопирован в буфер (%d символов)"
+                       % len(txt))
 
     def _copy_log_dep(self):
-        self._copy_log(self.logw_dep)
+        self._copy_log("deploy")
 
     def _clear_log(self, tab):
         """Чистит журнал ТЕКУЩЕГО сервера только в своём канале —
         записи другой вкладки и других серверов не трогаем."""
         name = self._log_name
-        line = "[%s] Лог очищен." % time.strftime("%H:%M:%S")
         if name is not None:
             self._logs[name] = [e for e in self._logs.get(name, [])
-                                if e[2] != tab] + [(line, False, tab)]
+                                if e[2] != tab]
         w_ = self.logw_usr if tab == "users" else self.logw_dep
         w_.delete("1.0", "end")
-        w_.insert("end", line + "\n")
+        self._mark_log(tab, "Лог очищен.")
 
     def _clear_log_dep(self):
         self._clear_log("deploy")
@@ -1332,7 +1345,9 @@ class App(tk.Tk):
         for btn in self._all_buttons:
             btn.config(state=state)
 
-    def _worker(self, fn):
+    def _worker(self, fn, ctx=None):
+        """ctx — имя сервера, чей журнал получает лог (если операция
+        привязана к серверу не по текущему выбору, а по диалогу)."""
         if self.busy:
             messagebox.showinfo(APP_NAME, "Идёт другая операция — подожди")
             return
@@ -1341,8 +1356,8 @@ class App(tk.Tk):
         self.ui(lambda: self._set_busy(True))
 
         def run():
-            self._log_ctx = self._log_name  # операция пишет в её журнал
-            self._op_tab = tab              # и в канал своей вкладки
+            self._log_ctx = ctx or self._log_name  # журнал сервера операции
+            self._op_tab = tab                     # и канал её вкладки
             try:
                 fn()
             except Exception as e:
