@@ -1194,7 +1194,7 @@ class App(tk.Tk):
         optf.grid(row=row, column=0, sticky="w", **pad)
         ttk.Label(optf, text="Домен для маскировки:").pack(side="left")
         self.v_mask = tk.StringVar(value="www.bing.com")
-        ttk.Entry(optf, textvariable=self.v_mask, width=18).pack(side="left", padx=4)
+        ttk.Entry(optf, textvariable=self.v_mask, width=36).pack(side="left", padx=4)
         ttk.Label(optf, text="Протокол:").pack(side="left", padx=(10, 0))
         self.v_proto = tk.StringVar(value="udp")
         ttk.Combobox(optf, textvariable=self.v_proto, width=5, state="readonly",
