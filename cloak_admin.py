@@ -1279,7 +1279,7 @@ class App(tk.Tk):
         # рисуем свою тонкую строку заголовков поверх колонок
         hdr = tk.Frame(f, bg="#e8e8e8")
         hdr.grid(row=row, column=0, sticky="ew", padx=6, pady=(4, 0))
-        for w, t in ((337, "Шаг"), (57, "Статус"), (362, "Комментарий")):
+        for w, t in ((307, "Шаг"), (46, "Статус"), (403, "Комментарий")):
             c = tk.Frame(hdr, width=w, height=16, bg="#e8e8e8")
             c.pack_propagate(False)
             c.pack(side="left")
@@ -1289,9 +1289,9 @@ class App(tk.Tk):
         row += 1
         self.steps_tv = ttk.Treeview(f, columns=("st", "note"),
                                      show="tree", height=9)
-        self.steps_tv.column("#0", width=335)
-        self.steps_tv.column("st", width=55, anchor="center")
-        self.steps_tv.column("note", width=360)
+        self.steps_tv.column("#0", width=305, stretch=False)
+        self.steps_tv.column("st", width=46, anchor="center", stretch=False)
+        self.steps_tv.column("note", width=401)
         # спиннер — canvas-дуга поверх ячейки «Статус» активного шага
         self.spin_cv = tk.Canvas(self.steps_tv, bd=0, highlightthickness=0,
                                  bg="white")
