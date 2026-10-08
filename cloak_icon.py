@@ -93,25 +93,25 @@ def draw_admin_icon(color=BRAND, size=256):
     im = draw_icon(color, N)          # базовая фигура (плащ на плашке)
     d = ImageDraw.Draw(im)
 
-    cx, cy, rb = 392, 392, 96         # бейдж в углу плашки
-    d.ellipse([cx - rb, cy - rb, cx + rb, cy + rb],
-              fill=(20, 27, 45, 255), outline=(255, 255, 255, 255), width=8)
+    cx, cy = 392, 392                 # шестерёнка в углу плашки
 
-    # шестерёнка: 8 зубьев звёздчатым полигоном + ступица и отверстие
-    r1, r2, rhub, rhole = 62, 44, 26, 13
-    w = math.radians(13)
-    pts = []
-    for i in range(8):
-        a = i * math.pi / 4
-        pts += [(cx + r2 * math.cos(a - w), cy + r2 * math.sin(a - w)),
-                (cx + r1 * math.cos(a - w), cy + r1 * math.sin(a - w)),
-                (cx + r1 * math.cos(a + w), cy + r1 * math.sin(a + w)),
-                (cx + r2 * math.cos(a + w), cy + r2 * math.sin(a + w))]
-    g = _mix(_rgb(color), (255, 255, 255), 0.75) + (255,)
-    d.polygon(pts, fill=g)
-    d.ellipse([cx - rhub, cy - rhub, cx + rhub, cy + rhub], fill=g)
-    d.ellipse([cx - rhole, cy - rhole, cx + rhole, cy + rhole],
-              fill=(20, 27, 45, 255))
+    def gear(scale, fill):
+        r1, r2, rhub, rhole = 62 * scale, 44 * scale, 26 * scale, 13
+        w = math.radians(13)
+        pts = []
+        for i in range(8):
+            a = i * math.pi / 4
+            pts += [(cx + r2 * math.cos(a - w), cy + r2 * math.sin(a - w)),
+                    (cx + r1 * math.cos(a - w), cy + r1 * math.sin(a - w)),
+                    (cx + r1 * math.cos(a + w), cy + r1 * math.sin(a + w)),
+                    (cx + r2 * math.cos(a + w), cy + r2 * math.sin(a + w))]
+        d.polygon(pts, fill=fill)
+        d.ellipse([cx - rhub, cy - rhub, cx + rhub, cy + rhub], fill=fill)
+        d.ellipse([cx - rhole, cy - rhole, cx + rhole, cy + rhole],
+                  fill=(20, 27, 45, 255))
+
+    gear(1.18, (20, 27, 45, 255))     # тёмный контур — шестерёнка
+    gear(1.0, _mix(_rgb(color), (255, 255, 255), 0.75) + (255,))  # читается на плаще
     return im.resize((size, size), Image.LANCZOS)
 
 
