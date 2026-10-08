@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "Матрица тестовых стендов DGCloakAdmin.",
+    "match  — точное имя сервера в %APPDATA%/DGCloakAdmin/data.json",
+    "distro — [ID, VERSION] из detect.sh (OS-секция)",
+    "fw     — ожидаемый бэкенд из fw-manage.sh (null = не проверять)",
+    "deployed — ожидаемое состояние STEP_cloak в probe.sh (null = не проверять)",
+    "auto   — matrix.py прогоняет по этому стенду",
+    "prod   — продакшн: только read-only проверки, ничего деструктивного",
+    "Добавление дистрибутива: подними VM, добавь запись сюда,",
+    "расширь supported в _step_audit (cloak_admin.py), прогони matrix.py."
+  ],
+  "labs": [
+    {"match": "ubuntu20 lab", "distro": ["ubuntu", "20.04"], "fw": "nftables-dg",
+     "deployed": true, "auto": true},
+    {"match": "ubuntu22 lab", "distro": ["ubuntu", "22.04"], "fw": "nftables-dg",
+     "deployed": true, "auto": true},
+    {"match": "Ubuntu24 lab", "distro": ["ubuntu", "24.04"], "fw": "nftables-dg",
+     "deployed": true, "auto": true},
+    {"match": "Ubuntu26 lab", "distro": ["ubuntu", "26.04"], "fw": "nftables-dg",
+     "deployed": true, "auto": true, "note": "Cloak на порту 8443"},
+    {"match": "Debian11  lab", "distro": ["debian", "11"], "fw": "nftables-dg",
+     "deployed": true, "auto": true},
+    {"match": "Debian12  lab", "distro": ["debian", "12"], "fw": "nftables-dg",
+     "deployed": true, "auto": true},
+    {"match": "Debian13  lab", "distro": ["debian", "13"], "fw": "nftables-dg",
+     "deployed": true, "auto": true},
+    {"match": "frankfurt dlmedia cloud", "fw": "nftables-dg", "deployed": true,
+     "auto": true, "prod": true, "note": "прод, OpenSSH-ключ, sudo NOPASSWD"},
+    {"match": "london aws cloud", "fw": "ufw", "deployed": true,
+     "auto": true, "prod": true, "note": "прод, ppk, SSH на 8081 — не ломать"},
+    {"match": "test", "auto": false,
+     "note": "устаревшая копия записи .212 — для ручной чистки реестра"}
+  ]
+}
