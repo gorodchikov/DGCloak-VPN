@@ -1362,9 +1362,17 @@ class App(tk.Tk):
         except Exception:
             return "deploy"
 
+    def _srv_by_name(self, name):
+        return next((s for s in self.data["servers"] if s["name"] == name),
+                    None)
+
     def _log_load(self, name):
-        """Показать журнал сервера — в каждой вкладке свой канал."""
-        v = self.verbose.get()
+        """Показать журнал сервера — в каждой вкладке свой канал.
+        «Подробный вывод» — флаг сервера (log_verbose в реестре):
+        у каждого своё состояние, переживает перезапуск."""
+        s = self._srv_by_name(name)
+        v = bool(s and s.get("log_verbose"))
+        self.verbose.set(v)
         for tab, w_ in (("deploy", self.logw_dep), ("users", self.logw_usr)):
             w_.delete("1.0", "end")
             if self._log_ctx and self._log_ctx != name and self._op_tab == tab:
@@ -1379,6 +1387,10 @@ class App(tk.Tk):
         self.logframe_usr.config(text="Лог — %s" % name)
 
     def _on_verbose_toggle(self):
+        s = self._srv_by_name(self._log_name) if self._log_name else None
+        if s is not None:
+            s["log_verbose"] = self.verbose.get()
+            save_data(self.data)
         if self._log_name:
             self._log_load(self._log_name)
 
@@ -1649,10 +1661,12 @@ class App(tk.Tk):
             b = self._mk_btn(bf, t, c)
             b.grid(row=0, column=i, sticky="ew", padx=2)
             bf.columnconfigure(i, weight=1, uniform="ug2")
-        ttk.Checkbutton(bf, text="Подробный вывод",
-                        variable=self.verbose,
-                        command=self._on_verbose_toggle).grid(
-            row=0, column=6, sticky="e", padx=(8, 2))
+        cb_v = ttk.Checkbutton(bf, text="Подробный вывод",
+                               variable=self.verbose,
+                               command=self._on_verbose_toggle)
+        cb_v.grid(row=0, column=6, sticky="e", padx=(8, 2))
+        Tooltip(cb_v, "Служебные строки юзер-операций (ck-client, user-cert).\n"
+                      "Состояние запоминается для каждого сервера.")
 
         self.logframe_usr = ttk.LabelFrame(f, text="Лог")
         self.logframe_usr.pack(fill="both", expand=True, padx=6, pady=(0, 6))

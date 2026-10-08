@@ -74,6 +74,16 @@ sel(app, 0)
 check("A4 возврат на A → журнал A восстановлен",
       "dep-A-1" in wtxt(app.logw_dep))
 
+# ---- A5: verbose — флаг per-server, запоминается ------------------
+app.verbose.set(True); app._on_verbose_toggle(); pump(app, 0.15)
+check("A5 флаг сохранён в сервере A",
+      app.data["servers"][0].get("log_verbose") is True)
+sel(app, 1)
+check("A5 у B галочка выкл", not app.verbose.get())
+sel(app, 0)
+check("A5 возврат на A → галочка вкл (запомнена)", app.verbose.get())
+app.verbose.set(False); app._on_verbose_toggle()
+
 # ---- B: очистка --------------------------------------------------
 sel(app, 1); tab(app, 1); app.say("usr-B-1")  # выбран B — в его журнал
 pump(app, 0.2); tab(app, 0)
