@@ -776,12 +776,12 @@ class ServerDialog(simpledialog.Dialog):
     def body(self, f):
         self.vars = {}
         fields = [
-            ("name", "Имя", self.srv.get("name", "")),
-            ("host", "Хост (DNS/IP)", self.srv.get("host", "")),
+            ("name", "Название", self.srv.get("name", "")),
+            ("host", "Доменное имя/IP", self.srv.get("host", "")),
             ("ssh_port", "SSH порт", str(self.srv.get("ssh_port", 22))),
             ("user", "SSH логин", self.srv.get("user", "ubuntu")),
             ("ppk", "Ключ .ppk (PuTTY)", self.srv.get("ppk", "")),
-            ("key", "Ключ OpenSSH (-i)", self.srv.get("key", "")),
+            ("key", "Ключ OpenSSH", self.srv.get("key", "")),
             ("password", "Пароль (если нет ключей)", self.srv.get("password", "")),
         ]
         for i, (k, label, val) in enumerate(fields):
