@@ -60,7 +60,7 @@ def _fmt_rate(bps):
     if bps is None or bps >= INT64_MAX:
         return "∞"
     mb = bps * 8 / 1e6
-    return "%gМ" % round(mb, 1) if mb >= 1 else "%dк" % round(bps * 8 / 1e3)
+    return T("%gМ") % round(mb, 1) if mb >= 1 else T("%dк") % round(bps * 8 / 1e3)
 
 
 def _fmt_bytes(v):
@@ -79,6 +79,383 @@ def _fmt_limits(up, down):
 def _fmt_quota(up, down):
     u, d = _fmt_bytes(up), _fmt_bytes(down)
     return "∞" if u == "∞" and d == "∞" else "↑%s ↓%s" % (u, d)
+
+# ------------------------------------------------------------ localization
+# Ключ — русская исходная строка. Пустых значений нет: фолбэк — сам ключ.
+# Строки лога переводятся в момент записи: уже записанные записи журнала
+# и заметки шагов остаются на языке, на котором были созданы.
+_LANG = "ru"
+
+
+def T(ru):
+    """Перевод для модульных функций без self (текущий язык — _LANG)."""
+    return STRINGS_EN.get(ru, ru) if _LANG == "en" else ru
+
+
+def detect_lang():
+    """Стартовый язык по локали Windows: ru* → ru, остальные → en."""
+    try:
+        import ctypes
+        # GetUserDefaultUILanguage → LANGID; primary lang 0x19 = Russian
+        return "ru" if (ctypes.windll.kernel32.
+                        GetUserDefaultUILanguage() & 0xFF) == 0x19 else "en"
+    except Exception:
+        return "en"
+
+
+STRINGS_EN = {
+    # --- общие / заголовки / кнопки ---
+    "Серверы": "Servers",
+    "Сервер": "Server",
+    "Юзер": "User",
+    "Название": "Name",
+    "Доменное имя/IP": "Hostname/IP",
+    "SSH порт": "SSH port",
+    "SSH логин": "SSH login",
+    "Ключ .ppk (PuTTY)": ".ppk key (PuTTY)",
+    "Ключ OpenSSH": "OpenSSH key",
+    "Пароль (если нет ключей)": "Password (if no keys)",
+    "Комментарий": "Comment",
+    "Добавить": "Add",
+    "Изменить": "Edit",
+    "Удалить": "Delete",
+    "Обновить": "Refresh",
+    "Открыть": "Open",
+    "Закрыть": "Close",
+    "Создать…": "Create…",
+    "Изменить…": "Edit…",
+    "Новый юзер": "New user",
+    "Изменить «%s»": "Edit \"%s\"",
+    "Развёртывание": "Deployment",
+    "Пользователи": "Users",
+    "Лог": "Log",
+    "Лог — %s": "Log — %s",
+    "Копировать лог": "Copy log",
+    "Очистить лог": "Clear log",
+    "Лог скопирован в буфер (%d символов)": "Log copied to clipboard (%d chars)",
+    "Лог очищен.": "Log cleared.",
+    "Язык:": "Language:",
+    "Подробный вывод": "Verbose output",
+    "Шаг": "Step",
+    "Статус": "Status",
+    "— выбери сервер": "— select a server",
+    "Выбери сервер слева": "Select a server on the left",
+    "Выбери шаг в таблице": "Select a step in the table",
+    "Выбери юзера в таблице": "Select a user in the table",
+    "Идёт операция на «%s» — подожди":
+        "Operation in progress on \"%s\" — please wait",
+    "▶  Развернуть всё": "▶  Deploy all",
+    "Импорт ключей": "Import keys",
+    "Только выбранный шаг": "Selected step only",
+    "Проверить статусы": "Check statuses",
+    "Управление фаерволом": "Firewall management",
+    "Сбросить сервер": "Reset server",
+    "Перезагрузить сервер": "Reboot server",
+    "Отключить сейчас": "Disconnect now",
+    "Отозвать и удалить": "Revoke and delete",
+    "Экспорт конфига…": "Export config…",
+    "✓ готово   ⚠ предупреждение   ✗ ошибка   – пропущен   … не выполнялся":
+        "✓ done   ⚠ warning   ✗ error   – skipped   … not run",
+    # --- шаги деплоя ---
+    "1. SSH-подключение (auth + права root/sudo)":
+        "1. SSH connection (auth + root/sudo rights)",
+    "2. Ключевая авторизация (генерация, если пароль)":
+        "2. Key authorization (generate if password)",
+    "3. Аудит ОС и окружения": "3. OS and environment audit",
+    "4. Фаервол (аудит → установка/настройка)":
+        "4. Firewall (audit → install/configure)",
+    "5. Обновление системы (apt full-upgrade)":
+        "5. System update (apt full-upgrade)",
+    "6. Пакеты (OpenVPN, Easy-RSA, nftables…)":
+        "6. Packages (OpenVPN, Easy-RSA, nftables…)",
+    "7. OpenVPN + PKI (Easy-RSA, server.conf, mgmt)":
+        "7. OpenVPN + PKI (Easy-RSA, server.conf, mgmt)",
+    "8. Маршрутизация и NAT": "8. Routing and NAT",
+    "9. Cloak server (маскировка, ключи)":
+        "9. Cloak server (masquerade, keys)",
+    "Остановился на шаге «%s». Исправь и продолжай — завершённые шаги не повторятся.":
+        "Stopped at step \"%s\". Fix it and continue — completed steps won't repeat.",
+    "Сверяю статусы с сервером…": "Checking statuses against the server…",
+    # --- тултипы ---
+    "Шаги идут сверху вниз, готовые шаги — пропускаются":
+        "Steps run top to bottom; completed steps are skipped",
+    "Выполнить один выбранный в таблице шаг —\nточечный повтор после исправления ошибки":
+        "Run one selected step from the table —\ntargeted retry after fixing an error",
+    "Read-only аудит сервера (probe): сверить состояние\nи обновить значки шагов. Если сервер не отвечает —\nметка «развёрнут» снимается до успешной проверки":
+        "Read-only server audit (probe): verify state\nand update step icons. If the server doesn't respond —\nthe \"deployed\" mark is cleared until a successful check",
+    "Открытые порты сервера: список, открыть/закрыть\nсвой порт (nftables/ufw/firewalld/iptables)":
+        "Server's open ports: list, open/close\na custom port (nftables/ufw/firewalld/iptables)",
+    "Удалить только то, что поставила админка: OpenVPN+Cloak,\nнаши правила фаервола, юзеров и локальные конфиги.\nЧужое (docker, данные, SSH-доступ) не трогает":
+        "Removes only what the admin installed: OpenVPN+Cloak,\nour firewall rules, users and local configs.\nForeign stuff (docker, data, SSH access) is untouched",
+    "sudo reboot — нужно, если шаг «Обновление системы»\nпомечен ⚠ «нужна перезагрузка»":
+        "sudo reboot — needed if the \"System update\" step\nis marked ⚠ \"reboot required\"",
+    "Весь лог вкладки в буфер обмена": "Copy the whole tab log to clipboard",
+    "Стереть лог этого сервера на этой вкладке —\nканал «Пользователи» и другие серверы не трогает":
+        "Erase this server's log on this tab —\nthe Users channel and other servers are untouched",
+    "Если сервер уже настроен (вручную или через DGCloak Admin)\n— эта кнопка забирает с него ключи/юзеры Cloak,\nне переустанавливая ничего. После этого сервером можно\nуправлять: юзеры, конфиги, статусы.":
+        "If the server is already configured (manually or via DGCloak Admin)\n— this button pulls Cloak keys/users from it\nwithout reinstalling anything. Then the server can be\nmanaged: users, configs, statuses.",
+    "Опросить сервер: UID из admin-API Cloak,\nлимиты из users.json, кто онлайн — из OpenVPN":
+        "Query the server: UIDs from Cloak admin-API,\nlimits from users.json, who's online — from OpenVPN",
+    "Сертификат OpenVPN + UID в Cloak;\nконфиг сохраняется в %APPDATA%\\DGCloak\\Admin\\bundles":
+        "OpenVPN certificate + Cloak UID;\nconfig saved to %APPDATA%\\DGCloak\\Admin\\bundles",
+    "Лимиты/срок/домен маскировки выбранного юзера;\nпри смене параметров конфиг перевыпускается":
+        "Limits/expiry/mask domain of the selected user;\nconfig is reissued when parameters change",
+    "Разорвать живую сессию (mgmt OpenVPN).\nЮзер остаётся и может переподключиться":
+        "Break the live session (OpenVPN mgmt).\nThe user remains and can reconnect",
+    "Отозвать сертификат + удалить UID из Cloak\n+ сбросить сессию. Необратимо":
+        "Revoke certificate + delete UID from Cloak\n+ reset session. Irreversible",
+    "Сохранить комплект подключения\n(ovpn + ключи + ck-конфиг) для выбранного юзера":
+        "Save the connection bundle\n(ovpn + keys + ck config) for the selected user",
+    "Служебные строки юзер-операций (ck-client, user-cert).\nСостояние запоминается для каждого сервера.":
+        "Verbose lines of user operations (ck-client, user-cert).\nThe state is remembered per server.",
+    "На развёрнутом сервере поле заблокировано:\nсмена порта требует пересборки конфигов юзеров":
+        "Field is locked on a deployed server:\nchanging the port requires rebuilding user configs",
+    "На развёрнутом сервере поле заблокировано:\nсмена протокола требует пересборки конфигов юзеров":
+        "Field is locked on a deployed server:\nchanging the protocol requires rebuilding user configs",
+    # --- таблица юзеров / диалоги ---
+    "Имя (CN)": "Name (CN)",
+    "Макс. сессий": "Max sessions",
+    "Лимит ↑/↓": "Limit ↑/↓",
+    "Квота ↑/↓": "Quota ↑/↓",
+    "Истекает": "Expires",
+    "Домен маскировки": "Mask domain",
+    "Онлайн": "Online",
+    "Имя (CN, [a-z0-9_-])": "Name (CN, [a-z0-9_-])",
+    "Срок жизни, дней (0 = бессрочно)": "Lifetime, days (0 = forever)",
+    "Макс. одновременных подключений": "Max simultaneous connections",
+    "Лимит скорости ↑, Мбит/с (0 = безлимит)": "Speed limit ↑, Mbit/s (0 = unlimited)",
+    "Лимит скорости ↓, Мбит/с (0 = безлимит)": "Speed limit ↓, Mbit/s (0 = unlimited)",
+    "Квота трафика ↑, МБ (0 = безлимит)": "Traffic quota ↑, MB (0 = unlimited)",
+    "Квота трафика ↓, МБ (0 = безлимит)": "Traffic quota ↓, MB (0 = unlimited)",
+    "Домен для маскировки": "Mask domain",
+    "Домен для маскировки:": "Mask domain:",
+    "Срок жизни, дней": "Lifetime, days",
+    "Квота трафика ↑, МБ": "Traffic quota ↑, MB",
+    "Квота трафика ↓, МБ": "Traffic quota ↓, MB",
+    "Лимит скорости ↑, Мбит/с": "Speed limit ↑, Mbit/s",
+    "Лимит скорости ↓, Мбит/с": "Speed limit ↓, Mbit/s",
+    "Приоритет: ключ OpenSSH → .ppk → пароль":
+        "Priority: OpenSSH key → .ppk → password",
+    "Cloak порт": "Cloak port",
+    "Протокол OpenVPN:": "OpenVPN protocol:",
+    "Порт:": "Port:",
+    "(TCP медленнее)": "(TCP is slower)",
+    # --- диалоговые сообщения ---
+    "Нужны имя и хост": "Name and host are required",
+    "SSH порт: число 1-65535": "SSH port: number 1-65535",
+    "Порт: число 1-65535": "Port: number 1-65535",
+    "Нужен ключ (.ppk/OpenSSH) или пароль": "A key (.ppk/OpenSSH) or password is required",
+    "Это публичный ключ (.pub) — нужен приватный,\nобычно тот же файл без расширения .pub":
+        "This is a public key (.pub) — a private one is needed,\nusually the same file without the .pub extension",
+    "Имя: только латиница, цифры, _ и -": "Name: only Latin letters, digits, _ and -",
+    "Поле «%s» — только целое число": "Field \"%s\" — integer only",
+    "Поле «%s» — только число": "Field \"%s\" — number only",
+    "Удалить сервер «%s» из списка?\n\nЛокальные конфиги юзеров удалятся.\nSSH-ключ остаётся в %s —\nим можно зайти на сервер и потом.\nСам сервер не трогаем.":
+        "Remove server \"%s\" from the list?\n\nLocal user configs will be deleted.\nThe SSH key stays in %s —\nyou can still log in with it later.\nThe server itself is untouched.",
+    "Перезагрузить «%s»?\n\nСервер будет недоступен ~1 минуту.":
+        "Reboot \"%s\"?\n\nThe server will be unavailable for ~1 minute.",
+    "Полный сброс «%s»:\n\nбудут удалены Cloak, OpenVPN, PKI, юзеры, наши\nправила фаервола и локальные конфиги юзеров.\nSSH-доступ и твой юзер НЕ затрагиваются —\nсервер можно развернуть заново.\n\nПродолжить?":
+        "Full reset of \"%s\":\n\nCloak, OpenVPN, PKI, users, our\nfirewall rules and local user configs will be removed.\nSSH access and your user are NOT affected —\nthe server can be deployed again.\n\nContinue?",
+    "Отозвать «%s»?\n\nСертификат отзовётся (CRL), UID удалится,\nживая сессия будет сброшена.":
+        "Revoke \"%s\"?\n\nThe certificate will be revoked (CRL), UID removed,\nthe live session will be dropped.",
+    "UID %s…\nне из реестра админки — CN неизвестен, сертификат и живую сессию трогать не можем.\n\nУдалить UID из Cloak? (новые подключения закроются)":
+        "UID %s…\nnot in the admin registry — CN unknown, we can't touch\nthe certificate or live session.\n\nDelete UID from Cloak? (new connections will be blocked)",
+    "Порт %s/%s помечен «%s».\nЗакрытие может отрезать доступ к серверу или VPN.\n\nВсё равно закрыть?":
+        "Port %s/%s is marked \"%s\".\nClosing it may cut off access to the server or VPN.\n\nClose anyway?",
+    "Порт %s занят (Amnezia/docker).\nСнести Amnezia? Чужие контейнеры не трогаем.":
+        "Port %s is busy (Amnezia/docker).\nRemove Amnezia? Foreign containers are untouched.",
+    "Полное обновление системы на «%s» (apt update + full-upgrade + autoremove)?\n\nНа свежеустановленной системе это может занять\n10–30 минут — прогресс виден в логе.\nЕсли обновление потребует перезагрузку,\nприложение предложит её в конце.":
+        "Full system update on \"%s\" (apt update + full-upgrade + autoremove)?\n\nOn a fresh install this may take\n10–30 minutes — progress is shown in the log.\nIf the update requires a reboot,\nthe app will offer it at the end.",
+    "Обновление системы на «%s» требует перезагрузки.\nПерезагрузить сервер сейчас?\n\n(поднимется через ~1 минуту; завершённые шаги деплоя повторять не нужно)":
+        "System update on \"%s\" requires a reboot.\nReboot the server now?\n\n(it'll come up in ~1 minute; completed deploy steps don't need repeating)",
+    "На «%s» свободно %d МБ на диске.\nОбновлению может не хватить места (нужно ~1 ГБ).\n\nПродолжить?":
+        "\"%s\" has %d MB free on disk.\nThe update may run out of space (~1 GB needed).\n\nContinue?",
+    "«%s»: %s %s не из поддерживаемых\n(Ubuntu 20.04/22.04/24.04/26.04, Debian 11/12/13).\n\nПродолжить на свой страх и риск?":
+        "\"%s\": %s %s is not supported\n(Ubuntu 20.04/22.04/24.04/26.04, Debian 11/12/13).\n\nContinue at your own risk?",
+    "Сервер «%s» не развёрнут (по реестру) — сделай «Развернуть всё» или «Проверить статусы»":
+        "Server \"%s\" is not deployed (per registry) — run \"Deploy all\" or \"Check statuses\"",
+    "Сервер «%s» не развёрнут — ключей нет.\nСначала «Развернуть всё».":
+        "Server \"%s\" is not deployed — no keys.\nRun \"Deploy all\" first.",
+    "Нет admin_uid/pubkey — сделай «Импорт ключей» или деплой":
+        "No admin_uid/pubkey — run \"Import keys\" or deploy",
+    "«%s» не из нашего реестра — править можем только своих":
+        "\"%s\" is not in our registry — we can only edit our own",
+    "«%s» заведён вне этой админки — экспорт конфига недоступен":
+        "\"%s\" was created outside this admin — config export unavailable",
+    "«%s» не онлайн — сбрасывать нечего": "\"%s\" is not online — nothing to reset",
+    "CN этого юзера неизвестен — mgmt kill работает только по CN.":
+        "This user's CN is unknown — mgmt kill works by CN only.",
+    "Куда сложить конфиг «%s»": "Where to save the \"%s\" config",
+    "DGCloak Admin уже запущен.": "DGCloak Admin is already running.",
+    "Управление фаерволом — %s": "Firewall management — %s",
+    # --- исключения / SSH-слой ---
+    "Не найдены ssh/scp (Windows OpenSSH).": "ssh/scp not found (Windows OpenSSH).",
+    "Не найдены plink/pscp (PuTTY). Установи PuTTY или укажи OpenSSH-ключ в настройках сервера.":
+        "plink/pscp not found (PuTTY). Install PuTTY or set an OpenSSH key in server settings.",
+    "Не найден ck-client.exe и не скачался (%s) — укажи путь в data.json или положи рядом":
+        "ck-client.exe not found and download failed (%s) — set a path in data.json or place it alongside",
+    "SSH: команда завершилась rc=%s: %s": "SSH: command exited rc=%s: %s",
+    "(пустой вывод)": "(empty output)",
+    "на сервере не установлен sudo.\nВ консоли VM под %s: su - (пароль root), затем\n  apt install -y sudo && /usr/sbin/usermod -aG sudo %s\nили разреши вход root по SSH и логинься как root.":
+        "sudo is not installed on the server.\nIn the VM console as %s: su - (root password), then\n  apt install -y sudo && /usr/sbin/usermod -aG sudo %s\nor allow root SSH login and sign in as root.",
+    "sudo отверг пароль или юзер не в sudoers.": "sudo rejected the password or the user is not in sudoers.",
+    "sudo требует пароль, а пароль не задан.\nВарианты: укажи пароль юзера в настройках сервера,\nдай NOPASSWD (visudo: user ALL=(ALL) NOPASSWD:ALL)\nили логинься как root.":
+        "sudo requires a password, but none is set.\nOptions: set the user password in server settings,\ngrant NOPASSWD (visudo: user ALL=(ALL) NOPASSWD:ALL)\nor sign in as root.",
+    "Таймаут %s с: %s": "Timeout %s s: %s",
+    "Таймаут: %s": "Timeout: %s",
+    "plink: соединение прервано (255)": "plink: connection dropped (255)",
+    "загрузка файла не удалась: %s": "file upload failed: %s",
+    "Нет скрипта: %s": "No script: %s",
+    "не найден ssh-keygen (Windows OpenSSH)": "ssh-keygen not found (Windows OpenSSH)",
+    "ssh-keygen не сработал: %s": "ssh-keygen failed: %s",
+    "<юзер>": "<user>",
+    # --- Cloak API ---
+    "ck-client -a завершился, rc=%s": "ck-client -a exited, rc=%s",
+    "ck-client -a не поднял API base за %s с": "ck-client -a didn't bring up API base in %s s",
+    "admin-API не запущен": "admin-API not running",
+    "admin-API недоступен: %s": "admin-API unavailable: %s",
+    "Cloak API %s %s → %s: %s": "Cloak API %s %s → %s: %s",
+    "user-cert.sh: неполный вывод (нет CA/CERT/KEY/TA).\nХвост вывода: %s":
+        "user-cert.sh: incomplete output (no CA/CERT/KEY/TA).\nOutput tail: %s",
+    # --- лог: деплой ---
+    "=== Проверка зависимостей ===": "=== Dependency check ===",
+    "=== Шаг: %s ===": "=== Step: %s ===",
+    "=== Аудит статусов на «%s» ===": "=== Status audit on \"%s\" ===",
+    "=== Перезагрузка «%s» ===": "=== Rebooting \"%s\" ===",
+    "=== Полный сброс «%s» ===": "=== Full reset of \"%s\" ===",
+    "=== Проход завершён ===": "=== Pass complete ===",
+    "=== Сброс завершён (rc=%s) ===": "=== Reset complete (rc=%s) ===",
+    "  OpenSSH-клиент: на месте": "  OpenSSH client: present",
+    "  OpenSSH-клиент: установлен": "  OpenSSH client: installed",
+    "  OpenSSH-клиент: НЕТ — нужен для входа по OpenSSH-ключу. Установка: Параметры → Приложения → Дополнительные компоненты → «Клиент OpenSSH», либо используй пароль/.ppk (для них хватит PuTTY)":
+        "  OpenSSH client: MISSING — needed for OpenSSH-key login. Install via Settings → Apps → Optional features → \"OpenSSH Client\", or use password/.ppk (PuTTY covers those)",
+    "  PuTTY (plink/pscp): на месте": "  PuTTY (plink/pscp): present",
+    "  PuTTY (plink/pscp): нет — скачиваю с официального сайта…":
+        "  PuTTY (plink/pscp): missing — downloading from the official site…",
+    "  !! plink/pscp не скачались (%s) — вход по паролю и по .ppk не будет работать. Поставь PuTTY или используй OpenSSH-ключ":
+        "  !! plink/pscp download failed (%s) — password and .ppk login won't work. Install PuTTY or use an OpenSSH key",
+    "  ck-client: на месте": "  ck-client: present",
+    "  ck-client: на месте (%s)": "  ck-client: present (%s)",
+    "  ck-client: нашёл %s → скопировал в bin\\": "  ck-client: found %s → copied to bin\\",
+    "  !! ck-client не скачался (%s) — вкладка «Пользователи» не заработает; деплой — будет":
+        "  !! ck-client download failed (%s) — the Users tab won't work; deployment will",
+    "  ставлю компонент «Клиент OpenSSH» (dism)…": "  installing \"OpenSSH Client\" component (dism)…",
+    "  dism не сработал: %s": "  dism failed: %s",
+    "  скачиваю ck-client с GitHub: %s": "  downloading ck-client from GitHub: %s",
+    "  …%.1f / %.1f МБ": "  …%.1f / %.1f MB",
+    "  %s → %s (%.1f МБ)": "  %s → %s (%.1f MB)",
+    "%s: скачалось не-exe (%d байт)": "%s: downloaded non-exe (%d bytes)",
+    "в последнем релизе Cloak нет ck-client-windows-amd64*.exe":
+        "the latest Cloak release has no ck-client-windows-amd64*.exe",
+    "  ключ отвергнут сервером — работаю по паролю":
+        "  key rejected by the server — falling back to password",
+    "  ключ отвергнут, пароль тоже не подошёл":
+        "  key rejected, password didn't work either",
+    "  sudo с паролем — ок": "  sudo with password — ok",
+    "  генерирую ключ ed25519…": "  generating ed25519 key…",
+    "  ставлю публичный ключ на сервер…": "  installing the public key on the server…",
+    "  сохранённый ключ отвергнут — ставлю новый": "  saved key rejected — installing a new one",
+    "вход по ключу настроен": "key login configured",
+    "нет ни пароля, ни ключа": "no password and no key",
+    "ключ установлен: %s": "key installed: %s",
+    "не apt-дистрибутив (pkg=%s) — не поддерживается": "non-apt distro (pkg=%s) — not supported",
+    "%s %s не поддерживается": "%s %s is not supported",
+    "мало места на диске: %d МБ": "low disk space: %d MB",
+    "мало места на диске (%d МБ)": "low disk space (%d MB)",
+    "мало RAM: %d МБ свободно": "low RAM: %d MB free",
+    "--- правила ---\n": "--- rules ---\n",
+    "\n--- слушают снаружи (tcp) ---\n": "\n--- listening externally (tcp) ---\n",
+    "чужие правила iptables — открой «Управление фаерволом»":
+        "foreign iptables rules — open \"Firewall management\"",
+    "фаервола нет — сначала выполни шаг «Фаервол»":
+        "no firewall — run the \"Firewall\" step first",
+    "неизвестный фаервол: %s": "unknown firewall: %s",
+    "  фаервола нет — ставлю nftables (INPUT DROP + ssh %s + cloak tcp/%s; откат через 120 с при потере SSH)":
+        "  no firewall — installing nftables (INPUT DROP + ssh %s + cloak tcp/%s; 120 s rollback if SSH is lost)",
+    "  firewall подтверждён (rollback отменён)": "  firewall confirmed (rollback cancelled)",
+    "обновлено ранее, нужна перезагрузка": "updated earlier, reboot required",
+    "отменено пользователем": "cancelled by user",
+    "обновлено, нужна перезагрузка": "updated, reboot required",
+    "обновлено": "updated",
+    "обновлено, перезагружен": "updated, rebooted",
+    "не встали: %s": "failed to install: %s",
+    "все пакеты есть; cloak latest: %s": "all packages present; cloak latest: %s",
+    "  ставлю недостающие пакеты: %s": "  installing missing packages: %s",
+    "NAT через %s, Cloak tcp/%s открыт": "NAT via %s, Cloak tcp/%s open",
+    "NAT ok (%s), но порт Cloak %s/tcp не открылся: %s": "NAT ok (%s), but Cloak port %s/tcp didn't open: %s",
+    "%s занят, чистка отменена": "%s busy, cleanup cancelled",
+    "%s занят чужим сервисом: %s": "%s busy with a foreign service: %s",
+    "ключи получены, маскировка %s": "keys received, masquerade %s",
+    "нет PUB/ADMIN_UID в выводе deploy-cloak": "no PUB/ADMIN_UID in deploy-cloak output",
+    "  probe не прошёл (%s) — иду с первого шага": "  probe failed (%s) — starting from the first step",
+    "  метку «развёрнут» снял — сервер не отвечает, состояние не проверено":
+        "  cleared the \"deployed\" mark — server unresponsive, state unverified",
+    "  отправляю reboot…": "  sending reboot…",
+    "  сервер поднялся после перезагрузки": "  server is back up after reboot",
+    "  !! сервер не перезагрузился за 3 минуты (или флаг reboot-required остался) — проверь консоль VM":
+        "  !! server didn't reboot within 3 minutes (or reboot-required flag remains) — check the VM console",
+    "  …выполняется уже %d мин %d с — процесс жив, ждём ответа сервера":
+        "  …running for %d min %d s — process alive, waiting for server reply",
+    "  вывод %d байт": "  %d bytes of output",
+    "  ОШИБКА: %s": "  ERROR: %s",
+    "ОШИБКА: %s": "ERROR: %s",
+    # --- лог: юзеры ---
+    "  admin-API: рестарт ck-client (%s)": "  admin-API: restarting ck-client (%s)",
+    "  реестр юзеров с сервера не прочитан: %s": "  couldn't read user registry from server: %s",
+    "  реестр юзеров синхронизирован на сервер": "  user registry synced to server",
+    "  !! реестр на сервер не записался: %s": "  !! registry write to server failed: %s",
+    "  конфиг «%s» → bundles\\%s": "  config \"%s\" → bundles\\%s",
+    "  !! конфиг «%s» не пересобран: %s": "  !! config \"%s\" not rebuilt: %s",
+    "  сертификат отозван": "  certificate revoked",
+    "  сертификат уже отозван": "  certificate already revoked",
+    "  сертификата на сервере нет — пропускаю отзыв": "  no certificate on server — skipping revocation",
+    "  сессия сброшена": "  session dropped",
+    "  сессии не было (юзер офлайн)": "  no session (user offline)",
+    "  UID удалён": "  UID deleted",
+    "  UID в Cloak уже нет": "  UID already gone from Cloak",
+    "  mgmt включён": "  mgmt enabled",
+    "  mgmt не отвечает (%s) — включаю enable-mgmt…": "  mgmt not responding (%s) — enabling enable-mgmt…",
+    "  mgmt недоступен: %s": "  mgmt unavailable: %s",
+    "  mgmt так и недоступен: %s": "  mgmt still unavailable: %s",
+    "  старый ключ %s удалён": "  old key %s deleted",
+    "сброс сессии %s: %s": "session reset %s: %s",
+    "…идёт операция на «%s» — её вывод пишется в журнал этого сервера…\n\n":
+        "…operation in progress on \"%s\" — its output goes to that server's log…\n\n",
+    "%s — кэш админки, «Обновить» покажет данные с сервера":
+        "%s — admin cache, \"Refresh\" will pull server data",
+    "%s — актуальные данные с сервера": "%s — live data from server",
+    "Юзеров: %s, онлайн: %s": "Users: %s, online: %s",
+    "Юзер «%s» создан, выдай конфиг юзеру: %s": "User \"%s\" created, hand over the config: %s",
+    "Юзер «%s» обновлён (лимиты/срок — на сервере, конфиг тот же)":
+        "User \"%s\" updated (limits/expiry on server, same config)",
+    "Юзер «%s» обновлён, конфиг перевыпущен, выдай его юзеру: %s":
+        "User \"%s\" updated, config reissued, hand it to the user: %s",
+    "Юзер «%s» без изменений": "User \"%s\" unchanged",
+    "Юзер «%s» отозван и удалён.": "User \"%s\" revoked and deleted.",
+    "Юзер «%s» уже существует на «%s»": "User \"%s\" already exists on \"%s\"",
+    "Сессия «%s» сброшена": "Session of \"%s\" dropped",
+    "UID %s… удалён из Cloak": "UID %s… deleted from Cloak",
+    "Конфиг «%s» → %s": "Config \"%s\" → %s",
+    "Импорт: ключи подтянуты с «%s»%s": "Import: keys pulled from \"%s\"%s",
+    ", юзеров восстановлено: %d": ", users recovered: %d",
+    "!! probe.sh не вернул данных": "!! probe.sh returned no data",
+    "!! Не нашёл /etc/ck-server/* — сервер развёрнут?": "!! /etc/ck-server/* not found — is the server deployed?",
+    # --- фаервол-диалог ---
+    "Фаервол: %s\n\nПорты, открытые снаружи:\n\n": "Firewall: %s\n\nExternally open ports:\n\n",
+    "   (нет открытых портов)": "   (no open ports)",
+    "\n\nОстальные входящие соединения закрыты.": "\n\nAll other inbound connections are closed.",
+    "SSH — не удалять": "SSH — do not remove",
+    "Cloak VPN — не удалять": "Cloak VPN — do not remove",
+    "DHCP-клиент — не удалять": "DHCP client — do not remove",
+    "DHCPv6-клиент — не удалять": "DHCPv6 client — do not remove",
+    "пользовательский порт": "custom port",
+    "открыт": "opened",
+    "закрыт": "closed",
+    "fw: порт %s/%s %s, бэкенд %s%s": "fw: port %s/%s %s, backend %s%s",
+    # --- формат-юниты ---
+    "%dк": "%dk",
+    "%gМ": "%gM",
+}
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -237,12 +614,12 @@ def download_putty(say):
         with urllib.request.urlopen(req, timeout=60) as r:
             blob = r.read()
         if not blob.startswith(b"MZ"):
-            raise RuntimeError("%s: скачалось не-exe (%d байт)"
+            raise RuntimeError(T("%s: скачалось не-exe (%d байт)")
                                % (name, len(blob)))
         p = os.path.join(BIN_DIR, name)
         with open(p, "wb") as f:
             f.write(blob)
-        say("  %s → %s (%.1f МБ)" % (name, p, len(blob) / 1e6))
+        say(T("  %s → %s (%.1f МБ)") % (name, p, len(blob) / 1e6))
 
 
 def install_openssh(say):
@@ -252,7 +629,7 @@ def install_openssh(say):
         import ctypes
         if not ctypes.windll.shell32.IsUserAnAdmin():
             return False
-        say("  ставлю компонент «Клиент OpenSSH» (dism)…")
+        say(T("  ставлю компонент «Клиент OpenSSH» (dism)…"))
         p = subprocess.run(
             ["dism", "/Online", "/Add-Capability",
              "/CapabilityName:OpenSSH.Client~~~~0.0.1.0"],
@@ -260,7 +637,7 @@ def install_openssh(say):
             creationflags=CREATE_NO_WINDOW)
         say("  dism: %s" % (p.stdout or p.stderr).strip().splitlines()[-1][:120])
     except Exception as e:
-        say("  dism не сработал: %s" % e)
+        say(T("  dism не сработал: %s") % e)
     return bool(find_exe(["ssh.exe", "ssh"],
                          [r"C:\Windows\System32\OpenSSH"]))
 
@@ -290,7 +667,7 @@ def cloak_release_url():
     for a in meta.get("assets", []):
         if re.match(r"ck-client-windows-amd64.*\.exe$", a.get("name", "")):
             return a["browser_download_url"], int(a.get("size") or 0)
-    raise RuntimeError("в последнем релизе Cloak нет ck-client-windows-amd64*.exe")
+    raise RuntimeError(T("в последнем релизе Cloak нет ck-client-windows-amd64*.exe"))
 
 
 def download_ck_client(say):
@@ -299,7 +676,7 @@ def download_ck_client(say):
     url, size = cloak_release_url()
     dst = os.path.join(BIN_DIR, "ck-client.exe")
     os.makedirs(BIN_DIR, exist_ok=True)
-    say("  скачиваю ck-client с GitHub: %s" % url.split("/")[-1])
+    say(T("  скачиваю ck-client с GitHub: %s") % url.split("/")[-1])
     req = urllib.request.Request(url, headers={"User-Agent": APP_NAME})
     done = 0
     next_mark = 1024 * 1024
@@ -311,7 +688,7 @@ def download_ck_client(say):
             f.write(chunk)
             done += len(chunk)
             if done >= next_mark:
-                say("  …%.1f / %.1f МБ" % (done / 1e6, (size or done) / 1e6))
+                say(T("  …%.1f / %.1f МБ") % (done / 1e6, (size or done) / 1e6))
                 next_mark = done + 1024 * 1024
     return dst
 
@@ -372,6 +749,7 @@ class SSH:
     """
 
     def __init__(self, srv, log):
+        self.t = T
         self.srv = srv
         self.log = log
         self.plink = self.pscp = self.ssh_exe = self.scp_exe = None
@@ -397,13 +775,13 @@ class SSH:
             self.ssh_exe = find_exe(["ssh.exe", "ssh"], win_ssh)
             self.scp_exe = find_exe(["scp.exe", "scp"], win_ssh)
             if not self.ssh_exe or not self.scp_exe:
-                raise SSHErr("Не найдены ssh/scp (Windows OpenSSH).")
+                raise SSHErr(self.t("Не найдены ssh/scp (Windows OpenSSH)."))
         else:
             self.backend = "putty"
             self.plink, self.pscp = find_putty()
             if not self.plink or not self.pscp:
-                raise SSHErr("Не найдены plink/pscp (PuTTY). "
-                             "Установи PuTTY или укажи OpenSSH-ключ в настройках сервера.")
+                raise SSHErr(self.t("Не найдены plink/pscp (PuTTY). "
+                             "Установи PuTTY или укажи OpenSSH-ключ в настройках сервера."))
 
     def _target(self):
         return "%s@%s" % (self.srv.get("user", "ubuntu"), self.srv["host"])
@@ -493,12 +871,12 @@ class SSH:
                              r"authentication|access denied|fatal error",
                              out2 or ""):
                     # и пароль не пустили — показываем ошибку plink
-                    self.log("  ключ отвергнут, пароль тоже не подошёл")
+                    self.log(self.t("  ключ отвергнут, пароль тоже не подошёл"))
                     return rc2, out2
                 # подключились: ключ мёртв → весь объект дальше по паролю.
                 # rc2 != 0 здесь — ошибка КОМАНДЫ на сервере, её и возвращаем
                 self._auth_pw = True
-                self.log("  ключ отвергнут сервером — работаю по паролю")
+                self.log(self.t("  ключ отвергнут сервером — работаю по паролю"))
                 return rc2, out2
         return rc, out
 
@@ -508,8 +886,8 @@ class SSH:
         inp = (self.sudo_pw + "\n") if self.sudo_pw else ""
         rc, out = self._spawn(args, input_text=inp, timeout=timeout)
         if rc != 0:
-            raise SSHErr("SSH: команда завершилась rc=%s: %s"
-                         % (rc, out.strip()[:400] or "(пустой вывод)"))
+            raise SSHErr(self.t("SSH: команда завершилась rc=%s: %s")
+                         % (rc, out.strip()[:400] or self.t("(пустой вывод)")))
         return out
 
     def preflight(self):
@@ -527,12 +905,12 @@ class SSH:
             return
         if ":missing" in out:
             raise SSHErr(
-                "на сервере не установлен sudo.\n"
+                self.t("на сервере не установлен sudo.\n"
                 "В консоли VM под %s: su - (пароль root), затем\n"
                 "  apt install -y sudo && /usr/sbin/usermod -aG sudo %s\n"
-                "или разреши вход root по SSH и логинься как root."
-                % (self.srv.get("user", "<юзер>"),
-                   self.srv.get("user", "<юзер>")))
+                "или разреши вход root по SSH и логинься как root.")
+                % (self.srv.get("user", self.t("<юзер>")),
+                   self.srv.get("user", self.t("<юзер>"))))
         if ":np" in out:
             self.sudo = "sudo -n "
             self.srv["sudo_mode"] = "np"
@@ -546,13 +924,13 @@ class SSH:
                 self.sudo = "sudo -S -p '' "
                 self.sudo_pw = pw
                 self.srv["sudo_mode"] = "pw"
-                self.log("  sudo с паролем — ок")
+                self.log(self.t("  sudo с паролем — ок"))
                 return
-            raise SSHErr("sudo отверг пароль или юзер не в sudoers.")
-        raise SSHErr("sudo требует пароль, а пароль не задан.\n"
+            raise SSHErr(self.t("sudo отверг пароль или юзер не в sudoers."))
+        raise SSHErr(self.t("sudo требует пароль, а пароль не задан.\n"
                      "Варианты: укажи пароль юзера в настройках сервера,\n"
                      "дай NOPASSWD (visudo: user ALL=(ALL) NOPASSWD:ALL)\n"
-                     "или логинься как root.")
+                     "или логинься как root."))
 
     def run_stream(self, cmd, on_line, timeout=None):
         """Стриминг stdout+stderr построчно (для долгих деплой-скриптов)."""
@@ -576,7 +954,7 @@ class SSH:
             on_line(line.rstrip("\n"))
             if timeout and time.time() - t0 > timeout:
                 p.kill()
-                raise SSHErr("Таймаут %s с: %s" % (timeout, cmd[:80]))
+                raise SSHErr(self.t("Таймаут %s с: %s") % (timeout, cmd[:80]))
         p.wait(timeout=10)
         out_tail = ""
         is_plink = os.path.basename(args[0]).lower().startswith("plink")
@@ -607,12 +985,12 @@ class SSH:
                                         timeout=timeout or 300)
             except subprocess.TimeoutExpired:
                 p2.kill()
-                raise SSHErr("Таймаут: %s" % cmd[:80])
+                raise SSHErr(self.t("Таймаут: %s") % cmd[:80])
             for line in (out or "").splitlines():
                 on_line(line)
             out_tail = out or ""
         if is_plink and p.returncode == 255 and not out_tail:
-            raise SSHErr("plink: соединение прервано (255)")
+            raise SSHErr(self.t("plink: соединение прервано (255)"))
         return p.returncode
 
     def install_pubkey(self, pubkey):
@@ -630,7 +1008,7 @@ class SSH:
         args = self._argv_upload(local_path, remote_path)
         rc, out = self._spawn(args, timeout=60)
         if rc != 0:
-            raise SSHErr("загрузка файла не удалась: %s"
+            raise SSHErr(self.t("загрузка файла не удалась: %s")
                          % out.strip()[:300])
         return out
 
@@ -638,7 +1016,7 @@ class SSH:
         """Залить скрипт из scripts/ в /tmp и выполнить под sudo bash."""
         local = os.path.join(SCRIPTS_DIR, filename)
         if not os.path.isfile(local):
-            raise SSHErr("Нет скрипта: %s" % local)
+            raise SSHErr(self.t("Нет скрипта: %s") % local)
         remote = "/tmp/dgadm-%s" % filename
         self.upload(local, remote)
         # CRLF-страховка: скрипты редактируются на Windows
@@ -671,6 +1049,7 @@ class CloakAPI:
     """
 
     def __init__(self, ck_exe, srv, log, vlog=None):
+        self.t = T
         self.ck = ck_exe
         self.srv = srv
         self.log = log
@@ -738,14 +1117,14 @@ class CloakAPI:
                 line = self._outq.get(timeout=0.5)
             except queue.Empty:
                 if self.proc.poll() is not None:
-                    raise CloakAPIErr("ck-client -a завершился, rc=%s" % self.proc.returncode)
+                    raise CloakAPIErr(self.t("ck-client -a завершился, rc=%s") % self.proc.returncode)
                 continue
             self._log_line(line)
             m = re.search(r"API base is (?:https?://)?([\d.]+:\d+)", line)
             if m:
                 self.base = "http://%s" % m.group(1)
                 return
-        raise CloakAPIErr("ck-client -a не поднял API base за %s с" % timeout)
+        raise CloakAPIErr(self.t("ck-client -a не поднял API base за %s с") % timeout)
 
     def stop(self):
         if self.proc and self.proc.poll() is None:
@@ -759,7 +1138,7 @@ class CloakAPI:
 
     def _req(self, method, path, body=None, _retry=True):
         if not self.base:
-            raise CloakAPIErr("admin-API не запущен")
+            raise CloakAPIErr(self.t("admin-API не запущен"))
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(self.base + path, data=data, method=method,
                                      headers={"Content-Type": "application/json"})
@@ -772,11 +1151,11 @@ class CloakAPI:
         except Exception as e:
             if _retry:
                 # клиент заснул — перезапускаем и повторяем один раз
-                self.log("  admin-API: рестарт ck-client (%s)" % e)
+                self.log(self.t("  admin-API: рестарт ck-client (%s)") % e)
                 self.stop()
                 self.start()
                 return self._req(method, path, body, _retry=False)
-            raise CloakAPIErr("admin-API недоступен: %s" % e)
+            raise CloakAPIErr(self.t("admin-API недоступен: %s") % e)
 
     # --- операции ---
     def list_users(self):
@@ -901,19 +1280,20 @@ class ServerDialog(simpledialog.Dialog):
     """Диалог добавления/редактирования сервера."""
 
     def __init__(self, parent, srv=None, title="Сервер"):
+        self.t = parent.t
         self.srv = srv or {}
-        super().__init__(parent, title)
+        super().__init__(parent, self.t(title))
 
     def body(self, f):
         self.vars = {}
         fields = [
-            ("name", "Название", self.srv.get("name", "")),
-            ("host", "Доменное имя/IP", self.srv.get("host", "")),
-            ("ssh_port", "SSH порт", str(self.srv.get("ssh_port", 22))),
-            ("user", "SSH логин", self.srv.get("user", "ubuntu")),
-            ("ppk", "Ключ .ppk (PuTTY)", self.srv.get("ppk", "")),
-            ("key", "Ключ OpenSSH", self.srv.get("key", "")),
-            ("password", "Пароль (если нет ключей)", self.srv.get("password", "")),
+            ("name", self.t("Название"), self.srv.get("name", "")),
+            ("host", self.t("Доменное имя/IP"), self.srv.get("host", "")),
+            ("ssh_port", self.t("SSH порт"), str(self.srv.get("ssh_port", 22))),
+            ("user", self.t("SSH логин"), self.srv.get("user", "ubuntu")),
+            ("ppk", self.t("Ключ .ppk (PuTTY)"), self.srv.get("ppk", "")),
+            ("key", self.t("Ключ OpenSSH"), self.srv.get("key", "")),
+            ("password", self.t("Пароль (если нет ключей)"), self.srv.get("password", "")),
         ]
         for i, (k, label, val) in enumerate(fields):
             ttk.Label(f, text=label).grid(row=i, column=0, sticky="w", padx=4, pady=3)
@@ -927,18 +1307,18 @@ class ServerDialog(simpledialog.Dialog):
                            ).grid(row=i, column=2)
             if k == "password":
                 e.config(show="*")
-        ttk.Label(f, text="Приоритет: ключ OpenSSH → .ppk → пароль",
+        ttk.Label(f, text=self.t("Приоритет: ключ OpenSSH → .ppk → пароль"),
                   foreground="#666").grid(row=len(fields), column=0,
                                           columnspan=3, sticky="w", padx=4)
         return f
 
     def validate(self):
         if not self.vars["name"].get().strip() or not self.vars["host"].get().strip():
-            messagebox.showerror("Сервер", "Нужны имя и хост", parent=self)
+            messagebox.showerror(self.t("Сервер"), self.t("Нужны имя и хост"), parent=self)
             return False
         if not (self.vars["ppk"].get().strip() or self.vars["key"].get().strip()
                 or self.vars["password"].get()):
-            messagebox.showerror("Сервер", "Нужен ключ (.ppk/OpenSSH) или пароль",
+            messagebox.showerror(self.t("Сервер"), self.t("Нужен ключ (.ppk/OpenSSH) или пароль"),
                                  parent=self)
             return False
         try:
@@ -946,7 +1326,7 @@ class ServerDialog(simpledialog.Dialog):
             if not (1 <= port <= 65535):
                 raise ValueError
         except ValueError:
-            messagebox.showerror("Сервер", "SSH порт: число 1-65535", parent=self)
+            messagebox.showerror(self.t("Сервер"), self.t("SSH порт: число 1-65535"), parent=self)
             return False
         # частая ошибка — выбрать .pub вместо приватного ключа
         key = self.vars["key"].get().strip()
@@ -956,8 +1336,8 @@ class ServerDialog(simpledialog.Dialog):
                 self.vars["key"].set(priv)
             else:
                 messagebox.showerror(
-                    "Сервер", "Это публичный ключ (.pub) — нужен приватный,\n"
-                    "обычно тот же файл без расширения .pub", parent=self)
+                    self.t("Сервер"), self.t("Это публичный ключ (.pub) — нужен приватный,\n"
+                    "обычно тот же файл без расширения .pub"), parent=self)
                 return False
         return True
 
@@ -981,32 +1361,33 @@ class UserDialog(simpledialog.Dialog):
     """Диалог создания/правки юзера. rec — запись реестра для правки."""
 
     def __init__(self, parent, srv_mask="", rec=None, title="Новый юзер"):
+        self.t = parent.t
         self.srv_mask = srv_mask
         self.rec = rec
-        super().__init__(parent, title)
+        super().__init__(parent, self.t(title))
 
     def body(self, f):
         rec = self.rec or {}
         exp_days = "0"
         if rec.get("expiry") and rec["expiry"] < FAR_FUTURE:
             exp_days = str(max(1, round((rec["expiry"] - time.time()) / 86400)))
-        fields = [("name", "Имя (CN, [a-z0-9_-])", rec.get("cn", "")),
-                  ("expiry_days", "Срок жизни, дней (0 = бессрочно)", exp_days),
-                  ("sessions", "Макс. одновременных подключений",
+        fields = [("name", self.t("Имя (CN, [a-z0-9_-])"), rec.get("cn", "")),
+                  ("expiry_days", self.t("Срок жизни, дней (0 = бессрочно)"), exp_days),
+                  ("sessions", self.t("Макс. одновременных подключений"),
                    str(rec.get("sessions") or 16)),
-                  ("up_mbits", "Лимит скорости ↑, Мбит/с (0 = безлимит)",
+                  ("up_mbits", self.t("Лимит скорости ↑, Мбит/с (0 = безлимит)"),
                    "%g" % (rec["up_rate"] * 8 / 1e6)
                    if rec.get("up_rate") and rec["up_rate"] < INT64_MAX else "0"),
-                  ("down_mbits", "Лимит скорости ↓, Мбит/с (0 = безлимит)",
+                  ("down_mbits", self.t("Лимит скорости ↓, Мбит/с (0 = безлимит)"),
                    "%g" % (rec["down_rate"] * 8 / 1e6)
                    if rec.get("down_rate") and rec["down_rate"] < INT64_MAX else "0"),
-                  ("up_mb", "Квота трафика ↑, МБ (0 = безлимит)",
+                  ("up_mb", self.t("Квота трафика ↑, МБ (0 = безлимит)"),
                    str(rec["up_credit"] // 1048576)
                    if rec.get("up_credit") and rec["up_credit"] < INT64_MAX else "0"),
-                  ("down_mb", "Квота трафика ↓, МБ (0 = безлимит)",
+                  ("down_mb", self.t("Квота трафика ↓, МБ (0 = безлимит)"),
                    str(rec["down_credit"] // 1048576)
                    if rec.get("down_credit") and rec["down_credit"] < INT64_MAX else "0"),
-                  ("mask", "Домен для маскировки",
+                  ("mask", self.t("Домен для маскировки"),
                    rec.get("mask") or self.srv_mask)]
         self.vars = {}
         for i, (k, label, val) in enumerate(fields):
@@ -1021,26 +1402,26 @@ class UserDialog(simpledialog.Dialog):
 
     def validate(self):
         if not valid_cn(self.vars["name"].get().strip()):
-            messagebox.showerror("Юзер", "Имя: только латиница, цифры, _ и -",
+            messagebox.showerror(self.t("Юзер"), self.t("Имя: только латиница, цифры, _ и -"),
                                  parent=self)
             return False
-        lbl = {"expiry_days": "Срок жизни, дней",
-               "sessions": "Макс. одновременных подключений",
-               "up_mb": "Квота трафика ↑, МБ", "down_mb": "Квота трафика ↓, МБ",
-               "up_mbits": "Лимит скорости ↑, Мбит/с",
-               "down_mbits": "Лимит скорости ↓, Мбит/с"}
+        lbl = {"expiry_days": self.t("Срок жизни, дней"),
+               "sessions": self.t("Макс. одновременных подключений"),
+               "up_mb": self.t("Квота трафика ↑, МБ"), "down_mb": self.t("Квота трафика ↓, МБ"),
+               "up_mbits": self.t("Лимит скорости ↑, Мбит/с"),
+               "down_mbits": self.t("Лимит скорости ↓, Мбит/с")}
         for k in ("expiry_days", "sessions", "up_mb", "down_mb"):
             try:
                 int(self.vars[k].get() or 0)
             except ValueError:
-                messagebox.showerror("Юзер", "Поле «%s» — только целое число"
+                messagebox.showerror(self.t("Юзер"), self.t("Поле «%s» — только целое число")
                                      % lbl[k], parent=self)
                 return False
         for k in ("up_mbits", "down_mbits"):
             try:
                 float(self.vars[k].get() or 0)
             except ValueError:
-                messagebox.showerror("Юзер", "Поле «%s» — только число"
+                messagebox.showerror(self.t("Юзер"), self.t("Поле «%s» — только число")
                                      % lbl[k], parent=self)
                 return False
         return True
@@ -1071,27 +1452,28 @@ class PortsDialog(tk.Toplevel):
     def __init__(self, app, srv, rules_text):
         super().__init__(app)
         self.app = app
+        self.t = app.t
         self.srv = srv
         app._ports_dlg = self
         self.protocol("WM_DELETE_WINDOW", self._close)
-        self.title("Управление фаерволом — %s" % srv["name"])
+        self.title(self.t("Управление фаерволом — %s") % srv["name"])
         self.txt = tk.Text(self, width=72, height=16, font=("Consolas", 9))
         self.txt.pack(fill="both", expand=True, padx=6, pady=6)
         self._fill(rules_text)
 
         bar = ttk.Frame(self)
         bar.pack(fill="x", padx=6, pady=6)
-        ttk.Label(bar, text="Порт:").pack(side="left")
+        ttk.Label(bar, text=self.t("Порт:")).pack(side="left")
         self.v_port = tk.StringVar()
         ttk.Entry(bar, textvariable=self.v_port, width=7).pack(side="left", padx=4)
         self.v_proto = tk.StringVar(value="tcp")
         ttk.Combobox(bar, textvariable=self.v_proto, width=5,
                      values=["tcp", "udp"], state="readonly").pack(side="left")
-        ttk.Button(bar, text="Открыть",
+        ttk.Button(bar, text=self.t("Открыть"),
                    command=lambda: self._act("allow")).pack(side="left", padx=4)
-        ttk.Button(bar, text="Закрыть",
+        ttk.Button(bar, text=self.t("Закрыть"),
                    command=lambda: self._act("deny")).pack(side="left")
-        ttk.Button(bar, text="Обновить",
+        ttk.Button(bar, text=self.t("Обновить"),
                    command=self._reload).pack(side="left", padx=10)
 
     def _port_label(self, proto, port, cm):
@@ -1102,12 +1484,21 @@ class PortsDialog(tk.Toplevel):
         ck_port = str(s.get("ck_port")
                       or self.app.v_ckport.get().strip() or "443")
         if proto == "tcp" and port in ssh_ports:
-            return "SSH — не удалять"
+            return self.t("SSH — не удалять")
         if proto == "tcp" and port == ck_port:
-            return "Cloak VPN — не удалять"
+            return self.t("Cloak VPN — не удалять")
         if proto == "udp" and port in ("68", "546"):
-            return "DHCP-клиент — не удалять"
-        return self.COMMENT_RU.get(cm) or "пользовательский порт"
+            return self.t("DHCP-клиент — не удалять")
+        return self.t(self.COMMENT_RU.get(cm) or "пользовательский порт")
+
+    def _port_protected(self, proto, port):
+        ssh_ports = {str(p) for p in
+                     [self.srv.get("ssh_port", 22)] + self.srv.get("sshd_ports", [])}
+        ck_port = str(self.srv.get("ck_port")
+                      or self.app.v_ckport.get().strip() or "443")
+        return (proto == "tcp" and port in ssh_ports) \
+            or (proto == "tcp" and port == ck_port) \
+            or (proto == "udp" and port in ("68", "546"))
 
     COMMENT_RU = {"ssh": "SSH — не удалять", "cloak": "Cloak VPN — не удалять",
                   "dhcp": "DHCP-клиент — не удалять",
@@ -1132,13 +1523,13 @@ class PortsDialog(tk.Toplevel):
                 fw = line[3:]
             elif line and not line.startswith("==="):
                 notes.append(line)
-        t = "Фаервол: %s\n\nПорты, открытые снаружи:\n\n" % (fw or "?")
+        t = self.t("Фаервол: %s\n\nПорты, открытые снаружи:\n\n") % (fw or "?")
         if rows:
             t += "\n".join("   %-9s %s" % ("%s/%s" % (p, pr), cm)
                            for p, pr, cm in sorted(rows, key=lambda r: int(r[0])))
         else:
-            t += "   (нет открытых портов)"
-        t += "\n\nОстальные входящие соединения закрыты."
+            t += self.t("   (нет открытых портов)")
+        t += self.t("\n\nОстальные входящие соединения закрыты.")
         if notes:
             t += "\n\n" + "\n".join(notes)
         self.txt.config(state="normal")
@@ -1160,16 +1551,16 @@ class PortsDialog(tk.Toplevel):
     def _act(self, action):
         port = self.v_port.get().strip()
         if not port.isdigit() or not (1 <= int(port) <= 65535):
-            messagebox.showerror(APP_NAME, "Порт: число 1-65535", parent=self)
+            messagebox.showerror(APP_NAME, self.t("Порт: число 1-65535"), parent=self)
             return
         proto = self.v_proto.get()
         if action == "deny":
             lbl = self._port_label(proto, port, "")
-            if "не удалять" in lbl:
+            if self._port_protected(proto, port):
                 if not messagebox.askyesno(
                         APP_NAME,
-                        "Порт %s/%s помечен «%s».\nЗакрытие может отрезать "
-                        "доступ к серверу или VPN.\n\nВсё равно закрыть?"
+                        self.t("Порт %s/%s помечен «%s».\nЗакрытие может отрезать "
+                        "доступ к серверу или VPN.\n\nВсё равно закрыть?")
                         % (port, proto, lbl), parent=self):
                     return
 
@@ -1183,8 +1574,8 @@ class PortsDialog(tk.Toplevel):
                         if l.startswith("FW=")), "?")
             notes = "; ".join(l for l in lines if not
                               l.startswith(("FW=", "=== ", "ok:")))[:140]
-            verb = "открыт" if action == "allow" else "закрыт"
-            self.app.say("fw: порт %s/%s %s, бэкенд %s%s"
+            verb = self.t("открыт") if action == "allow" else self.t("закрыт")
+            self.app.say(self.t("fw: порт %s/%s %s, бэкенд %s%s")
                          % (proto, port, verb, fw_,
                             " (%s)" % notes if notes else ""))
             out = ssh.run_script("fw-manage.sh", "ports", timeout=60)
@@ -1209,6 +1600,13 @@ class App(tk.Tk):
             pass
         migrate_dirs()
         self.data = load_data()
+        # язык: из настроек, при первом запуске — по локали Windows
+        self.lang = self.data.get("language") or detect_lang()
+        global _LANG
+        _LANG = self.lang
+        self._i18n = []       # [(widget, ru, fmt_args)] — тексты для re-apply
+        self._tips = []       # [(Tooltip, ru)] — тултипы для re-apply
+        self._nb_tabs = []    # [(frame, ru)] — подписи вкладок
         self.uiq = queue.Queue()
         self.busy = False
         self._ports_dlg = None
@@ -1233,35 +1631,91 @@ class App(tk.Tk):
         self.after(100, self._drain)
         self._ensure_deps()
 
+    # ---- локализация ----
+    def t(self, ru):
+        return STRINGS_EN.get(ru, ru) if self.lang == "en" else ru
+
+    def _tw(self, w, ru, *a):
+        """Виджет с переводимым текстом: регистрирует для смены языка."""
+        w.config(text=self.t(ru) % a if a else self.t(ru))
+        self._i18n.append((w, ru, a))
+        return w
+
+    def _tip(self, w, ru):
+        tp = Tooltip(w, self.t(ru))
+        tp.ru = ru
+        self._tips.append(tp)
+        return tp
+
+    def _nb_tab(self, nb, f, ru):
+        nb.add(f, text=self.t(ru))
+        self._nb_tabs.append((f, ru))
+
+    def _on_lang(self, _e=None):
+        lang = "en" if self.v_lang.get() == "English" else "ru"
+        if lang == self.lang:
+            return
+        self.lang = lang
+        global _LANG
+        _LANG = lang
+        self.data["language"] = lang
+        save_data(self.data)
+        self._apply_lang()
+
+    def _apply_lang(self):
+        """Живое переключение: виджеты/тултипы/вкладки/заголовки.
+        Журнал и заметки шагов не переводятся задним числом."""
+        for w, ru, a in self._i18n:
+            try:
+                w.config(text=self.t(ru) % a if a else self.t(ru))
+            except tk.TclError:
+                pass
+        for tp in self._tips:
+            tp.text = self.t(tp.ru)
+        for f, ru in self._nb_tabs:
+            self.nb.tab(f, text=self.t(ru))
+        for c, ru in self._users_heads.items():
+            ctr = c in ("sessions", "online")
+            self.users_tv.heading(c, text=self.t(ru),
+                                  anchor="center" if ctr else "w")
+        self._fill_steps()
+        if self._log_name:
+            self._log_load(self._log_name)
+        self.v_tcpwarn.set(self.t("(TCP медленнее)")
+                           if self.v_proto.get() == "tcp" else "")
+        if getattr(self, "_usr_note", None):
+            ru, a = self._usr_note
+            self.v_users_srv.set(self.t(ru) % a)
+
     def _ensure_deps(self):
         """Первый запуск на чистой машине: SSH-слой и ck-client.
         plink/pscp качаем сами (одиночные exe); OpenSSH — это Windows-
         компонент, ставим через dism только из-под админа, иначе совет."""
         def work():
-            self.say("=== Проверка зависимостей ===")
+            self.say(self.t("=== Проверка зависимостей ==="))
             openssh = [r"C:\Windows\System32\OpenSSH"]
             if find_exe(["ssh.exe", "ssh"], openssh) and \
                     find_exe(["scp.exe", "scp"], openssh):
-                self.say("  OpenSSH-клиент: на месте")
+                self.say(self.t("  OpenSSH-клиент: на месте"))
             elif install_openssh(self.say):
-                self.say("  OpenSSH-клиент: установлен")
+                self.say(self.t("  OpenSSH-клиент: установлен"))
             else:
-                self.say("  OpenSSH-клиент: НЕТ — нужен для входа по "
+                self.say(self.t("  OpenSSH-клиент: НЕТ — нужен для входа по "
                          "OpenSSH-ключу. Установка: Параметры → Приложения "
                          "→ Дополнительные компоненты → «Клиент OpenSSH», "
-                         "либо используй пароль/.ppk (для них хватит PuTTY)")
+                         "либо используй пароль/.ppk (для них хватит PuTTY)"))
             plink, pscp = find_putty()
             if plink and pscp:
-                self.say("  PuTTY (plink/pscp): на месте")
+                self.say(self.t("  PuTTY (plink/pscp): на месте"))
             else:
                 try:
-                    self.say("  PuTTY (plink/pscp): нет — скачиваю с "
-                             "официального сайта…")
+                    self.say(self.t("  PuTTY (plink/pscp): нет — скачиваю с "
+                             "официального сайта…"))
                     download_putty(self.say)
                 except Exception as e:
-                    self.say("  !! plink/pscp не скачались (%s) — вход по "
+                    self.say(self.t("  !! plink/pscp не скачались (%s) — вход по "
                              "паролю и по .ppk не будет работать. Поставь "
-                             "PuTTY или используй OpenSSH-ключ" % e)
+                             "PuTTY или используй OpenSSH-ключ") % e)
             # старые установки держали ck-client в корне APP_DIR —
             # перекладываем в bin\ для единообразия
             old_ck = os.path.join(APP_DIR, "ck-client.exe")
@@ -1280,19 +1734,19 @@ class App(tk.Tk):
                     try:
                         os.makedirs(BIN_DIR, exist_ok=True)
                         shutil.copy2(found, new_ck)
-                        self.say("  ck-client: нашёл %s → скопировал в "
-                                 "bin\\" % found)
+                        self.say(self.t("  ck-client: нашёл %s → скопировал в "
+                                 "bin\\") % found)
                     except OSError:
-                        self.say("  ck-client: на месте (%s)" % found)
+                        self.say(self.t("  ck-client: на месте (%s)") % found)
                 else:
-                    self.say("  ck-client: на месте")
+                    self.say(self.t("  ck-client: на месте"))
             else:
                 try:
                     ck = download_ck_client(self.say)
                     self.say("  ck-client → %s" % ck)
                 except Exception as e:
-                    self.say("  !! ck-client не скачался (%s) — вкладка "
-                             "«Пользователи» не заработает; деплой — будет"
+                    self.say(self.t("  !! ck-client не скачался (%s) — вкладка "
+                             "«Пользователи» не заработает; деплой — будет")
                              % e)
         self._worker(work)
 
@@ -1391,15 +1845,15 @@ class App(tk.Tk):
         for tab, w_ in (("deploy", self.logw_dep), ("users", self.logw_usr)):
             w_.delete("1.0", "end")
             if self._log_ctx and self._log_ctx != name and self._op_tab == tab:
-                w_.insert("end", "…идёт операция на «%s» — её вывод пишется "
-                                 "в журнал этого сервера…\n\n" % self._log_ctx)
+                w_.insert("end", self.t("…идёт операция на «%s» — её вывод пишется "
+                                 "в журнал этого сервера…\n\n") % self._log_ctx)
             entries = [l for l, vb, t in self._logs.get(name, [])
                        if t == tab and (not vb or v)]
             if entries:
                 w_.insert("end", "\n".join(entries) + "\n")
             w_.see("end")
-        self.logframe_dep.config(text="Лог — %s" % name)
-        self.logframe_usr.config(text="Лог — %s" % name)
+        self.logframe_dep.config(text=self.t("Лог — %s") % name)
+        self.logframe_usr.config(text=self.t("Лог — %s") % name)
 
     def _on_verbose_toggle(self):
         s = self._srv_by_name(self._log_name) if self._log_name else None
@@ -1426,7 +1880,7 @@ class App(tk.Tk):
         txt = w_.get("1.0", "end").rstrip()
         self.clipboard_clear()
         self.clipboard_append(txt)
-        self._mark_log(tab, "Лог скопирован в буфер (%d символов)"
+        self._mark_log(tab, self.t("Лог скопирован в буфер (%d символов)")
                        % len(txt))
 
     def _copy_log_dep(self):
@@ -1441,7 +1895,7 @@ class App(tk.Tk):
                                 if e[2] != tab]
         w_ = self.logw_usr if tab == "users" else self.logw_dep
         w_.delete("1.0", "end")
-        self._mark_log(tab, "Лог очищен.")
+        self._mark_log(tab, self.t("Лог очищен."))
 
     def _clear_log_dep(self):
         self._clear_log("deploy")
@@ -1456,7 +1910,7 @@ class App(tk.Tk):
         """ctx — имя сервера, чей журнал получает лог (если операция
         привязана к серверу не по текущему выбору, а по диалогу)."""
         if self.busy:
-            messagebox.showinfo(APP_NAME, "Идёт операция на «%s» — подожди"
+            messagebox.showinfo(APP_NAME, self.t("Идёт операция на «%s» — подожди")
                                 % (self._log_ctx or "?"))
             return
         self.busy = True
@@ -1469,7 +1923,7 @@ class App(tk.Tk):
             try:
                 fn()
             except Exception as e:
-                self.say("ОШИБКА: %s" % e)
+                self.say(self.t("ОШИБКА: %s") % e)
             finally:
                 self._log_ctx = None
                 self._op_tab = None
@@ -1484,7 +1938,7 @@ class App(tk.Tk):
         top.pack(fill="both", expand=True, padx=6, pady=6)
 
         # --- левая колонка: серверы ---
-        left = ttk.LabelFrame(top, text="Серверы")
+        left = self._tw(ttk.LabelFrame(top), "Серверы")
         left.pack(side="left", fill="y", padx=(0, 6))
         self.srv_list = tk.Listbox(left, width=30, exportselection=False)
         self.srv_list.pack(fill="both", expand=True, padx=4, pady=4)
@@ -1494,9 +1948,7 @@ class App(tk.Tk):
         for t, c in (("Добавить", self._srv_add),
                      ("Изменить", self._srv_edit),
                      ("Удалить", self._srv_del)):
-            b = ttk.Button(btns, text=t, command=c)
-            b.pack(side="left", padx=2)
-            self._all_buttons.append(b)
+            self._mk_btn(btns, t, c).pack(side="left", padx=2)
 
         # --- правая колонка: вкладки ---
         nb = self.nb = ttk.Notebook(top)
@@ -1505,7 +1957,8 @@ class App(tk.Tk):
         self._tab_users(nb)
 
     def _mk_btn(self, parent, text, cmd):
-        b = ttk.Button(parent, text=text, command=cmd)
+        b = ttk.Button(parent, text=self.t(text), command=cmd)
+        self._i18n.append((b, text, ()))
         self._all_buttons.append(b)
         return b
 
@@ -1525,35 +1978,35 @@ class App(tk.Tk):
 
     def _tab_deploy(self, nb):
         f = ttk.Frame(nb)
-        nb.add(f, text="Развёртывание")
+        self._nb_tab(nb, f, "Развёртывание")
         pad = {"padx": 6, "pady": 4}
 
         row = 0
         optf = ttk.Frame(f)
         optf.grid(row=row, column=0, sticky="ew", **pad)
-        ttk.Label(optf, text="Домен для маскировки:").pack(side="left")
+        self._tw(ttk.Label(optf), "Домен для маскировки:").pack(side="left")
         self.v_mask = tk.StringVar(value="www.bing.com")
         ttk.Entry(optf, textvariable=self.v_mask, width=36).pack(side="left", padx=4)
         self.v_ckport = tk.StringVar(value="443")
         self.w_ckport = ttk.Entry(optf, textvariable=self.v_ckport, width=5)
         self.w_ckport.pack(side="right")
-        lbl_p = ttk.Label(optf, text="Cloak порт")
+        lbl_p = self._tw(ttk.Label(optf), "Cloak порт")
         lbl_p.pack(side="right", padx=(10, 4))
-        Tooltip(lbl_p, "На развёрнутом сервере поле заблокировано:\n"
-                       "смена порта требует пересборки конфигов юзеров")
+        self._tip(lbl_p, "На развёрнутом сервере поле заблокировано:\n"
+                  "смена порта требует пересборки конфигов юзеров")
         self.v_tcpwarn = tk.StringVar()
         ttk.Label(optf, textvariable=self.v_tcpwarn,
                   foreground="#a33").pack(side="right", padx=(2, 0))
         self.v_proto = tk.StringVar(value="udp")
         self.v_proto.trace_add("write", lambda *a: self.v_tcpwarn.set(
-            "(TCP медленнее)" if self.v_proto.get() == "tcp" else ""))
+            self.t("(TCP медленнее)") if self.v_proto.get() == "tcp" else ""))
         self.w_proto = ttk.Combobox(optf, textvariable=self.v_proto, width=5,
                                     state="readonly", values=["udp", "tcp"])
         self.w_proto.pack(side="right")
-        lbl_pr = ttk.Label(optf, text="Протокол OpenVPN:")
+        lbl_pr = self._tw(ttk.Label(optf), "Протокол OpenVPN:")
         lbl_pr.pack(side="right", padx=(10, 0))
-        Tooltip(lbl_pr, "На развёрнутом сервере поле заблокировано:\n"
-                        "смена протокола требует пересборки конфигов юзеров")
+        self._tip(lbl_pr, "На развёрнутом сервере поле заблокировано:\n"
+                  "смена протокола требует пересборки конфигов юзеров")
 
         row += 1
         # нативная шапка treeview на Windows ~24px и не сжимается —
@@ -1564,8 +2017,8 @@ class App(tk.Tk):
             c = tk.Frame(hdr, width=w, height=16, bg="#e8e8e8")
             c.pack_propagate(False)
             c.pack(side="left")
-            tk.Label(c, text=t, bg="#e8e8e8", font=("Segoe UI", 9),
-                     anchor="w", padx=6).pack(fill="both")
+            self._tw(tk.Label(c, bg="#e8e8e8", font=("Segoe UI", 9),
+                             anchor="w", padx=6), t).pack(fill="both")
 
         row += 1
         self.steps_tv = ttk.Treeview(f, columns=("st", "note"),
@@ -1585,12 +2038,13 @@ class App(tk.Tk):
         row += 1
         bf = ttk.Frame(f)
         bf.grid(row=row, column=0, sticky="ew", **pad)
-        big = tk.Button(bf, text="▶  Развернуть всё", command=self._step_run_all,
-                        font=("", 10, "bold"), bg="#2d7", fg="white",
-                        activebackground="#2a6", padx=10, pady=2)
+        big = self._tw(tk.Button(bf, command=self._step_run_all,
+                                font=("", 10, "bold"), bg="#2d7", fg="white",
+                                activebackground="#2a6", padx=10, pady=2),
+                      "▶  Развернуть всё")
         big.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(0, 10))
         self._all_buttons.append(big)
-        Tooltip(big, "Шаги идут сверху вниз, готовые шаги — пропускаются")
+        self._tip(big, "Шаги идут сверху вниз, готовые шаги — пропускаются")
         _dep_tips = {
             "Только выбранный шаг":
                 "Выполнить один выбранный в таблице шаг —\n"
@@ -1621,15 +2075,15 @@ class App(tk.Tk):
             b = self._mk_btn(bf, t, c)
             b.grid(row=0, column=i, sticky="ew", padx=2, pady=1)
             bf.columnconfigure(i, weight=1, uniform="btn")
-            Tooltip(b, _dep_tips[t])
+            self._tip(b, _dep_tips[t])
         b_imp = self._mk_btn(bf, "Импорт ключей", self._do_import)
         b_imp.grid(row=0, column=4, sticky="ew", padx=(2, 0), pady=1)
         bf.columnconfigure(4, weight=1, uniform="btn")
-        Tooltip(b_imp,
-                "Если сервер уже настроен (вручную или через DGCloak Admin)\n"
-                "— эта кнопка забирает с него ключи/юзеры Cloak,\n"
-                "не переустанавливая ничего. После этого сервером можно\n"
-                "управлять: юзеры, конфиги, статусы.")
+        self._tip(b_imp,
+                  "Если сервер уже настроен (вручную или через DGCloak Admin)\n"
+                  "— эта кнопка забирает с него ключи/юзеры Cloak,\n"
+                  "не переустанавливая ничего. После этого сервером можно\n"
+                  "управлять: юзеры, конфиги, статусы.")
         for i, (t, c) in enumerate((("Сбросить сервер", self._srv_purge),
                                     ("Перезагрузить сервер", self._srv_reboot),
                                     ("Копировать лог", self._copy_log_dep),
@@ -1638,22 +2092,25 @@ class App(tk.Tk):
             b = self._mk_btn(bf, t, c)
             b.grid(row=1, column=i, sticky="ew",
                    padx=(2, 0) if i == 4 else 2, pady=1)
-            Tooltip(b, _dep_tips[t])
+            self._tip(b, _dep_tips[t])
 
         row += 1
         leg = ttk.Frame(f)
         leg.grid(row=row, column=0, sticky="ew", **pad)
-        ttk.Label(leg, text="✓ готово   ⚠ предупреждение   ✗ ошибка   "
-                            "– пропущен   … не выполнялся",
-                  foreground="#666").pack(side="left")
-        # язык интерфейса — пока только элемент, перевод позже
-        self.v_lang = tk.StringVar(value="Русский")
-        ttk.Combobox(leg, textvariable=self.v_lang, state="disabled",
-                     values=["Русский", "English"], width=9).pack(side="right")
-        ttk.Label(leg, text="Язык:").pack(side="right", padx=(0, 4))
+        self._tw(ttk.Label(leg, foreground="#666"),
+                "✓ готово   ⚠ предупреждение   ✗ ошибка   "
+                "– пропущен   … не выполнялся").pack(side="left")
+        self.v_lang = tk.StringVar(
+            value="English" if self.lang == "en" else "Русский")
+        self.cb_lang = ttk.Combobox(leg, textvariable=self.v_lang,
+                                    state="readonly",
+                                    values=["Русский", "English"], width=9)
+        self.cb_lang.pack(side="right")
+        self.cb_lang.bind("<<ComboboxSelected>>", self._on_lang)
+        self._tw(ttk.Label(leg), "Язык:").pack(side="right", padx=(0, 4))
 
         row += 1
-        self.logframe_dep = ttk.LabelFrame(f, text="Лог")
+        self.logframe_dep = self._tw(ttk.LabelFrame(f), "Лог")
         self.logframe_dep.grid(row=row, column=0, sticky="nsew", **pad)
         f.rowconfigure(row, weight=1)
         self.logw_dep = tk.Text(self.logframe_dep, height=10, wrap="none",
@@ -1666,21 +2123,22 @@ class App(tk.Tk):
     # ---- вкладка «Пользователи» ----
     def _tab_users(self, nb):
         f = ttk.Frame(nb)
-        nb.add(f, text="Пользователи")
-        self.v_users_srv = tk.StringVar(value="— выбери сервер")
+        self._nb_tab(nb, f, "Пользователи")
+        self.v_users_srv = tk.StringVar(value=self.t("— выбери сервер"))
         ttk.Label(f, textvariable=self.v_users_srv,
                   foreground="#666").pack(anchor="w", padx=6, pady=(6, 0))
         cols = ("cn", "sessions", "limit", "quota", "expiry", "mask", "online")
         self.users_tv = ttk.Treeview(f, columns=cols, show="headings", height=12)
-        heads = {"cn": "Имя (CN)", "sessions": "Макс. сессий",
-                 "limit": "Лимит ↑/↓", "quota": "Квота ↑/↓",
-                 "expiry": "Истекает", "mask": "Домен маскировки",
-                 "online": "Онлайн"}
+        heads = self._users_heads = {
+            "cn": "Имя (CN)", "sessions": "Макс. сессий",
+            "limit": "Лимит ↑/↓", "quota": "Квота ↑/↓",
+            "expiry": "Истекает", "mask": "Домен маскировки",
+            "online": "Онлайн"}
         widths = {"cn": 120, "sessions": 50, "limit": 100, "quota": 100,
                   "expiry": 90, "mask": 140, "online": 55}
         for c in cols:
             ctr = c in ("sessions", "online")
-            self.users_tv.heading(c, text=heads[c],
+            self.users_tv.heading(c, text=self.t(heads[c]),
                                   anchor="center" if ctr else "w")
             self.users_tv.column(c, width=widths[c],
                                  anchor="center" if ctr else "w")
@@ -1708,7 +2166,7 @@ class App(tk.Tk):
             b = self._mk_btn(bf, t, c)
             b.grid(row=0, column=i, sticky="ew", padx=2)
             bf.columnconfigure(i, weight=1, uniform="ug1")
-            Tooltip(b, _user_tips[t])
+            self._tip(b, _user_tips[t])
         for i, (t, c) in enumerate((("Отключить сейчас", self._user_kill),
                                     ("Отозвать и удалить", self._user_revoke),
                                     ("Экспорт конфига…", self._user_export)),
@@ -1716,15 +2174,15 @@ class App(tk.Tk):
             b = self._mk_btn(bf, t, c)
             b.grid(row=0, column=i, sticky="ew", padx=2)
             bf.columnconfigure(i, weight=1, uniform="ug2")
-            Tooltip(b, _user_tips[t])
-        cb_v = ttk.Checkbutton(bf, text="Подробный вывод",
-                               variable=self.verbose,
-                               command=self._on_verbose_toggle)
+            self._tip(b, _user_tips[t])
+        cb_v = self._tw(ttk.Checkbutton(bf, variable=self.verbose,
+                                     command=self._on_verbose_toggle),
+                       "Подробный вывод")
         cb_v.grid(row=0, column=6, sticky="e", padx=(8, 2))
-        Tooltip(cb_v, "Служебные строки юзер-операций (ck-client, user-cert).\n"
-                      "Состояние запоминается для каждого сервера.")
+        self._tip(cb_v, "Служебные строки юзер-операций (ck-client, user-cert).\n"
+                  "Состояние запоминается для каждого сервера.")
 
-        self.logframe_usr = ttk.LabelFrame(f, text="Лог")
+        self.logframe_usr = self._tw(ttk.LabelFrame(f), "Лог")
         self.logframe_usr.pack(fill="both", expand=True, padx=6, pady=(0, 6))
         self.logw_usr = tk.Text(self.logframe_usr, height=10, wrap="none",
                                 font=("Consolas", 9))
@@ -1760,7 +2218,7 @@ class App(tk.Tk):
     def _sel_srv(self):
         i = self.srv_list.curselection()
         if not i:
-            messagebox.showinfo(APP_NAME, "Выбери сервер слева")
+            messagebox.showinfo(APP_NAME, self.t("Выбери сервер слева"))
             return None
         return self.data["servers"][i[0]]
 
@@ -1789,8 +2247,9 @@ class App(tk.Tk):
                 _fmt_quota(u.get("up_credit"), u.get("down_credit")),
                 time.strftime("%d.%m.%Y", time.localtime(exp)) if exp else "—",
                 u.get("mask") or s.get("mask_domain", ""), ""))
-        self.v_users_srv.set("%s — кэш админки, «Обновить» покажет "
-                             "данные с сервера" % s["name"])
+        self._usr_note = ("%s — кэш админки, «Обновить» покажет "
+                          "данные с сервера", (s["name"],))
+        self.v_users_srv.set(self.t(self._usr_note[0]) % self._usr_note[1])
 
     def _sel_srv_silent(self):
         i = self.srv_list.curselection()
@@ -1818,11 +2277,11 @@ class App(tk.Tk):
         s = self._sel_srv()
         if not s:
             return
-        if messagebox.askyesno(APP_NAME, "Удалить сервер «%s» из списка?\n\n"
+        if messagebox.askyesno(APP_NAME, self.t("Удалить сервер «%s» из списка?\n\n"
                                "Локальные конфиги юзеров удалятся.\n"
                                "SSH-ключ остаётся в %s —\n"
                                "им можно зайти на сервер и потом.\n"
-                               "Сам сервер не трогаем."
+                               "Сам сервер не трогаем.")
                                % (s["name"], os.path.join(APP_DIR, "keys"))):
             self.data["servers"].remove(s)
             save_data(self.data)
@@ -1854,7 +2313,7 @@ class App(tk.Tk):
         mark = {"ok": "✓", "warn": "⚠", "fail": "✗", "skip": "–"}
         for key, title in self.STEPS:
             r = st.get(key, {})
-            self.steps_tv.insert("", "end", iid=key, text=title,
+            self.steps_tv.insert("", "end", iid=key, text=self.t(title),
                                  values=(mark.get(r.get("st"), "…"),
                                          r.get("note", "")))
 
@@ -1868,7 +2327,7 @@ class App(tk.Tk):
             try:
                 ssh = SSH(s, self.say)
                 ssh.preflight()
-                self.say("=== Аудит статусов на «%s» ===" % s["name"])
+                self.say(self.t("=== Аудит статусов на «%s» ===") % s["name"])
                 out = ssh.run_script("probe.sh", timeout=120)
             except Exception:
                 # probe не отработал (SSH/сеть/sudo) — реальное
@@ -1876,8 +2335,8 @@ class App(tk.Tk):
                 if s.get("deployed"):
                     s["deployed"] = False
                     save_data(self.data)
-                    self.say("  метку «развёрнут» снял — сервер не "
-                             "отвечает, состояние не проверено")
+                    self.say(self.t("  метку «развёрнут» снял — сервер не "
+                             "отвечает, состояние не проверено"))
                     self.ui(self._refresh_servers)
                 raise
             if self._apply_probe(s, out):
@@ -1896,7 +2355,7 @@ class App(tk.Tk):
                 st[key] = {"st": stt, "note": note}
                 self.say("  %s → %s: %s" % (key, stt, note))
         if not st:
-            self.say("!! probe.sh не вернул данных")
+            self.say(self.t("!! probe.sh не вернул данных"))
             return False
         s["steps"] = st
         note_su = st.get("sysupd", {}).get("note", "")
@@ -1915,17 +2374,17 @@ class App(tk.Tk):
             return
         if not messagebox.askyesno(
                 APP_NAME,
-                "Полный сброс «%s»:\n\n"
+                self.t("Полный сброс «%s»:\n\n"
                 "будут удалены Cloak, OpenVPN, PKI, юзеры, наши\n"
                 "правила фаервола и локальные конфиги юзеров.\n"
                 "SSH-доступ и твой юзер НЕ затрагиваются —\n"
                 "сервер можно развернуть заново.\n\n"
-                "Продолжить?" % s["name"]):
+                "Продолжить?") % s["name"]):
             return
 
         def work():
             ssh = SSH(s, self.say)
-            self.say("=== Полный сброс «%s» ===" % s["name"])
+            self.say(self.t("=== Полный сброс «%s» ===") % s["name"])
             ck = str(s.get("ck_port") or "443")
             rc = ssh.run_script_stream(
                 "purge-dgcloak.sh", ck,
@@ -1939,7 +2398,7 @@ class App(tk.Tk):
             save_data(self.data)
             self.ui(self._fill_steps)
             self.ui(self._refresh_servers)
-            self.say("=== Сброс завершён (rc=%s) ===" % rc)
+            self.say(self.t("=== Сброс завершён (rc=%s) ===") % rc)
         self._worker(work)
 
     def _srv_reboot(self):
@@ -1949,12 +2408,12 @@ class App(tk.Tk):
             return
         if not messagebox.askyesno(
                 APP_NAME,
-                "Перезагрузить «%s»?\n\n"
-                "Сервер будет недоступен ~1 минуту." % s["name"]):
+                self.t("Перезагрузить «%s»?\n\n"
+                "Сервер будет недоступен ~1 минуту.") % s["name"]):
             return
 
         def work():
-            self.say("=== Перезагрузка «%s» ===" % s["name"])
+            self.say(self.t("=== Перезагрузка «%s» ===") % s["name"])
             self._reboot_and_wait(s)
         self._worker(work)
 
@@ -2004,13 +2463,13 @@ class App(tk.Tk):
         el = time.time() - self._spin_t0
         if el - self._spin_hb >= 30:
             self._spin_hb = el
-            self.say("  …выполняется уже %d мин %d с — процесс жив, "
-                     "ждём ответа сервера" % (el // 60, int(el) % 60))
+            self.say(self.t("  …выполняется уже %d мин %d с — процесс жив, "
+                     "ждём ответа сервера") % (el // 60, int(el) % 60))
         self.after(125, self._spin_tick)
 
     def _run_step(self, s, key):
         title = dict(self.STEPS)[key]
-        self.say("=== Шаг: %s ===" % title)
+        self.say(self.t("=== Шаг: %s ===") % title)
         st = s.setdefault("steps", {})
         self.ui(self._spin_start, key, s["name"])
         try:
@@ -2018,7 +2477,7 @@ class App(tk.Tk):
             stt, note = getattr(self, "_step_" + key)(ssh, s)
         except Exception as e:
             stt, note = "fail", (str(e).splitlines() or ["?"])[-1][:140]
-            self.say("  ОШИБКА: %s" % e)
+            self.say(self.t("  ОШИБКА: %s") % e)
         st[key] = {"st": stt, "note": note}
         save_data(self.data)
         self.ui(self._spin_stop)
@@ -2033,7 +2492,7 @@ class App(tk.Tk):
             return
         sel = self.steps_tv.selection()
         if not sel:
-            messagebox.showinfo(APP_NAME, "Выбери шаг в таблице")
+            messagebox.showinfo(APP_NAME, self.t("Выбери шаг в таблице"))
             return
         key = sel[0]
         self._worker(lambda: self._run_step(s, key))
@@ -2051,31 +2510,31 @@ class App(tk.Tk):
                 try:
                     ssh = SSH(s, self.say)
                     ssh.preflight()
-                    self.say("Сверяю статусы с сервером…")
+                    self.say(self.t("Сверяю статусы с сервером…"))
                     if self._apply_probe(s, ssh.run_script("probe.sh", timeout=120)):
                         self.ui(self._fill_steps)
                         self.ui(self._refresh_servers)
                 except Exception as e:
                     # preflight упал (нет sudo и т.п.) — шаг 1 скажет то же
                     # самое внятно; но готовые шаги доверять нельзя
-                    self.say("  probe не прошёл (%s) — иду с первого шага"
+                    self.say(self.t("  probe не прошёл (%s) — иду с первого шага")
                              % str(e).splitlines()[0][:80])
                     s["steps"] = {}
             for key, _t in self.STEPS:
                 if s.get("steps", {}).get(key, {}).get("st") == "ok":
                     continue
                 if not self._run_step(s, key):
-                    self.say("Остановился на шаге «%s». Исправь и продолжай — "
-                             "завершённые шаги не повторятся."
-                             % dict(self.STEPS)[key])
+                    self.say(self.t("Остановился на шаге «%s». Исправь и продолжай — "
+                             "завершённые шаги не повторятся.")
+                             % self.t(dict(self.STEPS)[key]))
                     break
-            self.say("=== Проход завершён ===")
+            self.say(self.t("=== Проход завершён ==="))
             if s.get("reboot_required"):
                 if self.ask(APP_NAME,
-                            "Обновление системы на «%s» требует перезагрузки.\n"
+                            self.t("Обновление системы на «%s» требует перезагрузки.\n"
                             "Перезагрузить сервер сейчас?\n\n"
                             "(поднимется через ~1 минуту; завершённые шаги "
-                            "деплоя повторять не нужно)" % s["name"]):
+                            "деплоя повторять не нужно)") % s["name"]):
                     self._reboot_and_wait(s)
         self._worker(work)
 
@@ -2085,7 +2544,7 @@ class App(tk.Tk):
         ssh = SSH(s, self.say)
         ssh.preflight()
         boot0 = ssh.run("uptime -s", timeout=15).strip()
-        self.say("  отправляю reboot…")
+        self.say(self.t("  отправляю reboot…"))
         try:
             ssh.run(ssh.sudo + "systemctl reboot", timeout=15)
         except Exception:
@@ -2111,13 +2570,13 @@ class App(tk.Tk):
             note_su = st.get("sysupd", {}).get("note", "")
             if "reboot" in note_su or "перезагруз" in note_su:
                 st["sysupd"] = {"st": "ok",
-                                "note": "обновлено, перезагружен"}
+                                "note": self.t("обновлено, перезагружен")}
             save_data(self.data)
             self.ui(self._fill_steps)
-            self.say("  сервер поднялся после перезагрузки")
+            self.say(self.t("  сервер поднялся после перезагрузки"))
         else:
-            self.say("  !! сервер не перезагрузился за 3 минуты "
-                     "(или флаг reboot-required остался) — проверь консоль VM")
+            self.say(self.t("  !! сервер не перезагрузился за 3 минуты "
+                     "(или флаг reboot-required остался) — проверь консоль VM"))
         return up
 
     # ---- шаги ----
@@ -2134,19 +2593,19 @@ class App(tk.Tk):
             s2 = dict(s); s2["password"] = None
             try:
                 SSH(s2, self.say).run("true", timeout=15)
-                return "ok", "вход по ключу настроен"
+                return "ok", self.t("вход по ключу настроен")
             except Exception:
-                self.say("  сохранённый ключ отвергнут — ставлю новый")
+                self.say(self.t("  сохранённый ключ отвергнут — ставлю новый"))
                 s.pop("key", None); s.pop("ppk", None)
         if not s.get("password"):
-            return "fail", "нет ни пароля, ни ключа"
+            return "fail", self.t("нет ни пароля, ни ключа")
         # ключ ставим без вопросов: операция безопасна,
         # пароль остаётся запасным входом
-        self.say("  генерирую ключ ed25519…")
+        self.say(self.t("  генерирую ключ ed25519…"))
         kg = find_exe(["ssh-keygen.exe", "ssh-keygen"],
                       [r"C:\Windows\System32\OpenSSH"])
         if not kg:
-            raise SSHErr("не найден ssh-keygen (Windows OpenSSH)")
+            raise SSHErr(self.t("не найден ssh-keygen (Windows OpenSSH)"))
         kd = os.path.join(APP_DIR, "keys")
         os.makedirs(kd, exist_ok=True)
         # наш старый сгенерированный ключ (имя от старого названия
@@ -2157,10 +2616,10 @@ class App(tk.Tk):
                                capture_output=True, text=True, timeout=30,
                                creationflags=CREATE_NO_WINDOW)
             if r.returncode != 0:
-                raise SSHErr("ssh-keygen не сработал: %s"
+                raise SSHErr(self.t("ssh-keygen не сработал: %s")
                              % (r.stderr or r.stdout))
         pub = open(kp + ".pub", encoding="ascii").read().strip()
-        self.say("  ставлю публичный ключ на сервер…")
+        self.say(self.t("  ставлю публичный ключ на сервер…"))
         ssh.install_pubkey(pub)
         # проверка: вход по ключу отдельным подключением
         s2 = dict(s)
@@ -2177,9 +2636,9 @@ class App(tk.Tk):
                     os.remove(f)
                 except OSError:
                     pass
-            self.say("  старый ключ %s удалён"
+            self.say(self.t("  старый ключ %s удалён")
                      % os.path.basename(old_key))
-        return "ok", "ключ установлен: %s" % os.path.basename(kp)
+        return "ok", self.t("ключ установлен: %s") % os.path.basename(kp)
 
     def _step_audit(self, ssh, s):
         out = ssh.run_script("detect.sh", timeout=60)
@@ -2211,7 +2670,7 @@ class App(tk.Tk):
             s["mem_avail_mb"] = int(m.group(1))
         save_data(self.data)
         if pkg != "apt":
-            return "fail", "не apt-дистрибутив (pkg=%s) — не поддерживается" % pkg
+            return "fail", self.t("не apt-дистрибутив (pkg=%s) — не поддерживается") % pkg
         os_id = osid.group(1) if osid else "?"
         os_ver = ver.group(1) if ver else "?"
         supported = {"ubuntu": {"20.04", "22.04", "24.04", "26.04"},
@@ -2219,16 +2678,16 @@ class App(tk.Tk):
         if os_id not in supported or os_ver not in supported[os_id]:
             if not self.ask(
                     APP_NAME,
-                    "«%s»: %s %s не из поддерживаемых\n"
+                    self.t("«%s»: %s %s не из поддерживаемых\n"
                     "(Ubuntu 20.04/22.04/24.04/26.04, Debian 11/12/13).\n\n"
-                    "Продолжить на свой страх и риск?"
+                    "Продолжить на свой страх и риск?")
                     % (s["name"], os_id, os_ver)):
-                return "fail", "%s %s не поддерживается" % (os_id, os_ver)
+                return "fail", self.t("%s %s не поддерживается") % (os_id, os_ver)
         res = []
         if s.get("disk_free_mb", 9999) < 400:
-            res.append("мало места на диске: %d МБ" % s["disk_free_mb"])
+            res.append(self.t("мало места на диске: %d МБ") % s["disk_free_mb"])
         if s.get("mem_avail_mb", 9999) < 128:
-            res.append("мало RAM: %d МБ свободно" % s["mem_avail_mb"])
+            res.append(self.t("мало RAM: %d МБ свободно") % s["mem_avail_mb"])
         txt = "%s %s / %s" % (os_id, os_ver, arch)
         if res:
             return "warn", "%s; %s" % (txt, "; ".join(res))
@@ -2239,8 +2698,8 @@ class App(tk.Tk):
         m = re.search(r"FW=(\S+)", parse_section(out, "FW_BACKEND"))
         fw = m.group(1) if m else "none"
         s["fw_backend"] = fw
-        for ln in ("--- правила ---\n" + parse_section(out, "FW_RULES")
-                   + "\n--- слушают снаружи (tcp) ---\n"
+        for ln in (self.t("--- правила ---\n") + parse_section(out, "FW_RULES")
+                   + self.t("\n--- слушают снаружи (tcp) ---\n")
                    + parse_section(out, "LISTEN_TCP")).splitlines():
             self.say("  " + ln)
         if fw == "none":
@@ -2249,20 +2708,20 @@ class App(tk.Tk):
             ck = self.v_ckport.get().strip() or "443"
             # ставим nftables без подтверждения: это суть деплоя,
             # anti-lockout canary откатит правила при потере SSH
-            self.say("  фаервола нет — ставлю nftables "
+            self.say(self.t("  фаервола нет — ставлю nftables "
                      "(INPUT DROP + ssh %s + cloak tcp/%s; "
-                     "откат через 120 с при потере SSH)"
+                     "откат через 120 с при потере SSH)")
                      % (",".join(ports), ck))
             ssh.run_script("fw-install.sh", "%s %s" % (",".join(ports), ck),
                            timeout=300)
             # canary: на сервере 120с откат; новое ssh-подключение подтверждает
             ssh.run("touch /tmp/dgcloak-fw-ok", timeout=30)
-            self.say("  firewall подтверждён (rollback отменён)")
+            self.say(self.t("  firewall подтверждён (rollback отменён)"))
             s["fw_backend"] = "nftables-dg"
             s["ck_port"] = ck
             return "ok", "nftables: ssh=%s cloak=%s" % (",".join(ports), ck)
         if fw == "iptables-custom":
-            return "warn", "чужие правила iptables — открой «Управление фаерволом»"
+            return "warn", self.t("чужие правила iptables — открой «Управление фаерволом»")
         return "ok", fw
 
     def _step_sysupd(self, ssh, s):
@@ -2275,25 +2734,25 @@ class App(tk.Tk):
             free = s.get("disk_free_mb", 0)
         if free and free < 1024 and not self.ask(
                 APP_NAME,
-                "На «%s» свободно %d МБ на диске.\n"
+                self.t("На «%s» свободно %d МБ на диске.\n"
                 "Обновлению может не хватить места (нужно ~1 ГБ).\n\n"
-                "Продолжить?" % (s["name"], free)):
-            return "skip", "мало места на диске (%d МБ)" % free
+                "Продолжить?") % (s["name"], free)):
+            return "skip", self.t("мало места на диске (%d МБ)") % free
         if not self.ask(APP_NAME,
-                        "Полное обновление системы на «%s» "
+                        self.t("Полное обновление системы на «%s» "
                         "(apt update + full-upgrade + autoremove)?\n\n"
                         "На свежеустановленной системе это может занять\n"
                         "10–30 минут — прогресс виден в логе.\n"
                         "Если обновление потребует перезагрузку,\n"
-                        "приложение предложит её в конце." % s["name"]):
+                        "приложение предложит её в конце.") % s["name"]):
             # отказались от апгрейда — но pending reboot мог остаться
             # с прошлого прогона; тогда статус должен остаться «нужен reboot»
             if "REBOOT" in ssh.run("test -f /var/run/reboot-required "
                                    "&& echo REBOOT || true", timeout=15):
                 s["reboot_required"] = True
                 save_data(self.data)
-                return "warn", "обновлено ранее, нужна перезагрузка"
-            return "skip", "отменено пользователем"
+                return "warn", self.t("обновлено ранее, нужна перезагрузка")
+            return "skip", self.t("отменено пользователем")
         # стримим вывод apt в лог — на свежем ISO апдейтов сотни,
         # без живого вывода шаг выглядит зависшим
         lines = []
@@ -2307,9 +2766,9 @@ class App(tk.Tk):
         if "===REBOOT===" in out:
             s["reboot_required"] = True
             save_data(self.data)
-            return "warn", "обновлено, нужна перезагрузка"
+            return "warn", self.t("обновлено, нужна перезагрузка")
         s.pop("reboot_required", None)
-        return "ok", "обновлено"
+        return "ok", self.t("обновлено")
 
     def _step_pkgs(self, ssh, s):
         out = ssh.run_script("pkgs.sh", "check", timeout=90)
@@ -2320,7 +2779,7 @@ class App(tk.Tk):
                    if l.strip().endswith("=-")]
         latest = parse_section(out, "CK_LATEST").strip()
         if missing:
-            self.say("  ставлю недостающие пакеты: %s" % ", ".join(missing))
+            self.say(self.t("  ставлю недостающие пакеты: %s") % ", ".join(missing))
             rc = ssh.run_script_stream(
                 "pkgs.sh", "install",
                 lambda l: self.say("  " + l), timeout=600)
@@ -2333,8 +2792,8 @@ class App(tk.Tk):
             # до install на minimal-образе не было curl → latest пустой
             latest = parse_section(out, "CK_LATEST").strip() or latest
         if missing:
-            return "fail", "не встали: %s" % ",".join(missing)
-        return "ok", "все пакеты есть; cloak latest: %s" % (latest or "?")
+            return "fail", self.t("не встали: %s") % ",".join(missing)
+        return "ok", self.t("все пакеты есть; cloak latest: %s") % (latest or "?")
 
     def _step_ovpn(self, ssh, s):
         proto = self.v_proto.get()
@@ -2371,19 +2830,19 @@ class App(tk.Tk):
                            "%s %s" % (",".join(ports), ck),
                            timeout=300)
             ssh.run("touch /tmp/dgcloak-fw-ok", timeout=30)
-            self.say("  firewall подтверждён (rollback отменён)")
+            self.say(self.t("  firewall подтверждён (rollback отменён)"))
         elif fw == "none":
-            return "fail", "фаервола нет — сначала выполни шаг «Фаервол»"
+            return "fail", self.t("фаервола нет — сначала выполни шаг «Фаервол»")
         else:
-            return "fail", "неизвестный фаервол: %s" % fw
+            return "fail", self.t("неизвестный фаервол: %s") % fw
         # порт Cloak должен быть открыт снаружи на любом бэкенде
         try:
             ssh.run_script("fw-manage.sh", "allow tcp %s" % ck, timeout=60)
             s["ck_port"] = ck
         except Exception as e:
-            return "warn", ("NAT ok (%s), но порт Cloak %s/tcp не открылся: %s"
+            return "warn", (self.t("NAT ok (%s), но порт Cloak %s/tcp не открылся: %s")
                             % (fw, ck, str(e)[:80]))
-        return "ok", "NAT через %s, Cloak tcp/%s открыт" % (fw, ck)
+        return "ok", self.t("NAT через %s, Cloak tcp/%s открыт") % (fw, ck)
 
     def _step_cloak(self, ssh, s):
         mask = self.v_mask.get().strip() or "www.bing.com"
@@ -2395,13 +2854,13 @@ class App(tk.Tk):
         if "free" not in busy and "ck-server" not in busy:
             if s.get("has_docker") or "docker" in busy.lower():
                 if not self.ask(APP_NAME,
-                                "Порт %s занят (Amnezia/docker).\n"
-                                "Снести Amnezia? Чужие контейнеры не трогаем."
+                                self.t("Порт %s занят (Amnezia/docker).\n"
+                                "Снести Amnezia? Чужие контейнеры не трогаем.")
                                 % ck):
-                    return "fail", "%s занят, чистка отменена" % ck
+                    return "fail", self.t("%s занят, чистка отменена") % ck
                 ssh.run_script("purge-amnezia.sh", timeout=600)
             else:
-                return "fail", "%s занят чужим сервисом: %s" % (
+                return "fail", self.t("%s занят чужим сервисом: %s") % (
                     ck, busy.strip()[:100])
         out = ssh.run_script("deploy-cloak.sh",
                              "%s %s %s %s" % (mask, proto, CK_VERSION, ck),
@@ -2417,8 +2876,8 @@ class App(tk.Tk):
             s["ck_port"] = ck
             s["deployed"] = True
             save_data(self.data)
-            return "ok", "ключи получены, маскировка %s" % mask
-        return "fail", "нет PUB/ADMIN_UID в выводе deploy-cloak"
+            return "ok", self.t("ключи получены, маскировка %s") % mask
+        return "fail", self.t("нет PUB/ADMIN_UID в выводе deploy-cloak")
 
     # ---- управление портами фаервола ----
     def _fw_ports(self):
@@ -2450,14 +2909,14 @@ class App(tk.Tk):
             if not s.get("deployed"):
                 # флага нет — проверяем реальное состояние сервера:
                 # вдруг развёрнут вне админки или реестр сброшен
-                self.say("=== Аудит статусов на «%s» ===" % s["name"])
+                self.say(self.t("=== Аудит статусов на «%s» ===") % s["name"])
                 out = ssh.run_script("probe.sh", timeout=120)
                 if self._apply_probe(s, out):
                     self.ui(self._fill_steps)
                     self.ui(self._refresh_servers)
                 if not s.get("deployed"):
-                    msg = ("Сервер «%s» не развёрнут — ключей нет.\n"
-                           "Сначала «Развернуть всё»." % s["name"])
+                    msg = (self.t("Сервер «%s» не развёрнут — ключей нет.\n"
+                           "Сначала «Развернуть всё».") % s["name"])
                     self.say("!! %s" % msg)
                     self.ui(lambda m=msg: messagebox.showinfo(APP_NAME, m))
                     return
@@ -2489,8 +2948,8 @@ class App(tk.Tk):
                     s["ck_port"] = m.group(1)
                 added = self._pull_users(ssh, s)
                 save_data(self.data)
-                self.say("Импорт: ключи подтянуты с «%s»%s"
-                         % (s["name"], ", юзеров восстановлено: %d"
+                self.say(self.t("Импорт: ключи подтянуты с «%s»%s")
+                         % (s["name"], self.t(", юзеров восстановлено: %d")
                             % len(added) if added else ""))
                 # бандлы для восстановленных: сертификаты живут на
                 # сервере — пересобираем .dgcloak, чтобы bundles\
@@ -2504,14 +2963,14 @@ class App(tk.Tk):
                             s, rec["cn"], rec["uid"], mats,
                             os.path.join(BUNDLES_DIR, s["name"], rec["cn"]),
                             rec.get("mask") or "")
-                        self.say("  конфиг «%s» → bundles\\%s"
+                        self.say(self.t("  конфиг «%s» → bundles\\%s")
                                  % (rec["cn"], s["name"]))
                     except Exception as e:
-                        self.say("  !! конфиг «%s» не пересобран: %s"
+                        self.say(self.t("  !! конфиг «%s» не пересобран: %s")
                                  % (rec["cn"], e))
                 self.ui(lambda: self._fill_users_local(s))
             else:
-                self.say("!! Не нашёл /etc/ck-server/* — сервер развёрнут?")
+                self.say(self.t("!! Не нашёл /etc/ck-server/* — сервер развёрнут?"))
             self.ui(self._refresh_servers)
         self._worker(work)
 
@@ -2533,9 +2992,9 @@ class App(tk.Tk):
                     "install -m600 /tmp/dgcloak-users.json %s && "
                     "rm -f /tmp/dgcloak-users.json'"
                     % (ssh.sudo, self.REMOTE_USERS), timeout=20)
-            self.vsay("  реестр юзеров синхронизирован на сервер")
+            self.vsay(self.t("  реестр юзеров синхронизирован на сервер"))
         except Exception as e:
-            self.say("  !! реестр на сервер не записался: %s" % e)
+            self.say(self.t("  !! реестр на сервер не записался: %s") % e)
 
     def _pull_users(self, ssh, s):
         """Забрать реестр с сервера и влить в локальный (по CN; локальная
@@ -2545,7 +3004,7 @@ class App(tk.Tk):
                           % (ssh.sudo, self.REMOTE_USERS), timeout=20)
             remote = json.loads(out.strip() or "[]")
         except Exception as e:
-            self.say("  реестр юзеров с сервера не прочитан: %s" % e)
+            self.say(self.t("  реестр юзеров с сервера не прочитан: %s") % e)
             return []
         if not isinstance(remote, list):
             return []
@@ -2562,8 +3021,8 @@ class App(tk.Tk):
         # сначала — развёрнут ли сервер вообще: иначе 30 с таймаута
         # ck-client в пустоту с устаревшими admin_uid/pubkey в реестре
         if not s.get("deployed"):
-            raise CloakAPIErr("Сервер «%s» не развёрнут (по реестру) — "
-                              "сделай «Развернуть всё» или «Проверить статусы»"
+            raise CloakAPIErr(self.t("Сервер «%s» не развёрнут (по реестру) — "
+                              "сделай «Развернуть всё» или «Проверить статусы»")
                               % s["name"])
         ck = find_ck_client(self.data)
         if not ck:
@@ -2571,12 +3030,12 @@ class App(tk.Tk):
                 ck = download_ck_client(self.say)
             except Exception as e:
                 raise CloakAPIErr(
-                    "Не найден ck-client.exe и не скачался (%s) — "
-                    "укажи путь в data.json или положи рядом" % e)
+                    self.t("Не найден ck-client.exe и не скачался (%s) — "
+                    "укажи путь в data.json или положи рядом") % e)
             self.say("  ck-client.exe → %s" % ck)
         if not s.get("admin_uid") or not s.get("pubkey"):
-            raise CloakAPIErr("Нет admin_uid/pubkey — сделай «Импорт ключей» "
-                              "или деплой")
+            raise CloakAPIErr(self.t("Нет admin_uid/pubkey — сделай «Импорт ключей» "
+                              "или деплой"))
         return CloakAPI(ck, s, self.say, vlog=self.vsay)
 
     def _users_refresh(self):
@@ -2603,16 +3062,16 @@ class App(tk.Tk):
                               timeout=20)
                 online = {l.strip() for l in out.splitlines() if l.strip()}
             except Exception as e:
-                self.say("  mgmt не отвечает (%s) — включаю enable-mgmt…"
+                self.say(self.t("  mgmt не отвечает (%s) — включаю enable-mgmt…")
                          % str(e).splitlines()[-1][:120])
                 try:
                     ssh.run_script("enable-mgmt.sh", timeout=60)
                     out = ssh.run("%spython3 /tmp/ovpn-mgmt.py clients"
                                   % ssh.sudo, timeout=20)
                     online = {l.strip() for l in out.splitlines() if l.strip()}
-                    self.say("  mgmt включён")
+                    self.say(self.t("  mgmt включён"))
                 except Exception as e2:
-                    self.say("  mgmt так и недоступен: %s" % e2)
+                    self.say(self.t("  mgmt так и недоступен: %s") % e2)
             # cn ↔ uid из нашей базы
             known = {u["uid"]: u for u in s.get("users", [])}
             rows = []  # (полный uid, кортеж_для_таблицы)
@@ -2633,16 +3092,18 @@ class App(tk.Tk):
                 self.users_tv.delete(*self.users_tv.get_children())
                 for uid, r in sorted(rows, key=lambda x: x[1][0]):
                     self.users_tv.insert("", "end", iid=uid, values=r)
-                self.v_users_srv.set("%s — актуальные данные с сервера"
-                                     % s["name"])
+                self._usr_note = ("%s — актуальные данные с сервера",
+                                  (s["name"],))
+                self.v_users_srv.set(self.t(self._usr_note[0])
+                                     % self._usr_note[1])
             self.ui(fill)
-            self.say("Юзеров: %s, онлайн: %s" % (len(rows), len(online)))
+            self.say(self.t("Юзеров: %s, онлайн: %s") % (len(rows), len(online)))
         self._worker(work)
 
     def _selected_user(self):
         sel = self.users_tv.selection()
         if not sel:
-            messagebox.showinfo(APP_NAME, "Выбери юзера в таблице")
+            messagebox.showinfo(APP_NAME, self.t("Выбери юзера в таблице"))
             return None, None, None
         uid = sel[0]  # iid = полный UID
         vals = self.users_tv.item(sel[0], "values")
@@ -2659,12 +3120,12 @@ class App(tk.Tk):
         # 1. сертификат
         self.vsay("  user-cert.sh «%s»…" % name)
         out = ssh.run_script("user-cert.sh", name, timeout=120)
-        self.vsay("  вывод %d байт" % len(out))
+        self.vsay(self.t("  вывод %d байт") % len(out))
         mats = parse_cert_bundle(out)
         if not all(mats.values()):
             tail = "\n".join(out.strip().splitlines()[-6:])
-            raise SSHErr("user-cert.sh: неполный вывод (нет CA/CERT/KEY/TA).\n"
-                         "Хвост вывода: %s" % tail)
+            raise SSHErr(self.t("user-cert.sh: неполный вывод (нет CA/CERT/KEY/TA).\n"
+                         "Хвост вывода: %s") % tail)
         # 2. UID через admin-API
         api = self._api(s)
         api.start()
@@ -2687,7 +3148,7 @@ class App(tk.Tk):
                       "created": time.strftime("%Y-%m-%d")})
         save_data(self.data)
         self._push_users(ssh, s)
-        self.say("Юзер «%s» создан, выдай конфиг юзеру: %s"
+        self.say(self.t("Юзер «%s» создан, выдай конфиг юзеру: %s")
                  % (name, os.path.join(bundle, "%s.dgcloak" % name)))
         return bundle
 
@@ -2696,14 +3157,14 @@ class App(tk.Tk):
         if not s:
             return
         d = UserDialog(self, srv_mask=s.get("mask_domain", "www.bing.com"),
-                       title="Новый юзер")
+                       title=self.t("Новый юзер"))
         if not d.result:
             return
         r = d.result
         # дубль CN = перезапись чужого сертификата — запрещаем
         if any(u.get("cn") == r["name"] for u in s.get("users", [])):
             messagebox.showerror(APP_NAME,
-                                 "Юзер «%s» уже существует на «%s»"
+                                 self.t("Юзер «%s» уже существует на «%s»")
                                  % (r["name"], s["name"]))
             return
 
@@ -2724,10 +3185,10 @@ class App(tk.Tk):
         if cn is None:
             return
         if not rec:
-            messagebox.showinfo(APP_NAME, "«%s» не из нашего реестра — "
-                                "править можем только своих" % cn)
+            messagebox.showinfo(APP_NAME, self.t("«%s» не из нашего реестра — "
+                                "править можем только своих") % cn)
             return
-        d = UserDialog(self, title="Изменить «%s»" % cn,
+        d = UserDialog(self, title=self.t("Изменить «%s»") % cn,
                        srv_mask=s.get("mask_domain", "www.bing.com"), rec=rec)
         if not d.result:
             return
@@ -2765,14 +3226,14 @@ class App(tk.Tk):
                 mats = parse_cert_bundle(out)
                 bundle = os.path.join(BUNDLES_DIR, s["name"], cn)
                 write_user_bundle(s, cn, uid, mats, bundle, r["mask"])
-                self.say("Юзер «%s» обновлён, конфиг перевыпущен, "
-                         "выдай его юзеру: %s"
+                self.say(self.t("Юзер «%s» обновлён, конфиг перевыпущен, "
+                         "выдай его юзеру: %s")
                          % (cn, os.path.join(bundle, "%s.dgcloak" % cn)))
             elif api_changed:
-                self.say("Юзер «%s» обновлён (лимиты/срок — на сервере, "
-                         "конфиг тот же)" % cn)
+                self.say(self.t("Юзер «%s» обновлён (лимиты/срок — на сервере, "
+                         "конфиг тот же)") % cn)
             else:
-                self.say("Юзер «%s» без изменений" % cn)
+                self.say(self.t("Юзер «%s» без изменений") % cn)
             self.ui(self._users_refresh)
         self._worker(work)
 
@@ -2788,9 +3249,9 @@ class App(tk.Tk):
             # Но UID можно удалить из Cloak — новые подключения закроются.
             if not messagebox.askyesno(
                     APP_NAME,
-                    "UID %s…\nне из реестра админки — CN неизвестен, сертификат "
+                    self.t("UID %s…\nне из реестра админки — CN неизвестен, сертификат "
                     "и живую сессию трогать не можем.\n\n"
-                    "Удалить UID из Cloak? (новые подключения закроются)" % uid[:16]):
+                    "Удалить UID из Cloak? (новые подключения закроются)") % uid[:16]):
                 return
 
             def work_uid():
@@ -2800,14 +3261,14 @@ class App(tk.Tk):
                     api.delete_user(uid)
                 finally:
                     api.stop()
-                self.say("UID %s… удалён из Cloak" % uid[:16])
+                self.say(self.t("UID %s… удалён из Cloak") % uid[:16])
                 self.ui(self._users_refresh)
             self._worker(work_uid)
             return
         if not messagebox.askyesno(
                 APP_NAME,
-                "Отозвать «%s»?\n\nСертификат отзовётся (CRL), UID удалится,\n"
-                "живая сессия будет сброшена." % cn):
+                self.t("Отозвать «%s»?\n\nСертификат отзовётся (CRL), UID удалится,\n"
+                "живая сессия будет сброшена.") % cn):
             return
 
         def work():
@@ -2829,14 +3290,16 @@ class App(tk.Tk):
                     "./easyrsa --batch gen-crl && "
                     "install -m644 pki/crl.pem /etc/openvpn/server/crl.pem'"
                     % (ssh.sudo, cn, cn), timeout=60)
-                self.say("  сертификат отозван")
+                self.say(self.t("  сертификат отозван"))
             except SSHErr as e:
                 msg = str(e)
                 if "test -s" in msg or "not a valid certificate" in msg \
-                        or msg.rstrip().endswith("rc=1:") or "(пустой вывод)" in msg:
-                    self.say("  сертификата на сервере нет — пропускаю отзыв")
+                        or msg.rstrip().endswith("rc=1:") \
+                        or "(пустой вывод)" in msg \
+                        or self.t("(пустой вывод)") in msg:
+                    self.say(self.t("  сертификата на сервере нет — пропускаю отзыв"))
                 elif "already revoked" in msg.lower():
-                    self.say("  сертификат уже отозван")
+                    self.say(self.t("  сертификат уже отозван"))
                 else:
                     raise
             # 2. delete UID
@@ -2846,10 +3309,10 @@ class App(tk.Tk):
                     api.start()
                     api.delete_user(rec["uid"])
                     api.stop()
-                    self.say("  UID удалён")
+                    self.say(self.t("  UID удалён"))
                 except Exception as e:
                     if "bucket not found" in str(e) or "404" in str(e):
-                        self.say("  UID в Cloak уже нет")
+                        self.say(self.t("  UID в Cloak уже нет"))
                     else:
                         self.say("  UID: %s" % e)
             # 3. kill live session
@@ -2860,22 +3323,22 @@ class App(tk.Tk):
                               % (ssh.sudo, cn), timeout=20)
                 # не просто SUCCESS — его mgmt шлёт и на пароль
                 if "SUCCESS: common name" in out:
-                    self.say("  сессия сброшена")
+                    self.say(self.t("  сессия сброшена"))
                 elif "not found" in out:
-                    self.say("  сессии не было (юзер офлайн)")
+                    self.say(self.t("  сессии не было (юзер офлайн)"))
                 else:
                     self.say("  mgmt: %s" % out.strip()[:200])
             except Exception as e:
                 # чаще всего mgmt просто не поднят (сервер чист) —
                 # traceback не нужен, хватит последней строки
-                self.say("  mgmt недоступен: %s"
+                self.say(self.t("  mgmt недоступен: %s")
                          % str(e).strip().splitlines()[-1][:160])
             s["users"] = [u for u in s.get("users", []) if u["cn"] != cn]
             save_data(self.data)
             self._push_users(ssh, s)
             shutil.rmtree(os.path.join(BUNDLES_DIR, s["name"], cn),
                           ignore_errors=True)
-            self.say("Юзер «%s» отозван и удалён." % cn)
+            self.say(self.t("Юзер «%s» отозван и удалён.") % cn)
             self.ui(self._users_refresh)
         self._worker(work)
 
@@ -2887,8 +3350,8 @@ class App(tk.Tk):
         if cn is None:
             return
         if cn == "?" or not rec:
-            messagebox.showinfo(APP_NAME, "CN этого юзера неизвестен — "
-                                "mgmt kill работает только по CN.")
+            messagebox.showinfo(APP_NAME, self.t("CN этого юзера неизвестен — "
+                                "mgmt kill работает только по CN."))
             return
 
         def work():
@@ -2898,14 +3361,14 @@ class App(tk.Tk):
             online = ssh.run("%spython3 /tmp/ovpn-mgmt.py clients"
                              % ssh.sudo, timeout=20)
             if cn not in {l.strip() for l in online.splitlines()}:
-                self.say("«%s» не онлайн — сбрасывать нечего" % cn)
+                self.say(self.t("«%s» не онлайн — сбрасывать нечего") % cn)
                 return
             out = ssh.run("%spython3 /tmp/ovpn-mgmt.py kill %s"
                           % (ssh.sudo, cn), timeout=20)
             if "SUCCESS: common name" in out:
-                self.say("Сессия «%s» сброшена" % cn)
+                self.say(self.t("Сессия «%s» сброшена") % cn)
             else:
-                self.say("сброс сессии %s: %s" % (cn, out.strip()[:200]))
+                self.say(self.t("сброс сессии %s: %s") % (cn, out.strip()[:200]))
         self._worker(work)
 
     def _user_export(self):
@@ -2916,10 +3379,10 @@ class App(tk.Tk):
         if cn is None:
             return
         if not rec:
-            messagebox.showinfo(APP_NAME, "«%s» заведён вне этой админки — "
-                                "экспорт конфига недоступен" % cn)
+            messagebox.showinfo(APP_NAME, self.t("«%s» заведён вне этой админки — "
+                                "экспорт конфига недоступен") % cn)
             return
-        dst = filedialog.askdirectory(title="Куда сложить конфиг «%s»" % cn)
+        dst = filedialog.askdirectory(title=self.t("Куда сложить конфиг «%s»") % cn)
         if not dst:
             return
 
@@ -2935,7 +3398,7 @@ class App(tk.Tk):
             write_user_bundle(s, cn, rec["uid"], mats,
                               os.path.join(BUNDLES_DIR, s["name"], cn),
                               rec.get("mask") or "")
-            self.say("Конфиг «%s» → %s"
+            self.say(self.t("Конфиг «%s» → %s")
                      % (cn, os.path.join(bundle, "%s.dgcloak" % cn)))
         self._worker(work)
 
@@ -2948,7 +3411,7 @@ def single_instance_ok():
             None, False, "Local\\DGCloakAdminSingleton")
         if ctypes.windll.kernel32.GetLastError() == 183:  # ALREADY_EXISTS
             ctypes.windll.user32.MessageBoxW(
-                0, "DGCloak Admin уже запущен.", APP_NAME, 0x40)
+                0, T("DGCloak Admin уже запущен."), APP_NAME, 0x40)
             return False
     except Exception:
         pass  # не Windows или нет ctypes — не блокируем

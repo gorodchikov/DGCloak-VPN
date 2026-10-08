@@ -25,6 +25,7 @@ TMP = tempfile.mkdtemp(prefix="dgtest-")
 CA.APP_DIR = TMP
 CA.DATA_FILE = os.path.join(TMP, "data.json")
 CA.App._ensure_deps = lambda self: None   # ничего не качаем
+CA.detect_lang = lambda: "ru"             # тесты проверяют RU-строки
 
 _NPASS = [0]
 _NFAIL = [0]
