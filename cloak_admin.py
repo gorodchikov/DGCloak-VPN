@@ -2446,6 +2446,8 @@ class App(tk.Tk):
                     "/home/*/openvpn-ca 2>/dev/null | head -1); "
                     "[ -n \"$CADIR\" ] && cd \"$CADIR\" && "
                     "test -s pki/issued/%s.crt && "
+                    "{ P=$(cat pki/lock.file 2>/dev/null); "
+                    "kill -0 \"$P\" 2>/dev/null || rm -f pki/lock.file; } && "
                     "./easyrsa --batch revoke %s && "
                     "./easyrsa --batch gen-crl && "
                     "install -m644 pki/crl.pem /etc/openvpn/server/crl.pem'"

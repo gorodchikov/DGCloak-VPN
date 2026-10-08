@@ -13,6 +13,11 @@ for d in /root/openvpn-ca /home/*/openvpn-ca; do
 done
 [ -n "$CADIR" ] || { echo "!! openvpn-ca не найден (ни /root, ни /home/*/openvpn-ca)"; exit 1; }
 cd "$CADIR"
+# залипший lock от убитого easyrsa (обрыв SSH/таймаут): PID мёртв — снимаем
+if [ -f pki/lock.file ]; then
+    LPID=$(cat pki/lock.file 2>/dev/null)
+    kill -0 "$LPID" 2>/dev/null || rm -f pki/lock.file
+fi
 if [ ! -f "pki/issued/${USER_NAME}.crt" ]; then
     # --batch: без интерактива (printf-stdin ломался на SIGPIPE/pipefail)
     ./easyrsa --batch gen-req "$USER_NAME" nopass
