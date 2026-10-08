@@ -2152,6 +2152,12 @@ class App(tk.Tk):
 
     # ---- юзеры ----
     def _api(self, s):
+        # сначала — развёрнут ли сервер вообще: иначе 30 с таймаута
+        # ck-client в пустоту с устаревшими admin_uid/pubkey в реестре
+        if not s.get("deployed"):
+            raise CloakAPIErr("Сервер «%s» не развёрнут (по реестру) — "
+                              "сделай «Развернуть всё» или «Проверить статусы»"
+                              % s["name"])
         ck = find_ck_client(self.data)
         if not ck:
             try:
