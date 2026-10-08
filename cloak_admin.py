@@ -371,11 +371,17 @@ class SSH:
                 alt = [exe, "-batch", "-pw", self.srv["password"],
                        "-P", str(self.srv.get("ssh_port", 22))] + args[-2:]
                 rc2, out2 = self._try(alt, input_text, timeout)
-                if rc2 == 0:
-                    # ключ мёртв — весь объект дальше работает по паролю
-                    self._auth_pw = True
-                    self.log("  ключ отвергнут сервером — работаю по паролю")
+                if re.search(r"(?i)unable to authenticate|no supported "
+                             r"authentication|access denied|fatal error",
+                             out2 or ""):
+                    # и пароль не пустили — показываем ошибку plink
+                    self.log("  ключ отвергнут, пароль тоже не подошёл")
                     return rc2, out2
+                # подключились: ключ мёртв → весь объект дальше по паролю.
+                # rc2 != 0 здесь — ошибка КОМАНДЫ на сервере, её и возвращаем
+                self._auth_pw = True
+                self.log("  ключ отвергнут сервером — работаю по паролю")
+                return rc2, out2
         return rc, out
 
     def run(self, cmd, timeout=120):
@@ -2437,7 +2443,8 @@ class App(tk.Tk):
             try:
                 ssh.run(
                     "%sbash -c 'CADIR=$(ls -d /root/openvpn-ca "
-                    "/home/*/openvpn-ca 2>/dev/null | head -1) && cd \"$CADIR\" && "
+                    "/home/*/openvpn-ca 2>/dev/null | head -1); "
+                    "[ -n \"$CADIR\" ] && cd \"$CADIR\" && "
                     "test -s pki/issued/%s.crt && "
                     "./easyrsa --batch revoke %s && "
                     "./easyrsa --batch gen-crl && "
@@ -2480,7 +2487,10 @@ class App(tk.Tk):
                 else:
                     self.say("  mgmt: %s" % out.strip()[:200])
             except Exception as e:
-                self.say("  mgmt: %s" % e)
+                # чаще всего mgmt просто не поднят (сервер чист) —
+                # traceback не нужен, хватит последней строки
+                self.say("  mgmt недоступен: %s"
+                         % str(e).strip().splitlines()[-1][:160])
             s["users"] = [u for u in s.get("users", []) if u["cn"] != cn]
             save_data(self.data)
             self._push_users(ssh, s)

@@ -38,11 +38,18 @@ def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "clients"
     if cmd == "kill":
         cn = sys.argv[2]
-        print(talk(["kill %s" % cn]))
+        try:
+            print(talk(["kill %s" % cn]))
+        except (ConnectionRefusedError, socket.timeout, OSError) as e:
+            print("mgmt недоступен: %s" % e)
     elif cmd == "status":
         print(talk(["status", "exit"]))
     elif cmd == "clients":
-        txt = talk(["status", "exit"])
+        try:
+            txt = talk(["status", "exit"])
+        except (ConnectionRefusedError, socket.timeout, OSError) as e:
+            print("mgmt недоступен: %s" % e)
+            sys.exit(0)
         for line in txt.splitlines():
             # CLIENT_LIST,cn,real-addr,virt-addr,...
             if line.startswith("CLIENT_LIST,"):
