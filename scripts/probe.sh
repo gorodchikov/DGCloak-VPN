@@ -55,7 +55,7 @@ fi
 # «ok» только если реально нечего ставить: на свежем снапшоте флага
 # reboot-required нет просто потому, что апгрейд ещё не делали
 if [ -f /var/run/reboot-required ]; then
-    emit sysupd "warn" "нужен reboot"
+    emit sysupd "warn" "нужна перезагрузка"
 elif ! ls /var/lib/apt/lists/*Packages >/dev/null 2>&1; then
     emit sysupd "warn" "apt update не выполнялся"
 else

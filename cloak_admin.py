@@ -536,7 +536,7 @@ class SSH:
                 on_line(line)
             out_tail = out or ""
         if is_plink and p.returncode == 255 and not out_tail:
-            raise SSHErr("plink exit 255")
+            raise SSHErr("plink: соединение прервано (255)")
         return p.returncode
 
     def install_pubkey(self, pubkey):
@@ -911,7 +911,7 @@ class UserDialog(simpledialog.Dialog):
             exp_days = str(max(1, round((rec["expiry"] - time.time()) / 86400)))
         fields = [("name", "Имя (CN, [a-z0-9_-])", rec.get("cn", "")),
                   ("expiry_days", "Срок жизни, дней (0 = бессрочно)", exp_days),
-                  ("sessions", "Макс. подключений под этим юзером",
+                  ("sessions", "Макс. одновременных подключений",
                    str(rec.get("sessions") or 16)),
                   ("up_mbits", "Лимит скорости ↑, Мбит/с (0 = безлимит)",
                    "%g" % (rec["up_rate"] * 8 / 1e6)
@@ -943,19 +943,24 @@ class UserDialog(simpledialog.Dialog):
             messagebox.showerror("Юзер", "Имя: только латиница, цифры, _ и -",
                                  parent=self)
             return False
+        lbl = {"expiry_days": "Срок жизни, дней",
+               "sessions": "Макс. одновременных подключений",
+               "up_mb": "Квота трафика ↑, МБ", "down_mb": "Квота трафика ↓, МБ",
+               "up_mbits": "Лимит скорости ↑, Мбит/с",
+               "down_mbits": "Лимит скорости ↓, Мбит/с"}
         for k in ("expiry_days", "sessions", "up_mb", "down_mb"):
             try:
                 int(self.vars[k].get() or 0)
             except ValueError:
-                messagebox.showerror("Юзер", "Поле «%s» — только целое число" % k,
-                                     parent=self)
+                messagebox.showerror("Юзер", "Поле «%s» — только целое число"
+                                     % lbl[k], parent=self)
                 return False
         for k in ("up_mbits", "down_mbits"):
             try:
                 float(self.vars[k].get() or 0)
             except ValueError:
-                messagebox.showerror("Юзер", "Поле «%s» — только число" % k,
-                                     parent=self)
+                messagebox.showerror("Юзер", "Поле «%s» — только число"
+                                     % lbl[k], parent=self)
                 return False
         return True
 
@@ -1288,8 +1293,8 @@ class App(tk.Tk):
         for tab, w_ in (("deploy", self.logw_dep), ("users", self.logw_usr)):
             w_.delete("1.0", "end")
             if self._log_ctx and self._log_ctx != name and self._op_tab == tab:
-                w_.insert("end", "…идёт операция на «%s» — её "
-                                 "лог пишется в её журнал…\n\n" % self._log_ctx)
+                w_.insert("end", "…идёт операция на «%s» — её вывод пишется "
+                                 "в журнал этого сервера…\n\n" % self._log_ctx)
             entries = [l for l, vb, t in self._logs.get(name, [])
                        if t == tab and (not vb or v)]
             if entries:
@@ -1349,7 +1354,8 @@ class App(tk.Tk):
         """ctx — имя сервера, чей журнал получает лог (если операция
         привязана к серверу не по текущему выбору, а по диалогу)."""
         if self.busy:
-            messagebox.showinfo(APP_NAME, "Идёт другая операция — подожди")
+            messagebox.showinfo(APP_NAME, "Идёт операция на «%s» — подожди"
+                                % (self._log_ctx or "?"))
             return
         self.busy = True
         tab = self._cur_tab()  # вкладка-источник — читаем в главном потоке
@@ -1433,9 +1439,12 @@ class App(tk.Tk):
         lbl_p.pack(side="right", padx=(10, 4))
         Tooltip(lbl_p, "На развёрнутом сервере поле заблокировано:\n"
                        "смена порта требует пересборки конфигов юзеров")
-        ttk.Label(optf, text="(TCP медленнее)",
+        self.v_tcpwarn = tk.StringVar()
+        ttk.Label(optf, textvariable=self.v_tcpwarn,
                   foreground="#a33").pack(side="right", padx=(2, 0))
         self.v_proto = tk.StringVar(value="udp")
+        self.v_proto.trace_add("write", lambda *a: self.v_tcpwarn.set(
+            "(TCP медленнее)" if self.v_proto.get() == "tcp" else ""))
         self.w_proto = ttk.Combobox(optf, textvariable=self.v_proto, width=5,
                                     state="readonly", values=["udp", "tcp"])
         self.w_proto.pack(side="right")
@@ -1507,12 +1516,12 @@ class App(tk.Tk):
         row += 1
         leg = ttk.Frame(f)
         leg.grid(row=row, column=0, sticky="ew", **pad)
-        ttk.Label(leg, text="✓ готово   ⚠ обрати внимание   ✗ ошибка   "
+        ttk.Label(leg, text="✓ готово   ⚠ предупреждение   ✗ ошибка   "
                             "– пропущен   … не выполнялся",
                   foreground="#666").pack(side="left")
         # язык интерфейса — пока только элемент, перевод позже
         self.v_lang = tk.StringVar(value="Русский")
-        ttk.Combobox(leg, textvariable=self.v_lang, state="readonly",
+        ttk.Combobox(leg, textvariable=self.v_lang, state="disabled",
                      values=["Русский", "English"], width=9).pack(side="right")
         ttk.Label(leg, text="Язык:").pack(side="right", padx=(0, 4))
 
@@ -1536,7 +1545,7 @@ class App(tk.Tk):
                   foreground="#666").pack(anchor="w", padx=6, pady=(6, 0))
         cols = ("cn", "sessions", "limit", "quota", "expiry", "mask", "online")
         self.users_tv = ttk.Treeview(f, columns=cols, show="headings", height=12)
-        heads = {"cn": "Имя (CN)", "sessions": "Сессий",
+        heads = {"cn": "Имя (CN)", "sessions": "Макс. сессий",
                  "limit": "Лимит ↑/↓", "quota": "Квота ↑/↓",
                  "expiry": "Истекает", "mask": "Домен маскировки",
                  "online": "Онлайн"}
@@ -1745,7 +1754,8 @@ class App(tk.Tk):
             self.say("!! probe.sh не вернул данных")
             return False
         s["steps"] = st
-        if "reboot" in st.get("sysupd", {}).get("note", ""):
+        note_su = st.get("sysupd", {}).get("note", "")
+        if "reboot" in note_su or "перезагруз" in note_su:
             s["reboot_required"] = True
         else:
             s.pop("reboot_required", None)
@@ -1911,7 +1921,8 @@ class App(tk.Tk):
                     continue
                 if not self._run_step(s, key):
                     self.say("Остановился на шаге «%s». Исправь и продолжай — "
-                             "завершённые шаги не повторятся." % key)
+                             "завершённые шаги не повторятся."
+                             % dict(self.STEPS)[key])
                     break
             self.say("=== Проход завершён ===")
             if s.get("reboot_required"):
@@ -1952,8 +1963,10 @@ class App(tk.Tk):
         if up:
             s.pop("reboot_required", None)
             st = s.setdefault("steps", {})
-            if "reboot" in st.get("sysupd", {}).get("note", ""):
-                st["sysupd"] = {"st": "ok", "note": "обновлено, reboot выполнен"}
+            note_su = st.get("sysupd", {}).get("note", "")
+            if "reboot" in note_su or "перезагруз" in note_su:
+                st["sysupd"] = {"st": "ok",
+                                "note": "обновлено, перезагружен"}
             save_data(self.data)
             self.ui(self._fill_steps)
             self.say("  сервер поднялся после перезагрузки")
@@ -1976,7 +1989,7 @@ class App(tk.Tk):
             s2 = dict(s); s2["password"] = None
             try:
                 SSH(s2, self.say).run("true", timeout=15)
-                return "ok", "уже ключевая авторизация"
+                return "ok", "вход по ключу настроен"
             except Exception:
                 self.say("  сохранённый ключ отвергнут — ставлю новый")
                 s.pop("key", None); s.pop("ppk", None)
@@ -2103,7 +2116,7 @@ class App(tk.Tk):
             s["ck_port"] = ck
             return "ok", "nftables: ssh=%s cloak=%s" % (",".join(ports), ck)
         if fw == "iptables-custom":
-            return "warn", "чужие правила iptables — смотри «Управление фаерволом»"
+            return "warn", "чужие правила iptables — открой «Управление фаерволом»"
         return "ok", fw
 
     def _step_sysupd(self, ssh, s):
@@ -2133,7 +2146,7 @@ class App(tk.Tk):
                                    "&& echo REBOOT || true", timeout=15):
                 s["reboot_required"] = True
                 save_data(self.data)
-                return "warn", "обновлено ранее, нужен reboot"
+                return "warn", "обновлено ранее, нужна перезагрузка"
             return "skip", "отменено пользователем"
         # стримим вывод apt в лог — на свежем ISO апдейтов сотни,
         # без живого вывода шаг выглядит зависшим
@@ -2148,7 +2161,7 @@ class App(tk.Tk):
         if "===REBOOT===" in out:
             s["reboot_required"] = True
             save_data(self.data)
-            return "warn", "обновлено, нужен reboot"
+            return "warn", "обновлено, нужна перезагрузка"
         s.pop("reboot_required", None)
         return "ok", "обновлено"
 
@@ -2236,12 +2249,14 @@ class App(tk.Tk):
         if "free" not in busy and "ck-server" not in busy:
             if s.get("has_docker") or "docker" in busy.lower():
                 if not self.ask(APP_NAME,
-                                "Порт 443 занят (Amnezia/docker).\n"
-                                "Снести Amnezia? Чужие контейнеры не трогаем."):
-                    return "fail", "443 занят, чистка отменена"
+                                "Порт %s занят (Amnezia/docker).\n"
+                                "Снести Amnezia? Чужие контейнеры не трогаем."
+                                % ck):
+                    return "fail", "%s занят, чистка отменена" % ck
                 ssh.run_script("purge-amnezia.sh", timeout=600)
             else:
-                return "fail", "443 занят чужим сервисом: %s" % busy.strip()[:100]
+                return "fail", "%s занят чужим сервисом: %s" % (
+                    ck, busy.strip()[:100])
         out = ssh.run_script("deploy-cloak.sh",
                              "%s %s %s %s" % (mask, proto, CK_VERSION, ck),
                              timeout=300)
@@ -2755,8 +2770,8 @@ class App(tk.Tk):
         if cn is None:
             return
         if not rec:
-            messagebox.showinfo(APP_NAME, "«%s» не из нашего реестра — "
-                                "пересоздай через «Создать»" % cn)
+            messagebox.showinfo(APP_NAME, "«%s» заведён вне этой админки — "
+                                "экспорт конфига недоступен" % cn)
             return
         dst = filedialog.askdirectory(title="Куда сложить конфиг «%s»" % cn)
         if not dst:
