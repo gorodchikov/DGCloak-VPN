@@ -1726,6 +1726,23 @@ class App(tk.Tk):
             return
 
         def work():
+            # реестр может врать (VM откачена на снапшот, сервер переставлен):
+            # перед проходом сверяем реальное состояние — probe дешёвый (~1 с),
+            # а пропуск «готовых» шагов на пустом сервере — тупик
+            if any(v.get("st") == "ok" for v in s.get("steps", {}).values()):
+                try:
+                    ssh = SSH(s, self.say)
+                    ssh.preflight()
+                    self.say("Сверяю статусы с сервером…")
+                    if self._apply_probe(s, ssh.run_script("probe.sh", timeout=120)):
+                        self.ui(self._fill_steps)
+                        self.ui(self._refresh_servers)
+                except Exception as e:
+                    # preflight упал (нет sudo и т.п.) — шаг 1 скажет то же
+                    # самое внятно; но готовые шаги доверять нельзя
+                    self.say("  probe не прошёл (%s) — иду с первого шага"
+                             % str(e).splitlines()[0][:80])
+                    s["steps"] = {}
             for key, _t in self.STEPS:
                 if s.get("steps", {}).get(key, {}).get("st") == "ok":
                     continue
