@@ -26,7 +26,7 @@ emit audit "ok" "${ID:-?} ${VERSION_ID:-?} / $(uname -m)"
 # --- fw: бэкенд + открытые порты ---
 CKPORT=""
 [ -f /etc/ck-server/ckserver.json ] && \
-    CKPORT=$(grep -o '"BindAddr":[^,}]*' /etc/ck-server/ckserver.json | grep -o '[0-9]*' | head -1)
+    CKPORT=$(grep -A1 '"BindAddr"' /etc/ck-server/ckserver.json | grep -oE ':[0-9]+' | tr -d : | head -1)
 [ -z "$CKPORT" ] && CKPORT=443
 SSHP=$(ss -tln 2>/dev/null | awk '{print $4}' | grep -oE '[0-9]+$' | sort -un | head -3 | tr '\n' ',' | sed 's/,$//')
 FW="none"; PORTS=""
@@ -52,10 +52,19 @@ else
 fi
 
 # --- sysupd ---
+# «ok» только если реально нечего ставить: на свежем снапшоте флага
+# reboot-required нет просто потому, что апгрейд ещё не делали
 if [ -f /var/run/reboot-required ]; then
     emit sysupd "warn" "нужен reboot"
+elif ! ls /var/lib/apt/lists/*Packages >/dev/null 2>&1; then
+    emit sysupd "warn" "apt update не выполнялся"
 else
-    emit sysupd "ok" "ребут не требуется"
+    PEND=$(apt-get -s dist-upgrade 2>/dev/null | grep -c '^Inst ' || true)
+    if [ "${PEND:-0}" -gt 0 ]; then
+        emit sysupd "warn" "не установлено обновлений: $PEND"
+    else
+        emit sysupd "ok" "система обновлена, ребут не требуется"
+    fi
 fi
 
 # --- pkgs ---

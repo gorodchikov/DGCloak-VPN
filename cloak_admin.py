@@ -1967,6 +1967,8 @@ class App(tk.Tk):
             missing = [l.split("=")[0] for l in
                        parse_section(out, "PKGS").splitlines()
                        if l.strip().endswith("=-")]
+            # до install на minimal-образе не было curl → latest пустой
+            latest = parse_section(out, "CK_LATEST").strip() or latest
         if missing:
             return "fail", "не встали: %s" % ",".join(missing)
         return "ok", "все пакеты есть; cloak latest: %s" % (latest or "?")
