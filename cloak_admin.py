@@ -1609,35 +1609,8 @@ class App(tk.Tk):
             return
 
         def work():
-            ssh = SSH(s, self.say)
-            ssh.preflight()
             self.say("=== Перезагрузка «%s» ===" % s["name"])
-            try:
-                ssh.run(ssh.sudo + "systemctl reboot", timeout=15)
-            except Exception:
-                pass  # соединение рвётся при перезагрузке — это норма
-            self.say("  команда отправлена, жду подъёма…")
-            deadline = time.time() + 180
-            up = False
-            while time.time() < deadline:
-                time.sleep(6)
-                try:
-                    SSH(s, self.say).run("echo UP", timeout=12)
-                    up = True
-                    break
-                except Exception:
-                    pass
-            if up:
-                s.pop("reboot_required", None)
-                st = s.setdefault("steps", {})
-                if "reboot" in st.get("sysupd", {}).get("note", ""):
-                    st["sysupd"] = {"st": "ok", "note": "обновлено, reboot выполнен"}
-                save_data(self.data)
-                self.ui(self._fill_steps)
-                self.say("  сервер поднялся")
-            else:
-                self.say("  !! сервер не ответил за 3 минуты — "
-                         "проверь консоль VM")
+            self._reboot_and_wait(s)
         self._worker(work)
 
     # ---- анимация «выполняется» + heartbeat ----
@@ -1757,20 +1730,47 @@ class App(tk.Tk):
                             "Перезагрузить сервер сейчас?\n\n"
                             "(поднимется через ~1 минуту; завершённые шаги "
                             "деплоя повторять не нужно)" % s["name"]):
-                    self.say("  отправляю reboot…")
-                    try:
-                        SSH(s, self.say).run("reboot", timeout=15)
-                    except Exception:
-                        pass  # соединение рвётся при перезагрузке — это норма
-                    s.pop("reboot_required", None)
-                    st = s.setdefault("steps", {})
-                    if st.get("sysupd", {}).get("st") == "warn":
-                        st["sysupd"] = {"st": "ok",
-                                        "note": "обновлено, reboot отправлен"}
-                    save_data(self.data)
-                    self.ui(self._fill_steps)
-                    self.say("  сервер уходит на перезагрузку")
+                    self._reboot_and_wait(s)
         self._worker(work)
+
+    def _reboot_and_wait(self, s):
+        """Перезагрузка через sudo + ожидание подъёма. Статус «нужен reboot»
+        снимается только после реального подъёма — иначе лог врёт."""
+        ssh = SSH(s, self.say)
+        ssh.preflight()
+        boot0 = ssh.run("uptime -s", timeout=15).strip()
+        self.say("  отправляю reboot…")
+        try:
+            ssh.run(ssh.sudo + "systemctl reboot", timeout=15)
+        except Exception:
+            pass  # соединение рвётся при перезагрузке — это норма
+        deadline = time.time() + 180
+        up = False
+        while time.time() < deadline:
+            time.sleep(6)
+            try:
+                boot1 = SSH(s, lambda m: None).run("uptime -s",
+                                                   timeout=12).strip()
+                # «поднялся» = время загрузки изменилось; просто «ответил»
+                # не годится — сервер мог ещё не упасть или вовсе не
+                # перезагрузиться (reboot без прав)
+                if boot1 and boot1 != boot0:
+                    up = True
+                    break
+            except Exception:
+                pass
+        if up:
+            s.pop("reboot_required", None)
+            st = s.setdefault("steps", {})
+            if "reboot" in st.get("sysupd", {}).get("note", ""):
+                st["sysupd"] = {"st": "ok", "note": "обновлено, reboot выполнен"}
+            save_data(self.data)
+            self.ui(self._fill_steps)
+            self.say("  сервер поднялся после перезагрузки")
+        else:
+            self.say("  !! сервер не перезагрузился за 3 минуты "
+                     "(или флаг reboot-required остался) — проверь консоль VM")
+        return up
 
     # ---- шаги ----
     def _step_ssh(self, ssh, s):
