@@ -625,8 +625,9 @@ class CloakAPI:
 
     def create_user(self, sessions_cap=16, expiry=FAR_FUTURE,
                     up_rate=INT64_MAX, down_rate=INT64_MAX,
-                    up_credit=INT64_MAX, down_credit=INT64_MAX):
-        uid = base64.b64encode(secrets.token_bytes(16)).decode()
+                    up_credit=INT64_MAX, down_credit=INT64_MAX,
+                    uid=None):
+        uid = uid or base64.b64encode(secrets.token_bytes(16)).decode()
         body = {"UID": uid, "SessionsCap": sessions_cap,
                 "UpRate": up_rate, "DownRate": down_rate,
                 "UpCredit": up_credit, "DownCredit": down_credit,
@@ -635,6 +636,24 @@ class CloakAPI:
         if code not in (200, 201):
             raise CloakAPIErr("POST user → %s: %s" % (code, r))
         return uid
+
+    def update_user(self, uid, sessions_cap=None, expiry=None):
+        """Правка существующего UID: PUT полным телом; если старый API без
+        PUT — пересоздаём тем же UID через DELETE+POST."""
+        body = {"UID": uid,
+                "SessionsCap": sessions_cap if sessions_cap is not None else 16,
+                "UpRate": INT64_MAX, "DownRate": INT64_MAX,
+                "UpCredit": INT64_MAX, "DownCredit": INT64_MAX,
+                "ExpiryTime": expiry if expiry is not None else FAR_FUTURE}
+        code, r = self._req("PUT", "/admin/users/" + uid_to_b64url(uid), body)
+        if code in (404, 405):
+            self.delete_user(uid)
+            self.create_user(sessions_cap=body["SessionsCap"],
+                             expiry=body["ExpiryTime"], uid=uid)
+            return True
+        if code not in (200, 201, 204):
+            raise CloakAPIErr("PUT user → %s: %s" % (code, r))
+        return True
 
     def delete_user(self, uid):
         code, r = self._req("DELETE", "/admin/users/" + uid_to_b64url(uid))
@@ -777,19 +796,32 @@ class ServerDialog(simpledialog.Dialog):
 
 
 class UserDialog(simpledialog.Dialog):
-    """Диалог создания юзера."""
+    """Диалог создания/правки юзера. rec — запись реестра для правки."""
+
+    def __init__(self, parent, srv_mask="", rec=None, title="Новый юзер"):
+        self.srv_mask = srv_mask
+        self.rec = rec
+        super().__init__(parent, title)
 
     def body(self, f):
+        rec = self.rec or {}
+        exp_days = "0"
+        if rec.get("expiry") and rec["expiry"] < FAR_FUTURE:
+            exp_days = str(max(1, round((rec["expiry"] - time.time()) / 86400)))
+        fields = [("name", "Имя (CN, [a-z0-9_-])", rec.get("cn", "")),
+                  ("expiry_days", "Срок жизни, дней (0 = бессрочно)", exp_days),
+                  ("sessions", "Макс. сессий", str(rec.get("sessions") or 16)),
+                  ("mask", "Домен для маскировки",
+                   rec.get("mask") or self.srv_mask)]
         self.vars = {}
-        fields = [("name", "Имя (CN, [a-z0-9_-])", ""),
-                  ("expiry_days", "Срок жизни, дней (0 = бессрочно)", "0"),
-                  ("sessions", "Макс. сессий", "16"),
-                  ("mask", "Маскировка (пусто = серверная)", "")]
         for i, (k, label, val) in enumerate(fields):
             ttk.Label(f, text=label).grid(row=i, column=0, sticky="w", padx=4, pady=3)
             v = tk.StringVar(value=val)
             self.vars[k] = v
-            ttk.Entry(f, textvariable=v, width=30).grid(row=i, column=1, padx=4, pady=3)
+            e = ttk.Entry(f, textvariable=v, width=30)
+            e.grid(row=i, column=1, padx=4, pady=3)
+            if rec and k == "name":
+                e.config(state="readonly")  # CN = сертификат, не меняем
         return f
 
     def validate(self):
@@ -1119,7 +1151,7 @@ class App(tk.Tk):
         row = 0
         optf = ttk.Frame(f)
         optf.grid(row=row, column=0, sticky="w", **pad)
-        ttk.Label(optf, text="Маскировка:").pack(side="left")
+        ttk.Label(optf, text="Домен для маскировки:").pack(side="left")
         self.v_mask = tk.StringVar(value="www.bing.com")
         ttk.Entry(optf, textvariable=self.v_mask, width=22).pack(side="left", padx=4)
         ttk.Label(optf, text="Протокол OpenVPN:").pack(side="left", padx=(10, 0))
@@ -1199,6 +1231,7 @@ class App(tk.Tk):
         bf.pack(fill="x", padx=6, pady=4)
         self._mk_btn(bf, "Обновить", self._users_refresh).pack(side="left", padx=2)
         self._mk_btn(bf, "Создать…", self._user_create).pack(side="left", padx=2)
+        self._mk_btn(bf, "Изменить…", self._user_edit).pack(side="left", padx=2)
         self._mk_btn(bf, "Отключить сейчас", self._user_kill).pack(side="left", padx=2)
         self._mk_btn(bf, "Отозвать и удалить", self._user_revoke).pack(side="left", padx=2)
         self._mk_btn(bf, "Экспорт бандла…", self._user_export).pack(side="left", padx=2)
@@ -1954,7 +1987,8 @@ class App(tk.Tk):
         s = self._sel_srv()
         if not s:
             return
-        d = UserDialog(self, title="Новый юзер")
+        d = UserDialog(self, srv_mask=s.get("mask_domain", "www.bing.com"),
+                       title="Новый юзер")
         if not d.result:
             return
         r = d.result
@@ -1963,6 +1997,46 @@ class App(tk.Tk):
             ssh = SSH(s, self.say)
             self._create_user_impl(ssh, s, r["name"], r["expiry"],
                                    r["sessions"], r.get("mask", ""))
+            self.ui(self._users_refresh)
+        self._worker(work)
+
+    def _user_edit(self):
+        s = self._sel_srv()
+        if not s:
+            return
+        cn, rec, uid = self._selected_user()
+        if cn is None:
+            return
+        if not rec:
+            messagebox.showinfo(APP_NAME, "«%s» не из нашего реестра — "
+                                "править можем только своих" % cn)
+            return
+        d = UserDialog(self, title="Изменить «%s»" % cn,
+                       srv_mask=s.get("mask_domain", "www.bing.com"), rec=rec)
+        if not d.result:
+            return
+        r = d.result
+
+        def work():
+            ssh = SSH(s, self.say)
+            api = self._api(s)
+            api.start()
+            try:
+                api.update_user(uid, sessions_cap=r["sessions"],
+                                expiry=r["expiry"])
+            finally:
+                api.stop()
+            rec.update({"sessions": r["sessions"], "expiry": r["expiry"],
+                        "mask": r["mask"]})
+            save_data(self.data)
+            # маскировка живёт в бандле — перевыпускаем локальную копию
+            out = ssh.run_script("user-cert.sh", cn, timeout=60)
+            mats = parse_cert_bundle(out)
+            bundle = os.path.join(BUNDLES_DIR, s["name"], cn)
+            write_user_bundle(s, cn, uid, mats, bundle, r["mask"])
+            self.say("Юзер «%s» обновлён. Бандл перевыпущен: %s\n"
+                     "  (маскировка меняется только в новом .dgcloak — "
+                     "выдай его юзеру)" % (cn, bundle))
             self.ui(self._users_refresh)
         self._worker(work)
 
