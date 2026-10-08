@@ -1092,7 +1092,15 @@ class PortsDialog(tk.Toplevel):
             out = ssh.run_script("fw-manage.sh",
                                  "%s %s %s" % (action, proto, port),
                                  timeout=60)
-            self.app.say("fw: %s" % out.strip().splitlines()[-1][:120])
+            lines = [l.strip() for l in out.splitlines() if l.strip()]
+            fw_ = next((l.split("=", 1)[1] for l in lines
+                        if l.startswith("FW=")), "?")
+            notes = "; ".join(l for l in lines if not
+                              l.startswith(("FW=", "=== ", "ok:")))[:140]
+            verb = "открыт" if action == "allow" else "закрыт"
+            self.app.say("fw: порт %s/%s %s, бэкенд %s%s"
+                         % (proto, port, verb, fw_,
+                            " (%s)" % notes if notes else ""))
             out = ssh.run_script("fw-manage.sh", "ports", timeout=60)
             self.app.ui(lambda: self._fill(out))
         self.app._worker(work)
