@@ -656,14 +656,16 @@ def make_ovpn(proto, ca, cert, key, ta):
     return OVPN_TEMPLATE.format(proto=proto, ca=ca, cert=cert, key=key, ta=ta)
 
 
-def make_ckclient(srv, uid):
+def make_ckclient(srv, uid, mask=None):
     return {
         "Transport": "direct",
         "ProxyMethod": "openvpn",
         "EncryptionMethod": "plain",
         "UID": uid,
         "PublicKey": srv["pubkey"],
-        "ServerName": srv.get("mask_domain", "www.bing.com"),
+        # ServerName — SNI, который видит цензор: можно разный на юзера;
+        # серверу без разницы (его RedirAddr один на всех)
+        "ServerName": mask or srv.get("mask_domain", "www.bing.com"),
         "NumConn": 16,
         "BrowserSig": "firefox",
         "StreamTimeout": 300,
@@ -675,22 +677,22 @@ def make_ckclient(srv, uid):
     }
 
 
-def make_dgcloak(srv, name, uid, mats):
+def make_dgcloak(srv, name, uid, mats, mask=None):
     """Единый файл профиля для клиента: ck-конфиг + .ovpn в одном JSON."""
     return {"type": "dgcloak-profile", "version": 1, "name": name,
-            "cloak": make_ckclient(srv, uid),
+            "cloak": make_ckclient(srv, uid, mask),
             "ovpn": make_ovpn(srv.get("proto", "udp"),
                               mats["ca"], mats["cert"], mats["key"],
                               mats["ta"])}
 
 
-def write_user_bundle(s, name, uid, mats, dst):
+def write_user_bundle(s, name, uid, mats, dst, mask=None):
     """Бандл юзера — один файл <name>.dgcloak (cloak+ovpn в одном JSON).
     Сырые .ovpn/ckclient при желании вытаскиваются из него же."""
     os.makedirs(dst, exist_ok=True)
     with open(os.path.join(dst, "%s.dgcloak" % name), "w",
               encoding="utf-8") as f:
-        json.dump(make_dgcloak(s, name, uid, mats), f,
+        json.dump(make_dgcloak(s, name, uid, mats, mask), f,
                   ensure_ascii=False, indent=2)
 
 
@@ -781,7 +783,8 @@ class UserDialog(simpledialog.Dialog):
         self.vars = {}
         fields = [("name", "Имя (CN, [a-z0-9_-])", ""),
                   ("expiry_days", "Срок жизни, дней (0 = бессрочно)", "0"),
-                  ("sessions", "Макс. сессий", "16")]
+                  ("sessions", "Макс. сессий", "16"),
+                  ("mask", "Маскировка (пусто = серверная)", "")]
         for i, (k, label, val) in enumerate(fields):
             ttk.Label(f, text=label).grid(row=i, column=0, sticky="w", padx=4, pady=3)
             v = tk.StringVar(value=val)
@@ -802,6 +805,7 @@ class UserDialog(simpledialog.Dialog):
             "name": self.vars["name"].get().strip(),
             "expiry": FAR_FUTURE if days <= 0 else int(time.time()) + days * 86400,
             "sessions": max(1, int(self.vars["sessions"].get() or 16)),
+            "mask": self.vars["mask"].get().strip(),
         }
 
 
@@ -944,8 +948,26 @@ class App(tk.Tk):
         self._log_ctx = None      # на каком сервере идёт операция
         self._fix_ctrl_bindings()
         self._build()
+        for var, key in ((self.v_mask, "mask_domain"),
+                         (self.v_proto, "proto"),
+                         (self.v_ckport, "ck_port")):
+            var.trace_add("write",
+                          lambda *a, k=key, v=var: self._opt_changed(k, v))
         self._refresh_servers()
         self.after(100, self._drain)
+
+    def _opt_changed(self, key, var):
+        """Поля маскировка/протокол/порт — per-server: правка сразу пишется
+        в выбранный сервер, иначе терялась при переключении."""
+        s = self._sel_srv_silent()
+        if not s:
+            return
+        v = var.get().strip()
+        if v:
+            s[key] = v
+        else:
+            s.pop(key, None)
+        save_data(self.data)
 
     # ---- UI plumbing (как в клиенте) ----
     def _fix_ctrl_bindings(self):
@@ -1208,6 +1230,7 @@ class App(tk.Tk):
             self._log_load(s["name"])
             self.v_mask.set(s.get("mask_domain", "www.bing.com"))
             self.v_proto.set(s.get("proto", "udp"))
+            self.v_ckport.set(str(s.get("ck_port") or "443"))
             self._fill_users_local(s)
             self._fill_steps()
 
@@ -1896,7 +1919,7 @@ class App(tk.Tk):
                     if u.get("uid") == uid or u["cn"] == cn), None)
         return cn, rec, uid
 
-    def _create_user_impl(self, ssh, s, name, expiry, sessions):
+    def _create_user_impl(self, ssh, s, name, expiry, sessions, mask=""):
         """Полный цикл: сертификат на сервере + UID через admin-API + бандл."""
         # 1. сертификат
         self.say("  user-cert.sh «%s»…" % name)
@@ -1916,12 +1939,12 @@ class App(tk.Tk):
             api.stop()
         # 3. бандл
         bundle = os.path.join(BUNDLES_DIR, s["name"], name)
-        write_user_bundle(s, name, uid, mats, bundle)
+        write_user_bundle(s, name, uid, mats, bundle, mask)
         # 4. запись в реестр
         users = s.setdefault("users", [])
         users[:] = [u for u in users if u["cn"] != name]
         users.append({"cn": name, "uid": uid, "expiry": expiry,
-                      "sessions": sessions,
+                      "sessions": sessions, "mask": mask,
                       "created": time.strftime("%Y-%m-%d")})
         save_data(self.data)
         self.say("Юзер «%s» создан. Бандл: %s" % (name, bundle))
@@ -1938,7 +1961,8 @@ class App(tk.Tk):
 
         def work():
             ssh = SSH(s, self.say)
-            self._create_user_impl(ssh, s, r["name"], r["expiry"], r["sessions"])
+            self._create_user_impl(ssh, s, r["name"], r["expiry"],
+                                   r["sessions"], r.get("mask", ""))
             self.ui(self._users_refresh)
         self._worker(work)
 
@@ -2055,7 +2079,8 @@ class App(tk.Tk):
             out = ssh.run_script("user-cert.sh", cn, timeout=60)
             mats = parse_cert_bundle(out)
             bundle = os.path.join(dst, cn)
-            write_user_bundle(s, cn, rec["uid"], mats, bundle)
+            write_user_bundle(s, cn, rec["uid"], mats, bundle,
+                              rec.get("mask") or "")
             self.say("Бандл «%s» → %s" % (cn, bundle))
         self._worker(work)
 
