@@ -1576,6 +1576,29 @@ class App(tk.Tk):
         big.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(0, 10))
         self._all_buttons.append(big)
         Tooltip(big, "Шаги идут сверху вниз, готовые шаги — пропускаются")
+        _dep_tips = {
+            "Только выбранный шаг":
+                "Выполнить один выбранный в таблице шаг —\n"
+                "точечный повтор после исправления ошибки",
+            "Проверить статусы":
+                "Read-only аудит сервера (probe): сверить состояние\n"
+                "и обновить значки шагов. Если сервер не отвечает —\n"
+                "метка «развёрнут» снимается до успешной проверки",
+            "Управление фаерволом":
+                "Открытые порты сервера: список, открыть/закрыть\n"
+                "свой порт (nftables/ufw/firewalld/iptables)",
+            "Сбросить сервер":
+                "Удалить только то, что поставила админка: OpenVPN+Cloak,\n"
+                "наши правила фаервола, юзеров и локальные конфиги.\n"
+                "Чужое (docker, данные, SSH-доступ) не трогает",
+            "Перезагрузить сервер":
+                "sudo reboot — нужно, если шаг «Обновление системы»\n"
+                "помечен ⚠ «нужна перезагрузка»",
+            "Копировать лог": "Весь лог вкладки в буфер обмена",
+            "Очистить лог":
+                "Стереть лог этого сервера на этой вкладке —\n"
+                "канал «Пользователи» и другие серверы не трогает",
+        }
         for i, (t, c) in enumerate((("Только выбранный шаг", self._step_run_sel),
                                     ("Проверить статусы", self._steps_reset),
                                     ("Управление фаерволом", self._fw_ports)),
@@ -1583,6 +1606,7 @@ class App(tk.Tk):
             b = self._mk_btn(bf, t, c)
             b.grid(row=0, column=i, sticky="ew", padx=2, pady=1)
             bf.columnconfigure(i, weight=1, uniform="btn")
+            Tooltip(b, _dep_tips[t])
         b_imp = self._mk_btn(bf, "Импорт ключей", self._do_import)
         b_imp.grid(row=0, column=4, sticky="ew", padx=(2, 0), pady=1)
         bf.columnconfigure(4, weight=1, uniform="btn")
@@ -1599,6 +1623,7 @@ class App(tk.Tk):
             b = self._mk_btn(bf, t, c)
             b.grid(row=1, column=i, sticky="ew",
                    padx=(2, 0) if i == 4 else 2, pady=1)
+            Tooltip(b, _dep_tips[t])
 
         row += 1
         leg = ttk.Frame(f)
