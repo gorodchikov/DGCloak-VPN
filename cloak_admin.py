@@ -2065,12 +2065,15 @@ class App(tk.Tk):
                     self.say("!! %s" % msg)
                     self.ui(lambda m=msg: messagebox.showinfo(APP_NAME, m))
                     return
+            # один sudo на всё: в режиме sudo-по-паролю пароль в stdin
+            # получает только первый sudo — второй молча отдаёт пустоту
             out = ssh.run(
-                "echo PUB:$(%scat /etc/ck-server/publickey.txt 2>/dev/null); "
-                "echo AUID:$(%scat /etc/ck-server/adminuid.txt 2>/dev/null); "
-                % (ssh.sudo, ssh.sudo) +
-                "grep '^proto ' /etc/openvpn/server/server.conf 2>/dev/null || true; "
-                "grep RedirAddr /etc/ck-server/ckserver.json 2>/dev/null || true")
+                "%sbash -c '"
+                "printf PUB:; cat /etc/ck-server/publickey.txt 2>/dev/null; echo; "
+                "printf AUID:; cat /etc/ck-server/adminuid.txt 2>/dev/null; echo; "
+                "grep \"^proto \" /etc/openvpn/server/server.conf 2>/dev/null; "
+                "grep RedirAddr /etc/ck-server/ckserver.json 2>/dev/null; "
+                "true'" % ssh.sudo, timeout=30)
             pub = re.search(r"PUB:(\S+)", out)
             auid = re.search(r"AUID:(\S+)", out)
             if pub and auid and pub.group(1) != "" and auid.group(1) != "":
