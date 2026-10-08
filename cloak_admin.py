@@ -2417,7 +2417,8 @@ class App(tk.Tk):
                            "/tmp/ovpn-mgmt.py")
                 out = ssh.run("%spython3 /tmp/ovpn-mgmt.py kill %s"
                               % (ssh.sudo, cn), timeout=20)
-                if "SUCCESS" in out:
+                # не просто SUCCESS — его mgmt шлёт и на пароль
+                if "SUCCESS: common name" in out:
                     self.say("  сессия сброшена")
                 elif "not found" in out:
                     self.say("  сессии не было (юзер офлайн)")
@@ -2457,7 +2458,7 @@ class App(tk.Tk):
                 return
             out = ssh.run("%spython3 /tmp/ovpn-mgmt.py kill %s"
                           % (ssh.sudo, cn), timeout=20)
-            if "SUCCESS" in out:
+            if "SUCCESS: common name" in out:
                 self.say("Сессия «%s» сброшена" % cn)
             else:
                 self.say("kill %s: %s" % (cn, out.strip()[:200]))
