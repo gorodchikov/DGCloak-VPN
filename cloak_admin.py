@@ -987,6 +987,7 @@ class App(tk.Tk):
         self._logs = {}           # name -> [строки лога]
         self._log_name = None     # чей лог показан
         self._log_ctx = None      # на каком сервере идёт операция
+        self._op_tab = None       # канал лога операции: "deploy"|"users"
         self.verbose = tk.BooleanVar(value=False)
         self._fix_ctrl_bindings()
         self._build()
@@ -1051,16 +1052,19 @@ class App(tk.Tk):
         видна только при включённом «Подробном выводе» (фильтр при показе —
         галочка раскрывает и старые строки)."""
         line = "[%s] %s" % (time.strftime("%H:%M:%S"), msg)
-        # активная операция пишет в журнал СВОЕГО сервера, даже если
-        # юзер переключил выбор; без операции — в показанный журнал
+        # активная операция пишет в журнал СВОЕГО сервера и в свой канал
+        # (deploy/users — по вкладке, с которой запущена), даже если юзер
+        # переключил выбор; без операции — в показанный журнал/вкладку
         name = self._log_ctx or self._log_name
+        tab = self._op_tab or self._cur_tab()
         if name is not None:
-            self._logs.setdefault(name, []).append((line, verbose))
+            self._logs.setdefault(name, []).append((line, verbose, tab))
         if (name == self._log_name or name is None) and \
                 (not verbose or self.verbose.get()):
-            def w():
-                self.logw.insert("end", line + "\n")
-                self.logw.see("end")
+            w_ = self.logw_usr if tab == "users" else self.logw_dep
+            def w(w_=w_):
+                w_.insert("end", line + "\n")
+                w_.see("end")
             self.ui(w)
 
     def say(self, msg):
@@ -1069,20 +1073,28 @@ class App(tk.Tk):
     def vsay(self, msg):
         self._say(msg, verbose=True)
 
+    def _cur_tab(self):
+        """Канал лога активной вкладки: deploy или users."""
+        try:
+            return "users" if self.nb.index(self.nb.select()) == 1 else "deploy"
+        except Exception:
+            return "deploy"
+
     def _log_load(self, name):
-        """Показать журнал сервера (вызывается при выборе в списке)."""
-        self.logw.delete("1.0", "end")
-        if self._log_ctx and self._log_ctx != name:
-            self.logw.insert("end", "…идёт операция на «%s» — её "
-                                    "лог пишется в её журнал…\n\n"
-                                    % self._log_ctx)
-        entries = self._logs.get(name)
-        if entries:
-            v = self.verbose.get()
-            self.logw.insert("end", "\n".join(
-                l for l, vb in entries if not vb or v) + "\n")
-        self.logw.see("end")
-        self.logframe.config(text="Лог — %s" % name)
+        """Показать журнал сервера — в каждой вкладке свой канал."""
+        v = self.verbose.get()
+        for tab, w_ in (("deploy", self.logw_dep), ("users", self.logw_usr)):
+            w_.delete("1.0", "end")
+            if self._log_ctx and self._log_ctx != name and self._op_tab == tab:
+                w_.insert("end", "…идёт операция на «%s» — её "
+                                 "лог пишется в её журнал…\n\n" % self._log_ctx)
+            entries = [l for l, vb, t in self._logs.get(name, [])
+                       if t == tab and (not vb or v)]
+            if entries:
+                w_.insert("end", "\n".join(entries) + "\n")
+            w_.see("end")
+        self.logframe_dep.config(text="Лог — %s" % name)
+        self.logframe_usr.config(text="Лог — %s" % name)
 
     def _on_verbose_toggle(self):
         if self._log_name:
@@ -1099,16 +1111,19 @@ class App(tk.Tk):
             messagebox.showinfo(APP_NAME, "Идёт другая операция — подожди")
             return
         self.busy = True
+        tab = self._cur_tab()  # вкладка-источник — читаем в главном потоке
         self.ui(lambda: self._set_busy(True))
 
         def run():
             self._log_ctx = self._log_name  # операция пишет в её журнал
+            self._op_tab = tab              # и в канал своей вкладки
             try:
                 fn()
             except Exception as e:
                 self.say("ОШИБКА: %s" % e)
             finally:
                 self._log_ctx = None
+                self._op_tab = None
                 self.busy = False
                 self.ui(lambda: self._set_busy(False))
         threading.Thread(target=run, daemon=True).start()
@@ -1135,20 +1150,10 @@ class App(tk.Tk):
             self._all_buttons.append(b)
 
         # --- правая колонка: вкладки ---
-        nb = ttk.Notebook(top)
+        nb = self.nb = ttk.Notebook(top)
         nb.pack(side="left", fill="both", expand=True)
         self._tab_deploy(nb)
         self._tab_users(nb)
-
-        # --- лог ---
-        bot = self.logframe = ttk.LabelFrame(self, text="Лог")
-        bot.pack(fill="both", padx=6, pady=(0, 6))
-        self.logw = tk.Text(bot, height=12, wrap="none",
-                            font=("Consolas", 9))
-        sb = ttk.Scrollbar(bot, command=self.logw.yview)
-        self.logw.config(yscrollcommand=sb.set)
-        sb.pack(side="right", fill="y")
-        self.logw.pack(fill="both", padx=4, pady=4)
 
     def _mk_btn(self, parent, text, cmd):
         b = ttk.Button(parent, text=text, command=cmd)
@@ -1236,6 +1241,17 @@ class App(tk.Tk):
                   foreground="#666", justify="left").grid(
             row=row, column=0, sticky="w", **pad)
 
+        row += 1
+        self.logframe_dep = ttk.LabelFrame(f, text="Лог")
+        self.logframe_dep.grid(row=row, column=0, sticky="nsew", **pad)
+        f.rowconfigure(row, weight=1)
+        self.logw_dep = tk.Text(self.logframe_dep, height=7, wrap="none",
+                                font=("Consolas", 9))
+        sb = ttk.Scrollbar(self.logframe_dep, command=self.logw_dep.yview)
+        self.logw_dep.config(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        self.logw_dep.pack(fill="both", expand=True, padx=4, pady=4)
+
     # ---- вкладка «Пользователи» ----
     def _tab_users(self, nb):
         f = ttk.Frame(nb)
@@ -1264,6 +1280,15 @@ class App(tk.Tk):
         ttk.Checkbutton(bf, text="Подробный вывод",
                         variable=self.verbose,
                         command=self._on_verbose_toggle).pack(side="right", padx=4)
+
+        self.logframe_usr = ttk.LabelFrame(f, text="Лог")
+        self.logframe_usr.pack(fill="both", expand=True, padx=6, pady=(0, 6))
+        self.logw_usr = tk.Text(self.logframe_usr, height=7, wrap="none",
+                                font=("Consolas", 9))
+        sb = ttk.Scrollbar(self.logframe_usr, command=self.logw_usr.yview)
+        self.logw_usr.config(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        self.logw_usr.pack(fill="both", expand=True, padx=4, pady=4)
 
     # ---- серверы ----
     def _refresh_servers(self):
