@@ -675,6 +675,31 @@ def make_ckclient(srv, uid):
     }
 
 
+def make_dgcloak(srv, name, uid, mats):
+    """Единый файл профиля для клиента: ck-конфиг + .ovpn в одном JSON."""
+    return {"type": "dgcloak-profile", "version": 1, "name": name,
+            "cloak": make_ckclient(srv, uid),
+            "ovpn": make_ovpn(srv.get("proto", "udp"),
+                              mats["ca"], mats["cert"], mats["key"],
+                              mats["ta"])}
+
+
+def write_user_bundle(s, name, uid, mats, dst):
+    """Бандл юзера: .dgcloak (для клиента) + сырые .ovpn и ckclient-*.json."""
+    os.makedirs(dst, exist_ok=True)
+    with open(os.path.join(dst, "%s.ovpn" % name), "w",
+              encoding="utf-8") as f:
+        f.write(make_ovpn(s.get("proto", "udp"), mats["ca"], mats["cert"],
+                          mats["key"], mats["ta"]))
+    with open(os.path.join(dst, "ckclient-%s.json" % name), "w",
+              encoding="utf-8") as f:
+        json.dump(make_ckclient(s, uid), f, indent=2)
+    with open(os.path.join(dst, "%s.dgcloak" % name), "w",
+              encoding="utf-8") as f:
+        json.dump(make_dgcloak(s, name, uid, mats), f,
+                  ensure_ascii=False, indent=2)
+
+
 def parse_cert_bundle(out):
     return {
         "ca":   parse_section(out, "CA"),
@@ -1896,16 +1921,8 @@ class App(tk.Tk):
         finally:
             api.stop()
         # 3. бандл
-        proto = s.get("proto", "udp")
         bundle = os.path.join(BUNDLES_DIR, s["name"], name)
-        os.makedirs(bundle, exist_ok=True)
-        with open(os.path.join(bundle, "%s.ovpn" % name), "w",
-                  encoding="utf-8") as f:
-            f.write(make_ovpn(proto, mats["ca"], mats["cert"], mats["key"],
-                              mats["ta"]))
-        with open(os.path.join(bundle, "ckclient-%s.json" % name), "w",
-                  encoding="utf-8") as f:
-            json.dump(make_ckclient(s, uid), f, indent=2)
+        write_user_bundle(s, name, uid, mats, bundle)
         # 4. запись в реестр
         users = s.setdefault("users", [])
         users[:] = [u for u in users if u["cn"] != name]
@@ -2044,14 +2061,7 @@ class App(tk.Tk):
             out = ssh.run_script("user-cert.sh", cn, timeout=60)
             mats = parse_cert_bundle(out)
             bundle = os.path.join(dst, cn)
-            os.makedirs(bundle, exist_ok=True)
-            with open(os.path.join(bundle, "%s.ovpn" % cn), "w",
-                      encoding="utf-8") as f:
-                f.write(make_ovpn(s.get("proto", "udp"), mats["ca"],
-                                  mats["cert"], mats["key"], mats["ta"]))
-            with open(os.path.join(bundle, "ckclient-%s.json" % cn), "w",
-                      encoding="utf-8") as f:
-                json.dump(make_ckclient(s, rec["uid"]), f, indent=2)
+            write_user_bundle(s, cn, rec["uid"], mats, bundle)
             self.say("Бандл «%s» → %s" % (cn, bundle))
         self._worker(work)
 

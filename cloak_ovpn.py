@@ -88,6 +88,12 @@ STRINGS_EN = {
     "Ошибка": "Error",
     "Заполните название, конфиг Cloak и профиль OpenVPN.":
         "Fill in name, Cloak config and OpenVPN profile.",
+    "Заполните .dgcloak ИЛИ название, конфиг Cloak и профиль OpenVPN.":
+        "Fill in a .dgcloak OR name, Cloak config and OpenVPN profile.",
+    "Файл не похож на DGCloak-профиль (нет секций cloak/ovpn).":
+        "File does not look like a DGCloak profile (no cloak/ovpn sections).",
+    "DGCloak конфиг (.dgcloak)": "DGCloak config (.dgcloak)",
+    "— ИЛИ —": "— OR —",
     "Порт должен быть числом.": "Port must be a number.",
     "Удалить": "Delete",
     "Удалить профиль «{name}»?": "Delete profile «{name}»?",
@@ -589,6 +595,9 @@ class SetupDialog(tk.Toplevel):
 class ProfileDialog(tk.Toplevel):
     FIELDS = [
         ("name", "Название", None),
+        ("dgcloak", "DGCloak конфиг (.dgcloak)", [("DGCloak", "*.dgcloak"), ("Все", "*.*")]),
+    ]
+    PAIR_FIELDS = [
         ("ck_config", "Cloak конфиг (.json)", [("JSON", "*.json"), ("Все", "*.*")]),
         ("ovpn", "OpenVPN профиль (.ovpn)", [("OVPN", "*.ovpn"), ("Все", "*.*")]),
     ]
@@ -610,6 +619,18 @@ class ProfileDialog(tk.Toplevel):
         self.vars = {}
         r = 0
         for key, label, ftypes in self.FIELDS:
+            ttk.Label(self, text=t(label)).grid(row=r, column=0, sticky="w", padx=8, pady=4)
+            v = tk.StringVar(value=str(p.get(key, "")))
+            self.vars[key] = v
+            ttk.Entry(self, textvariable=v, width=48).grid(row=r, column=1, padx=4)
+            if ftypes:
+                ttk.Button(self, text="…", width=3,
+                           command=lambda v=v, t=ftypes: self._browse(v, t)).grid(row=r, column=2, padx=4)
+            r += 1
+        ttk.Label(self, text=t("— ИЛИ —"), foreground="gray").grid(
+            row=r, column=0, columnspan=3, pady=(2, 0))
+        r += 1
+        for key, label, ftypes in self.PAIR_FIELDS:
             ttk.Label(self, text=t(label)).grid(row=r, column=0, sticky="w", padx=8, pady=4)
             v = tk.StringVar(value=str(p.get(key, "")))
             self.vars[key] = v
@@ -674,14 +695,49 @@ class ProfileDialog(tk.Toplevel):
         path = filedialog.askopenfilename(filetypes=ftypes)
         if path:
             var.set(os.path.normpath(path))
-            if var is self.vars["ck_config"] and not self.vars["name"].get():
+            if var in (self.vars["ck_config"], self.vars.get("dgcloak")) \
+                    and not self.vars["name"].get():
                 self.vars["name"].set(os.path.splitext(os.path.basename(path))[0])
+
+    def _from_dgcloak(self, r):
+        """Разобрать .dgcloak → ck-конфиг + .ovpn материализуются в
+        PROFILES_DIR/<имя>/, в r подставляются их пути."""
+        path = r["dgcloak"]
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        cloak, ovpn = data.get("cloak"), data.get("ovpn")
+        if not isinstance(cloak, dict) or not isinstance(ovpn, str) \
+                or not ovpn.strip():
+            raise ValueError(self.t("Файл не похож на DGCloak-профиль "
+                                    "(нет секций cloak/ovpn)."))
+        name = r["name"] or data.get("name") \
+            or os.path.splitext(os.path.basename(path))[0]
+        safe = re.sub(r"[^\w\-]+", "_", name).strip("_") or "profile"
+        dest = os.path.join(PROFILES_DIR, safe)
+        os.makedirs(dest, exist_ok=True)
+        ck = os.path.join(dest, "ckclient-%s.json" % safe)
+        ov = os.path.join(dest, "%s.ovpn" % safe)
+        with open(ck, "w", encoding="utf-8") as f:
+            json.dump(cloak, f, indent=2)
+        with open(ov, "w", encoding="utf-8") as f:
+            f.write(ovpn)
+        r["name"], r["ck_config"], r["ovpn"] = name, ck, ov
+        if isinstance(cloak.get("UDP"), bool):
+            self.udp.set(cloak["UDP"])
+        return r
 
     def _ok(self):
         r = {k: v.get().strip() for k, v in self.vars.items()}
+        if r.get("dgcloak"):
+            try:
+                r = self._from_dgcloak(r)
+            except Exception as e:
+                messagebox.showerror(self.t("Ошибка"), str(e), parent=self)
+                return
         if not (r["name"] and r["ck_config"] and r["ovpn"]):
             messagebox.showerror(self.t("Ошибка"),
-                                 self.t("Заполните название, конфиг Cloak и профиль OpenVPN."),
+                                 self.t("Заполните .dgcloak ИЛИ название, "
+                                        "конфиг Cloak и профиль OpenVPN."),
                                  parent=self)
             return
         try:
@@ -1529,5 +1585,21 @@ class App(tk.Tk):
         self.destroy()
 
 
+def single_instance_ok():
+    """Второй экземпляр клиента не запускаем (mutex, Windows)."""
+    try:
+        import ctypes
+        ctypes.windll.kernel32.CreateMutexW(
+            None, False, "Local\\DGCloakVPNSingleton")
+        if ctypes.windll.kernel32.GetLastError() == 183:  # ALREADY_EXISTS
+            ctypes.windll.user32.MessageBoxW(
+                0, "DGCloak VPN уже запущен.", APP_NAME, 0x40)
+            return False
+    except Exception:
+        pass  # не Windows или нет ctypes — не блокируем
+    return True
+
+
 if __name__ == "__main__":
-    App().mainloop()
+    if single_instance_ok():
+        App().mainloop()
