@@ -2350,18 +2350,25 @@ class App(tk.Tk):
             return
         r = d.result
 
+        api_changed = any(rec.get(k) != r[k] for k in (
+            "sessions", "expiry", "up_rate", "down_rate",
+            "up_credit", "down_credit"))
+        mask_changed = rec.get("mask", "") != r["mask"]
+
         def work():
             ssh = SSH(s, self.say)
-            api = self._api(s)
-            api.start()
-            try:
-                api.update_user(uid, sessions_cap=r["sessions"],
-                                expiry=r["expiry"],
-                                up_rate=r["up_rate"], down_rate=r["down_rate"],
-                                up_credit=r["up_credit"],
-                                down_credit=r["down_credit"])
-            finally:
-                api.stop()
+            if api_changed:
+                api = self._api(s)
+                api.start()
+                try:
+                    api.update_user(uid, sessions_cap=r["sessions"],
+                                    expiry=r["expiry"],
+                                    up_rate=r["up_rate"],
+                                    down_rate=r["down_rate"],
+                                    up_credit=r["up_credit"],
+                                    down_credit=r["down_credit"])
+                finally:
+                    api.stop()
             rec.update({"sessions": r["sessions"], "expiry": r["expiry"],
                         "mask": r["mask"],
                         "up_rate": r["up_rate"], "down_rate": r["down_rate"],
@@ -2369,14 +2376,20 @@ class App(tk.Tk):
                         "down_credit": r["down_credit"]})
             save_data(self.data)
             self._push_users(ssh, s)
-            # маскировка живёт в конфиге — перевыпускаем локальную копию
-            out = ssh.run_script("user-cert.sh", cn, timeout=60)
-            mats = parse_cert_bundle(out)
-            bundle = os.path.join(BUNDLES_DIR, s["name"], cn)
-            write_user_bundle(s, cn, uid, mats, bundle, r["mask"])
-            self.say("Юзер «%s» обновлён, конфиг перевыпущен, "
-                     "выдай его юзеру: %s"
-                     % (cn, os.path.join(bundle, "%s.dgcloak" % cn)))
+            if mask_changed:
+                # маскировка живёт в конфиге — перевыпускаем локальную копию
+                out = ssh.run_script("user-cert.sh", cn, timeout=60)
+                mats = parse_cert_bundle(out)
+                bundle = os.path.join(BUNDLES_DIR, s["name"], cn)
+                write_user_bundle(s, cn, uid, mats, bundle, r["mask"])
+                self.say("Юзер «%s» обновлён, конфиг перевыпущен, "
+                         "выдай его юзеру: %s"
+                         % (cn, os.path.join(bundle, "%s.dgcloak" % cn)))
+            elif api_changed:
+                self.say("Юзер «%s» обновлён (лимиты/срок — на сервере, "
+                         "конфиг тот же)" % cn)
+            else:
+                self.say("Юзер «%s» без изменений" % cn)
             self.ui(self._users_refresh)
         self._worker(work)
 
