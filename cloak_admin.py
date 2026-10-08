@@ -1265,7 +1265,7 @@ class App(tk.Tk):
         ttk.Entry(optf, textvariable=self.v_mask, width=36).pack(side="left", padx=4)
         self.v_ckport = tk.StringVar(value="443")
         ttk.Entry(optf, textvariable=self.v_ckport, width=5).pack(side="right")
-        ttk.Label(optf, text="Cloak порт:").pack(side="right", padx=(10, 0))
+        ttk.Label(optf, text="Cloak порт").pack(side="right", padx=(10, 4))
         ttk.Label(optf, text="(TCP медленнее)",
                   foreground="#a33").pack(side="right", padx=(2, 0))
         self.v_proto = tk.StringVar(value="udp")
@@ -1309,6 +1309,7 @@ class App(tk.Tk):
                         activebackground="#2a6", padx=10, pady=2)
         big.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(2, 10))
         self._all_buttons.append(big)
+        Tooltip(big, "Шаги идут сверху вниз, готовые шаги — пропускаются")
         for i, (t, c) in enumerate((("Только выбранный шаг", self._step_run_sel),
                                     ("Проверить статусы", self._steps_reset),
                                     ("Управление фаерволом", self._fw_ports)),
@@ -1330,12 +1331,16 @@ class App(tk.Tk):
                                    start=1):
             b = self._mk_btn(bf, t, c)
             b.grid(row=1, column=i, sticky="ew", padx=2, pady=1)
+        # язык интерфейса — пока только элемент, перевод позже
+        self.v_lang = tk.StringVar(value="Русский")
+        ttk.Combobox(bf, textvariable=self.v_lang, state="readonly",
+                     values=["Русский", "English"]).grid(
+            row=1, column=4, sticky="ew", padx=2, pady=1)
 
         row += 1
-        ttk.Label(f, text="✓ готово   ⚠ обрати внимание   ✗ ошибка   – пропущен   … не выполнялся\n"
-                          "Шаги идут сверху вниз; «Выполнить всё» пропускает готовые.",
-                  foreground="#666", justify="left").grid(
-            row=row, column=0, sticky="w", **pad)
+        ttk.Label(f, text="✓ готово   ⚠ обрати внимание   ✗ ошибка   "
+                          "– пропущен   … не выполнялся",
+                  foreground="#666").grid(row=row, column=0, sticky="w", **pad)
 
         row += 1
         self.logframe_dep = ttk.LabelFrame(f, text="Лог")
