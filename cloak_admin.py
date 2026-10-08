@@ -508,7 +508,8 @@ class SSH:
         inp = (self.sudo_pw + "\n") if self.sudo_pw else ""
         rc, out = self._spawn(args, input_text=inp, timeout=timeout)
         if rc != 0:
-            raise SSHErr("SSH rc=%s: %s" % (rc, out.strip()[:400] or "(пустой вывод)"))
+            raise SSHErr("SSH: команда завершилась rc=%s: %s"
+                         % (rc, out.strip()[:400] or "(пустой вывод)"))
         return out
 
     def preflight(self):
@@ -629,7 +630,8 @@ class SSH:
         args = self._argv_upload(local_path, remote_path)
         rc, out = self._spawn(args, timeout=60)
         if rc != 0:
-            raise SSHErr("upload: %s" % out.strip()[:300])
+            raise SSHErr("загрузка файла не удалась: %s"
+                         % out.strip()[:300])
         return out
 
     def run_script(self, filename, args="", timeout=600):
@@ -780,7 +782,8 @@ class CloakAPI:
     def list_users(self):
         code, r = self._req("GET", "/admin/users")
         if code != 200:
-            raise CloakAPIErr("GET /admin/users → %s: %s" % (code, r))
+            raise CloakAPIErr("Cloak API GET /admin/users → %s: %s"
+                              % (code, r))
         return r if isinstance(r, list) else []
 
     def create_user(self, sessions_cap=16, expiry=FAR_FUTURE,
@@ -794,7 +797,8 @@ class CloakAPI:
                 "ExpiryTime": expiry}
         code, r = self._req("POST", "/admin/users/" + uid_to_b64url(uid), body)
         if code not in (200, 201):
-            raise CloakAPIErr("POST user → %s: %s" % (code, r))
+            raise CloakAPIErr("Cloak API POST /admin/users → %s: %s"
+                              % (code, r))
         return uid
 
     def update_user(self, uid, sessions_cap=None, expiry=None,
@@ -817,13 +821,15 @@ class CloakAPI:
                              uid=uid)
             return True
         if code not in (200, 201, 204):
-            raise CloakAPIErr("PUT user → %s: %s" % (code, r))
+            raise CloakAPIErr("Cloak API PUT user → %s: %s"
+                              % (code, r))
         return True
 
     def delete_user(self, uid):
         code, r = self._req("DELETE", "/admin/users/" + uid_to_b64url(uid))
         if code not in (200, 204):
-            raise CloakAPIErr("DELETE user → %s: %s" % (code, r))
+            raise CloakAPIErr("Cloak API DELETE user → %s: %s"
+                              % (code, r))
         return True
 
 
@@ -2151,7 +2157,8 @@ class App(tk.Tk):
                                capture_output=True, text=True, timeout=30,
                                creationflags=CREATE_NO_WINDOW)
             if r.returncode != 0:
-                raise SSHErr("ssh-keygen: %s" % (r.stderr or r.stdout))
+                raise SSHErr("ssh-keygen не сработал: %s"
+                             % (r.stderr or r.stdout))
         pub = open(kp + ".pub", encoding="ascii").read().strip()
         self.say("  ставлю публичный ключ на сервер…")
         ssh.install_pubkey(pub)
@@ -2898,7 +2905,7 @@ class App(tk.Tk):
             if "SUCCESS: common name" in out:
                 self.say("Сессия «%s» сброшена" % cn)
             else:
-                self.say("kill %s: %s" % (cn, out.strip()[:200]))
+                self.say("сброс сессии %s: %s" % (cn, out.strip()[:200]))
         self._worker(work)
 
     def _user_export(self):
