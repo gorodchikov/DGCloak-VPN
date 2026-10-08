@@ -1531,7 +1531,7 @@ class App(tk.Tk):
     def _tab_users(self, nb):
         f = ttk.Frame(nb)
         nb.add(f, text="Пользователи")
-        self.v_users_srv = tk.StringVar(value="— реестр админки Cloak")
+        self.v_users_srv = tk.StringVar(value="— выбери сервер")
         ttk.Label(f, textvariable=self.v_users_srv,
                   foreground="#666").pack(anchor="w", padx=6, pady=(6, 0))
         cols = ("cn", "sessions", "limit", "quota", "expiry", "mask", "online")
@@ -1635,7 +1635,8 @@ class App(tk.Tk):
                 _fmt_quota(u.get("up_credit"), u.get("down_credit")),
                 time.strftime("%d.%m.%Y", time.localtime(exp)) if exp else "—",
                 u.get("mask") or s.get("mask_domain", ""), ""))
-        self.v_users_srv.set("%s — реестр админки" % s["name"])
+        self.v_users_srv.set("%s — кэш админки, «Обновить» покажет "
+                             "данные с сервера" % s["name"])
 
     def _sel_srv_silent(self):
         i = self.srv_list.curselection()
@@ -2471,7 +2472,8 @@ class App(tk.Tk):
                 self.users_tv.delete(*self.users_tv.get_children())
                 for uid, r in sorted(rows, key=lambda x: x[1][0]):
                     self.users_tv.insert("", "end", iid=uid, values=r)
-                self.v_users_srv.set("%s — реестр админки Cloak" % s["name"])
+                self.v_users_srv.set("%s — актуальные данные с сервера"
+                                     % s["name"])
             self.ui(fill)
             self.say("Юзеров: %s, онлайн: %s" % (len(rows), len(online)))
         self._worker(work)
