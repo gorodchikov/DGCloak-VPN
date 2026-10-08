@@ -1389,15 +1389,22 @@ class App(tk.Tk):
         self.v_mask = tk.StringVar(value="www.bing.com")
         ttk.Entry(optf, textvariable=self.v_mask, width=36).pack(side="left", padx=4)
         self.v_ckport = tk.StringVar(value="443")
-        ttk.Entry(optf, textvariable=self.v_ckport, width=5).pack(side="right")
-        ttk.Label(optf, text="Cloak порт").pack(side="right", padx=(10, 4))
+        self.w_ckport = ttk.Entry(optf, textvariable=self.v_ckport, width=5)
+        self.w_ckport.pack(side="right")
+        lbl_p = ttk.Label(optf, text="Cloak порт")
+        lbl_p.pack(side="right", padx=(10, 4))
+        Tooltip(lbl_p, "На развёрнутом сервере поле заблокировано:\n"
+                       "смена порта требует пересборки конфигов юзеров")
         ttk.Label(optf, text="(TCP медленнее)",
                   foreground="#a33").pack(side="right", padx=(2, 0))
         self.v_proto = tk.StringVar(value="udp")
-        ttk.Combobox(optf, textvariable=self.v_proto, width=5, state="readonly",
-                     values=["udp", "tcp"]).pack(side="right")
-        ttk.Label(optf, text="Протокол OpenVPN:").pack(side="right",
-                                                      padx=(10, 0))
+        self.w_proto = ttk.Combobox(optf, textvariable=self.v_proto, width=5,
+                                    state="readonly", values=["udp", "tcp"])
+        self.w_proto.pack(side="right")
+        lbl_pr = ttk.Label(optf, text="Протокол OpenVPN:")
+        lbl_pr.pack(side="right", padx=(10, 0))
+        Tooltip(lbl_pr, "На развёрнутом сервере поле заблокировано:\n"
+                        "смена протокола требует пересборки конфигов юзеров")
 
         row += 1
         # нативная шапка treeview на Windows ~24px и не сжимается —
@@ -1542,6 +1549,17 @@ class App(tk.Tk):
             self.srv_list.insert("end", "%s%s" % (s["name"], mark))
         if keep is not None and keep < self.srv_list.size():
             self.srv_list.selection_set(keep)  # не генерит <<ListboxSelect>>
+        self._apply_opt_lock()
+
+    def _apply_opt_lock(self):
+        """Порт/протокол зашиты в конфиги юзеров — правка на развёрнутом
+        сервере без пересборки бандлов ломает связность. Лочим до
+        сброса/передеплоя. Домен маскировки остаётся — он только
+        дефолт для новых юзеров и RedirAddr."""
+        s = self._sel_srv_silent()
+        locked = bool(s and s.get("deployed"))
+        self.w_ckport.config(state="disabled" if locked else "normal")
+        self.w_proto.config(state="disabled" if locked else "readonly")
 
     def _sel_srv(self):
         i = self.srv_list.curselection()
@@ -1558,6 +1576,7 @@ class App(tk.Tk):
             self.v_mask.set(s.get("mask_domain", "www.bing.com"))
             self.v_proto.set(s.get("proto", "udp"))
             self.v_ckport.set(str(s.get("ck_port") or "443"))
+            self._apply_opt_lock()
             self._fill_users_local(s)
             self._fill_steps()
 
