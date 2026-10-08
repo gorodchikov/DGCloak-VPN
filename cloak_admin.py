@@ -1031,6 +1031,11 @@ class App(tk.Tk):
                     "Spinbox", "TSpinbox"):
             self.bind_class(cls, "<Control-KeyPress>", _ctrl)
 
+    def vsay(self, msg):
+        """Лог только в подробном режиме (галочка «Подробный вывод»)."""
+        if self.verbose.get():
+            self.say(msg)
+
     def ui(self, fn, *a):
         self.uiq.put((fn, a))
 
@@ -1967,9 +1972,9 @@ class App(tk.Tk):
     def _create_user_impl(self, ssh, s, name, expiry, sessions, mask=""):
         """Полный цикл: сертификат на сервере + UID через admin-API + бандл."""
         # 1. сертификат
-        self.say("  user-cert.sh «%s»…" % name)
+        self.vsay("  user-cert.sh «%s»…" % name)
         out = ssh.run_script("user-cert.sh", name, timeout=120)
-        self.say("  вывод %d байт" % len(out))
+        self.vsay("  вывод %d байт" % len(out))
         mats = parse_cert_bundle(out)
         if not all(mats.values()):
             tail = "\n".join(out.strip().splitlines()[-6:])
