@@ -1318,12 +1318,12 @@ class App(tk.Tk):
             b = self._mk_btn(bf, t, c)
             b.grid(row=0, column=i, sticky="ew", padx=2, pady=1)
             bf.columnconfigure(i, weight=1, uniform="btn")
-        b_imp = self._mk_btn(bf, "Подтянуть ключи", self._do_import)
+        b_imp = self._mk_btn(bf, "Импорт ключей", self._do_import)
         b_imp.grid(row=0, column=4, sticky="ew", padx=2, pady=1)
         bf.columnconfigure(4, weight=1, uniform="btn")
         Tooltip(b_imp,
-                "Если сервер уже настроен (вручную или другой версией\n"
-                "программы) — эта кнопка забирает с него ключи Cloak,\n"
+                "Если сервер уже настроен (вручную или через DGCloak Admin)\n"
+                "— эта кнопка забирает с него ключи/юзеры Cloak,\n"
                 "не переустанавливая ничего. После этого сервером можно\n"
                 "управлять: юзеры, конфиги, статусы.")
         for i, (t, c) in enumerate((("Сбросить сервер", self._srv_purge),
@@ -2151,7 +2151,8 @@ class App(tk.Tk):
                     "укажи путь в data.json или положи рядом" % e)
             self.say("  ck-client.exe → %s" % ck)
         if not s.get("admin_uid") or not s.get("pubkey"):
-            raise CloakAPIErr("Нет admin_uid/pubkey — сделай «Импорт» или деплой")
+            raise CloakAPIErr("Нет admin_uid/pubkey — сделай «Импорт ключей» "
+                              "или деплой")
         return CloakAPI(ck, s, self.say, vlog=self.vsay)
 
     def _users_refresh(self):
