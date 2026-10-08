@@ -1479,22 +1479,17 @@ class App(tk.Tk):
         if not s:
             return
         if messagebox.askyesno(APP_NAME, "Удалить сервер «%s» из списка?\n\n"
-                               "Локальные конфиги юзеров и SSH-ключ админки\n"
-                               "для него тоже удалятся. Сам сервер не трогаем."
-                               % s["name"]):
+                               "Локальные конфиги юзеров удалятся.\n"
+                               "SSH-ключ остаётся в %s —\n"
+                               "им можно зайти на сервер и потом.\n"
+                               "Сам сервер не трогаем."
+                               % (s["name"], os.path.join(APP_DIR, "keys"))):
             self.data["servers"].remove(s)
             save_data(self.data)
             self._logs.pop(s["name"], None)
-            # локальные хвосты: бандлы юзеров + ключ, если его сделала админка
+            # бандлы юзеров сносим; SSH-ключ НЕ трогаем — он стоит на сервере
+            # в authorized_keys и может быть единственным способом зайти
             shutil.rmtree(os.path.join(BUNDLES_DIR, s["name"]), ignore_errors=True)
-            key = s.get("key") or ""
-            if key and os.path.dirname(os.path.abspath(key)) == \
-                    os.path.abspath(os.path.join(APP_DIR, "keys")):
-                for p in (key, key + ".pub"):
-                    try:
-                        os.remove(p)
-                    except OSError:
-                        pass
             self._refresh_servers()
 
     # ---- движок шагов ----
