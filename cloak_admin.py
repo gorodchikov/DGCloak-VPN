@@ -2541,6 +2541,11 @@ class App(tk.Tk):
             bundle = os.path.join(dst, cn)
             write_user_bundle(s, cn, rec["uid"], mats, bundle,
                               rec.get("mask") or "")
+            # каноническая копия в %APPDATA% — у восстановленных
+            # импортом юзеров её может не быть вовсе
+            write_user_bundle(s, cn, rec["uid"], mats,
+                              os.path.join(BUNDLES_DIR, s["name"], cn),
+                              rec.get("mask") or "")
             self.say("Конфиг «%s» → %s"
                      % (cn, os.path.join(bundle, "%s.dgcloak" % cn)))
         self._worker(work)
