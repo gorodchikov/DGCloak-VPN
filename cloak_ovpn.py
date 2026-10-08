@@ -465,6 +465,7 @@ def cloak_latest_url():
 
 def download(url, dst, on_progress):
     """Скачать файл, вызывая on_progress(получено, всего)."""
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
     req = urllib.request.Request(url, headers={"User-Agent": "DGCloakVPN"})
     with urllib.request.urlopen(req, timeout=30) as r, open(dst, "wb") as f:
         total = int(r.headers.get("Content-Length") or 0)
