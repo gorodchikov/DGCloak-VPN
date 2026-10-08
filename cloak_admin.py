@@ -48,6 +48,20 @@ CK_VERSION = "2.12.0"
 INT64_MAX = 9223372036854775807
 FAR_FUTURE = 2000000000  # ~2033 — «бессрочный» юзер Cloak
 
+
+def _fmt_rate(bps):
+    """байт/с → компактная строка; отсутствие/INT64_MAX = безлимит (∞).
+    Ноль в таблице показываем как есть — Cloak трактует его как запрет."""
+    if bps is None or bps >= INT64_MAX:
+        return "∞"
+    kb = bps / 1024
+    return "%dK" % kb if kb < 1024 else "%.1fM" % (kb / 1024)
+
+
+def _fmt_limits(up, down):
+    u, d = _fmt_rate(up), _fmt_rate(down)
+    return "∞" if u == "∞" and d == "∞" else "↑%s ↓%s" % (u, d)
+
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 OVPN_TEMPLATE = """client
@@ -646,19 +660,21 @@ class CloakAPI:
             raise CloakAPIErr("POST user → %s: %s" % (code, r))
         return uid
 
-    def update_user(self, uid, sessions_cap=None, expiry=None):
+    def update_user(self, uid, sessions_cap=None, expiry=None,
+                    up_rate=INT64_MAX, down_rate=INT64_MAX):
         """Правка существующего UID: PUT полным телом; если старый API без
         PUT — пересоздаём тем же UID через DELETE+POST."""
         body = {"UID": uid,
                 "SessionsCap": sessions_cap if sessions_cap is not None else 16,
-                "UpRate": INT64_MAX, "DownRate": INT64_MAX,
+                "UpRate": up_rate, "DownRate": down_rate,
                 "UpCredit": INT64_MAX, "DownCredit": INT64_MAX,
                 "ExpiryTime": expiry if expiry is not None else FAR_FUTURE}
         code, r = self._req("PUT", "/admin/users/" + uid_to_b64url(uid), body)
         if code in (404, 405):
             self.delete_user(uid)
             self.create_user(sessions_cap=body["SessionsCap"],
-                             expiry=body["ExpiryTime"], uid=uid)
+                             expiry=body["ExpiryTime"],
+                             up_rate=up_rate, down_rate=down_rate, uid=uid)
             return True
         if code not in (200, 201, 204):
             raise CloakAPIErr("PUT user → %s: %s" % (code, r))
@@ -820,6 +836,12 @@ class UserDialog(simpledialog.Dialog):
         fields = [("name", "Имя (CN, [a-z0-9_-])", rec.get("cn", "")),
                   ("expiry_days", "Срок жизни, дней (0 = бессрочно)", exp_days),
                   ("sessions", "Макс. сессий", str(rec.get("sessions") or 16)),
+                  ("up_kbs", "Лимит скорости ↑, КБ/с (0 = безлимит)",
+                   str(rec["up_rate"] // 1024)
+                   if rec.get("up_rate") and rec["up_rate"] < INT64_MAX else "0"),
+                  ("down_kbs", "Лимит скорости ↓, КБ/с (0 = безлимит)",
+                   str(rec["down_rate"] // 1024)
+                   if rec.get("down_rate") and rec["down_rate"] < INT64_MAX else "0"),
                   ("mask", "Домен для маскировки",
                    rec.get("mask") or self.srv_mask)]
         self.vars = {}
@@ -838,6 +860,13 @@ class UserDialog(simpledialog.Dialog):
             messagebox.showerror("Юзер", "Имя: только латиница, цифры, _ и -",
                                  parent=self)
             return False
+        for k in ("expiry_days", "sessions", "up_kbs", "down_kbs"):
+            try:
+                int(self.vars[k].get() or 0)
+            except ValueError:
+                messagebox.showerror("Юзер", "Поле «%s» — только целое число" % k,
+                                     parent=self)
+                return False
         return True
 
     def apply(self):
@@ -846,6 +875,12 @@ class UserDialog(simpledialog.Dialog):
             "name": self.vars["name"].get().strip(),
             "expiry": FAR_FUTURE if days <= 0 else int(time.time()) + days * 86400,
             "sessions": max(1, int(self.vars["sessions"].get() or 16)),
+            # 0/пусто → INT64_MAX: в Cloak rate=0 = полный запрет трафика,
+            # безлимит выражается только большим числом
+            "up_rate": INT64_MAX if int(self.vars["up_kbs"].get() or 0) <= 0
+                       else int(self.vars["up_kbs"].get()) * 1024,
+            "down_rate": INT64_MAX if int(self.vars["down_kbs"].get() or 0) <= 0
+                         else int(self.vars["down_kbs"].get()) * 1024,
             "mask": self.vars["mask"].get().strip(),
         }
 
@@ -1277,13 +1312,13 @@ class App(tk.Tk):
         self.v_users_srv = tk.StringVar(value="— реестр админки Cloak")
         ttk.Label(f, textvariable=self.v_users_srv,
                   foreground="#666").pack(anchor="w", padx=6, pady=(6, 0))
-        cols = ("cn", "uid", "sessions", "expiry", "mask", "online")
+        cols = ("cn", "uid", "sessions", "limit", "expiry", "mask", "online")
         self.users_tv = ttk.Treeview(f, columns=cols, show="headings", height=12)
         heads = {"cn": "Имя (CN)", "uid": "UID", "sessions": "Сессий",
-                 "expiry": "Истекает", "mask": "Домен маскировки",
-                 "online": "Онлайн"}
-        widths = {"cn": 110, "uid": 165, "sessions": 55, "expiry": 95,
-                  "mask": 150, "online": 55}
+                 "limit": "Лимит ↑/↓", "expiry": "Истекает",
+                 "mask": "Домен маскировки", "online": "Онлайн"}
+        widths = {"cn": 105, "uid": 160, "sessions": 50, "limit": 105,
+                  "expiry": 90, "mask": 140, "online": 55}
         for c in cols:
             self.users_tv.heading(c, text=heads[c])
             self.users_tv.column(c, width=widths[c])
@@ -2050,6 +2085,7 @@ class App(tk.Tk):
                 rows.append((uid, (kn.get("cn", "?"),
                              uid[:20] + "…" if len(uid) > 20 else uid,
                              u.get("SessionsCap", "?"),
+                             _fmt_limits(u.get("UpRate"), u.get("DownRate")),
                              time.strftime("%d.%m.%Y", time.localtime(exp))
                              if exp else "—",
                              kn.get("mask") or s.get("mask_domain", ""),
@@ -2078,7 +2114,8 @@ class App(tk.Tk):
                     if u.get("uid") == uid or u["cn"] == cn), None)
         return cn, rec, uid
 
-    def _create_user_impl(self, ssh, s, name, expiry, sessions, mask=""):
+    def _create_user_impl(self, ssh, s, name, expiry, sessions, mask="",
+                          up_rate=INT64_MAX, down_rate=INT64_MAX):
         """Полный цикл: сертификат на сервере + UID через admin-API + конфиг."""
         # 1. сертификат
         self.vsay("  user-cert.sh «%s»…" % name)
@@ -2093,7 +2130,8 @@ class App(tk.Tk):
         api = self._api(s)
         api.start()
         try:
-            uid = api.create_user(sessions_cap=sessions, expiry=expiry)
+            uid = api.create_user(sessions_cap=sessions, expiry=expiry,
+                                  up_rate=up_rate, down_rate=down_rate)
         finally:
             api.stop()
         # 3. конфиг
@@ -2104,6 +2142,7 @@ class App(tk.Tk):
         users[:] = [u for u in users if u["cn"] != name]
         users.append({"cn": name, "uid": uid, "expiry": expiry,
                       "sessions": sessions, "mask": mask,
+                      "up_rate": up_rate, "down_rate": down_rate,
                       "created": time.strftime("%Y-%m-%d")})
         save_data(self.data)
         self.say("Юзер «%s» создан. Конфиг: %s"
@@ -2123,7 +2162,8 @@ class App(tk.Tk):
         def work():
             ssh = SSH(s, self.say)
             self._create_user_impl(ssh, s, r["name"], r["expiry"],
-                                   r["sessions"], r.get("mask", ""))
+                                   r["sessions"], r.get("mask", ""),
+                                   r["up_rate"], r["down_rate"])
             self.ui(self._users_refresh)
         self._worker(work)
 
@@ -2150,11 +2190,13 @@ class App(tk.Tk):
             api.start()
             try:
                 api.update_user(uid, sessions_cap=r["sessions"],
-                                expiry=r["expiry"])
+                                expiry=r["expiry"],
+                                up_rate=r["up_rate"], down_rate=r["down_rate"])
             finally:
                 api.stop()
             rec.update({"sessions": r["sessions"], "expiry": r["expiry"],
-                        "mask": r["mask"]})
+                        "mask": r["mask"],
+                        "up_rate": r["up_rate"], "down_rate": r["down_rate"]})
             save_data(self.data)
             # маскировка живёт в конфиге — перевыпускаем локальную копию
             out = ssh.run_script("user-cert.sh", cn, timeout=60)
