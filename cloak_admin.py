@@ -1143,9 +1143,6 @@ class App(tk.Tk):
         # --- лог ---
         bot = self.logframe = ttk.LabelFrame(self, text="Лог")
         bot.pack(fill="both", padx=6, pady=(0, 6))
-        ttk.Checkbutton(bot, text="Подробный вывод",
-                        variable=self.verbose,
-                        command=self._on_verbose_toggle).pack(anchor="e", padx=4)
         self.logw = tk.Text(bot, height=12, wrap="none",
                             font=("Consolas", 9))
         sb = ttk.Scrollbar(bot, command=self.logw.yview)
@@ -1264,6 +1261,9 @@ class App(tk.Tk):
         self._mk_btn(bf, "Отключить сейчас", self._user_kill).pack(side="left", padx=2)
         self._mk_btn(bf, "Отозвать и удалить", self._user_revoke).pack(side="left", padx=2)
         self._mk_btn(bf, "Экспорт конфига…", self._user_export).pack(side="left", padx=2)
+        ttk.Checkbutton(bf, text="Подробный вывод",
+                        variable=self.verbose,
+                        command=self._on_verbose_toggle).pack(side="right", padx=4)
 
     # ---- серверы ----
     def _refresh_servers(self):
