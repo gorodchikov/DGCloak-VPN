@@ -194,6 +194,7 @@ def install_openssh(say):
 
 def find_ck_client(data):
     cands = [data.get("ck_client") or "",
+             os.path.join(BIN_DIR, "ck-client.exe"),
              os.path.join(APP_DIR, "ck-client.exe"),
              os.path.join(os.environ.get("APPDATA", "."), "DGCloakVPN", "ck-client.exe")]
     for c in cands:
@@ -218,10 +219,11 @@ def cloak_release_url():
 
 
 def download_ck_client(say):
-    """Скачать ck-client.exe в APP_DIR (как делает клиент при первом запуске)."""
+    """Скачать ck-client.exe в BIN_DIR (как plink/pscp — все внешние
+    инструменты в одном месте)."""
     url, size = cloak_release_url()
-    dst = os.path.join(APP_DIR, "ck-client.exe")
-    os.makedirs(APP_DIR, exist_ok=True)
+    dst = os.path.join(BIN_DIR, "ck-client.exe")
+    os.makedirs(BIN_DIR, exist_ok=True)
     say("  скачиваю ck-client с GitHub: %s" % url.split("/")[-1])
     req = urllib.request.Request(url, headers={"User-Agent": APP_NAME})
     done = 0
@@ -1157,6 +1159,16 @@ class App(tk.Tk):
                     self.say("  !! plink/pscp не скачались (%s) — вход по "
                              "паролю и по .ppk не будет работать. Поставь "
                              "PuTTY или используй OpenSSH-ключ" % e)
+            # старые установки держали ck-client в корне APP_DIR —
+            # перекладываем в bin\ для единообразия
+            old_ck = os.path.join(APP_DIR, "ck-client.exe")
+            new_ck = os.path.join(BIN_DIR, "ck-client.exe")
+            if os.path.isfile(old_ck) and not os.path.isfile(new_ck):
+                try:
+                    os.makedirs(BIN_DIR, exist_ok=True)
+                    shutil.move(old_ck, new_ck)
+                except OSError:
+                    pass  # найдём и в старом месте
             if find_ck_client(self.data):
                 self.say("  ck-client: на месте")
             else:
