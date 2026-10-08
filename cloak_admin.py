@@ -21,6 +21,7 @@ import os
 import queue
 import re
 import secrets
+import shutil
 import subprocess
 import sys
 import threading
@@ -1477,10 +1478,23 @@ class App(tk.Tk):
         s = self._sel_srv()
         if not s:
             return
-        if messagebox.askyesno(APP_NAME, "Удалить сервер «%s» из списка?\n"
-                               "(сам сервер не трогаем)" % s["name"]):
+        if messagebox.askyesno(APP_NAME, "Удалить сервер «%s» из списка?\n\n"
+                               "Локальные конфиги юзеров и SSH-ключ админки\n"
+                               "для него тоже удалятся. Сам сервер не трогаем."
+                               % s["name"]):
             self.data["servers"].remove(s)
             save_data(self.data)
+            self._logs.pop(s["name"], None)
+            # локальные хвосты: бандлы юзеров + ключ, если его сделала админка
+            shutil.rmtree(os.path.join(BUNDLES_DIR, s["name"]), ignore_errors=True)
+            key = s.get("key") or ""
+            if key and os.path.dirname(os.path.abspath(key)) == \
+                    os.path.abspath(os.path.join(APP_DIR, "keys")):
+                for p in (key, key + ".pub"):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
             self._refresh_servers()
 
     # ---- движок шагов ----
@@ -2349,6 +2363,8 @@ class App(tk.Tk):
                 self.say("  mgmt: %s" % e)
             s["users"] = [u for u in s.get("users", []) if u["cn"] != cn]
             save_data(self.data)
+            shutil.rmtree(os.path.join(BUNDLES_DIR, s["name"], cn),
+                          ignore_errors=True)
             self.say("Юзер «%s» отозван и удалён." % cn)
             self.ui(self._users_refresh)
         self._worker(work)
