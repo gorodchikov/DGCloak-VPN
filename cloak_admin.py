@@ -2319,9 +2319,14 @@ class App(tk.Tk):
             try:
                 ssh.upload(os.path.join(SCRIPTS_DIR, "ovpn-mgmt.py"),
                            "/tmp/ovpn-mgmt.py")
-                ssh.run("%spython3 /tmp/ovpn-mgmt.py kill %s"
-                        % (ssh.sudo, cn), timeout=20)
-                self.say("  сессия сброшена")
+                out = ssh.run("%spython3 /tmp/ovpn-mgmt.py kill %s"
+                              % (ssh.sudo, cn), timeout=20)
+                if "SUCCESS" in out:
+                    self.say("  сессия сброшена")
+                elif "not found" in out:
+                    self.say("  сессии не было (юзер офлайн)")
+                else:
+                    self.say("  mgmt: %s" % out.strip()[:200])
             except Exception as e:
                 self.say("  mgmt: %s" % e)
             s["users"] = [u for u in s.get("users", []) if u["cn"] != cn]
@@ -2346,10 +2351,17 @@ class App(tk.Tk):
             ssh = SSH(s, self.say)
             ssh.upload(os.path.join(SCRIPTS_DIR, "ovpn-mgmt.py"),
                        "/tmp/ovpn-mgmt.py")
+            online = ssh.run("%spython3 /tmp/ovpn-mgmt.py clients"
+                             % ssh.sudo, timeout=20)
+            if cn not in {l.strip() for l in online.splitlines()}:
+                self.say("«%s» не онлайн — сбрасывать нечего" % cn)
+                return
             out = ssh.run("%spython3 /tmp/ovpn-mgmt.py kill %s"
-                          % (ssh.sudo, cn),
-                          timeout=20)
-            self.say("kill %s: %s" % (cn, out.strip()[:200]))
+                          % (ssh.sudo, cn), timeout=20)
+            if "SUCCESS" in out:
+                self.say("Сессия «%s» сброшена" % cn)
+            else:
+                self.say("kill %s: %s" % (cn, out.strip()[:200]))
         self._worker(work)
 
     def _user_export(self):
