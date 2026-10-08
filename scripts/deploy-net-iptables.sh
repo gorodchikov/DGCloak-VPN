@@ -18,7 +18,8 @@ sysctl -w net.ipv4.ip_forward=1 >/dev/null
 
 # iptables-persistent ставим явно (он снесёт ufw по Conflicts, если тот вдруг есть).
 # DPkg::Lock::Timeout: unattended-upgrades на свежем VPS может держать лок
-apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false update -qq
+apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false update -qq \
+    || echo "!! apt update: часть репозиториев недоступна — ставим из имеющихся списков"
 apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false install -y -qq iptables-persistent
 
 {

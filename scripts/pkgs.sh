@@ -35,7 +35,8 @@ if [ "$ACTION" = check ]; then
     echo "===UNIT_CK===";   systemctl is-enabled ck-server 2>/dev/null || echo "none"
     echo "===DONE==="
 elif [ "$ACTION" = install ]; then
-    apt-get $APT update -qq
+    apt-get $APT update -qq \
+        || echo "!! apt update: часть репозиториев недоступна — ставим из имеющихся списков"
     apt-get $APT install -y -qq $NEED_PKGS
     echo "=== OK pkgs install ==="
 else

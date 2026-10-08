@@ -12,7 +12,11 @@ if [ "$OVPN_PROTO" != "udp" ] && [ "$OVPN_PROTO" != "tcp" ]; then
 fi
 
 # DPkg::Lock::Timeout: unattended-upgrades на свежем VPS может держать лок apt
-apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false update -qq
+# битый сторонний репозиторий (напр. PPA без Release для текущей версии)
+# не должен валить деплой — списки остальных репов обновились, install покажет
+# реальную ошибку, если пакетов нет
+apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false update -qq \
+    || echo "!! apt update: часть репозиториев недоступна — ставим из имеющихся списков"
 apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false install -y -qq openvpn easy-rsa
 
 CADIR=/root/openvpn-ca

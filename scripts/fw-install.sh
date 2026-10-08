@@ -10,7 +10,8 @@ export DEBIAN_FRONTEND=noninteractive
 SSH_PORTS=${1:?usage: fw-install.sh <ssh_port,...> <cloak_port>}
 CLOAK_PORT=${2:-443}
 
-apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false update -qq
+apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false update -qq \
+    || echo "!! apt update: часть репозиториев недоступна — ставим из имеющихся списков"
 apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false install -y -qq nftables
 
 # --- новый ruleset ---
