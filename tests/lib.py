@@ -12,6 +12,11 @@
 """
 import sys, os, json, time, tempfile
 
+try:  # кириллица в именах чеков/серверов — не упасть на cp1252-консоли
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 import cloak_admin as CA
@@ -105,8 +110,11 @@ def tab(app, i):
 
 def real_data():
     """Реальный реестр админки — read-only источник записей стендов."""
-    p = os.path.join(os.environ["APPDATA"], "DGCloakAdmin", "data.json")
-    return json.load(open(p, encoding="utf-8"))
+    for p in (os.path.join(CA.DGCLOAK_DIR, "Admin", "data.json"),
+              os.path.join(os.environ["APPDATA"], "DGCloakAdmin", "data.json")):
+        if os.path.isfile(p):
+            return json.load(open(p, encoding="utf-8"))
+    raise FileNotFoundError("реальный реестр админки не найден")
 
 
 def real_srv(*names):

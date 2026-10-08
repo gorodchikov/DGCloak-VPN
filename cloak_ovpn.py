@@ -31,7 +31,10 @@ except ImportError:
 APP_NAME = "DGCloak VPN"
 BTN_W = 16   # одинаковая ширина кнопок «Подключить/Отключить», «Дополнительно», «Копировать/Очистить лог»
 BTN_S = 8    # одинаковая ширина маленьких кнопок (+, Изм., Удал., Выход)
-APP_DIR = os.path.join(os.environ.get("APPDATA", "."), "DGCloakVPN")
+DGCLOAK_DIR = os.path.join(os.environ.get("APPDATA", "."), "DGCloak")
+OLD_APP_DIR = os.path.join(os.environ.get("APPDATA", "."), "DGCloakVPN")
+APP_DIR = os.path.join(DGCLOAK_DIR, "VPN")
+BIN_DIR = os.path.join(DGCLOAK_DIR, "bin")  # общие зависимости: ck-client и др.
 DATA_FILE = os.path.join(APP_DIR, "data.json")
 PROFILES_DIR = os.path.join(APP_DIR, "profiles")  # сюда копируются файлы профилей при добавлении
 PIDS_FILE = os.path.join(APP_DIR, "pids.json")    # PID наших ck-client/openvpn (для добивания зависших)
@@ -142,10 +145,10 @@ STRINGS_EN = {
     "Указать пути вручную": "Set paths manually",
     "Закрыть": "Close",
     "Автоустановка: OpenVPN через winget, Cloak — свежий релиз с GitHub "
-    "в %APPDATA%\\DGCloakVPN. Пути можно изменить позже: "
+    "в %APPDATA%\\DGCloak\\bin. Пути можно изменить позже: "
     "Дополнительно → «Пути к Cloak и OpenVPN…».":
         "Auto setup: OpenVPN via winget, Cloak — latest GitHub release "
-        "into %APPDATA%\\DGCloakVPN. Paths can be changed later: "
+        "into %APPDATA%\\DGCloak\\bin. Paths can be changed later: "
         "Advanced → «Paths to Cloak and OpenVPN…».",
     "скачиваю свежий ck-client с GitHub…": "downloading latest ck-client from GitHub…",
     "устанавливаю OpenVPN через winget…": "installing OpenVPN via winget…",
@@ -201,6 +204,52 @@ STATES = {
 
 # строка состояния: ">STATE:ts,CONNECTED,..." (реальное время) или "ts,CONNECTED,..." (история)
 STATE_RE = re.compile(r"^(?:>STATE:)?\d+,([A-Z_]+),")
+
+
+def _rewrite_paths(obj, old, new):
+    """Префикс старой папки → новой внутри data.json (профили и т.п.)."""
+    if isinstance(obj, str):
+        return new + obj[len(old):] if obj.startswith(old) else obj
+    if isinstance(obj, list):
+        return [_rewrite_paths(x, old, new) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _rewrite_paths(v, old, new) for k, v in obj.items()}
+    return obj
+
+
+def migrate_dirs():
+    """Переезд %APPDATA%\\DGCloakVPN → DGCloak\\VPN\\; ck-client — в общий
+    DGCloak\\bin\\ (админка мигрирует свою папку сама при старте)."""
+    if APP_DIR != os.path.join(DGCLOAK_DIR, "VPN"):
+        return
+    if not os.path.isdir(OLD_APP_DIR) or os.path.isdir(APP_DIR):
+        return
+    try:
+        os.makedirs(DGCLOAK_DIR, exist_ok=True)
+        shutil.move(OLD_APP_DIR, APP_DIR)
+    except OSError:
+        return
+    # свой ck-client — в общий bin (не дублировать между приложениями)
+    try:
+        src = os.path.join(APP_DIR, "ck-client.exe")
+        dst = os.path.join(BIN_DIR, "ck-client.exe")
+        if os.path.isfile(src) and not os.path.isfile(dst):
+            os.makedirs(BIN_DIR, exist_ok=True)
+            shutil.move(src, dst)
+    except OSError:
+        pass
+    # пути в data.json: старый префикс → новый; ck_client указывал на
+    # ck-client.exe — после переноса в bin переписываем точно
+    try:
+        old_p = OLD_APP_DIR + os.sep
+        d = load_data()
+        old_ck = d.get("ck_client", "")
+        d = _rewrite_paths(d, old_p, APP_DIR + os.sep)
+        if old_ck.startswith(old_p):
+            d["ck_client"] = os.path.join(BIN_DIR, "ck-client.exe")
+        save_data(d)
+    except Exception:
+        pass
 
 
 def load_data():
@@ -363,8 +412,10 @@ def find_openvpn():
 
 
 def find_ck_client():
-    """ck-client в папке данных или PATH."""
-    cands = [os.path.join(APP_DIR, "ck-client.exe")]
+    """ck-client в общем bin, папке данных (legacy) или PATH."""
+    cands = [os.path.join(BIN_DIR, "ck-client.exe"),
+             os.path.join(APP_DIR, "ck-client.exe"),
+             os.path.join(OLD_APP_DIR, "ck-client.exe")]
     w = shutil.which("ck-client")
     if w:
         cands.insert(0, w)
@@ -512,7 +563,7 @@ class SetupDialog(tk.Toplevel):
         self.b_close.pack(side="left", padx=4)
         ttk.Label(self, foreground="gray", wraplength=440, justify="left",
                   text=t("Автоустановка: OpenVPN через winget, Cloak — свежий релиз с GitHub "
-                         "в %APPDATA%\\DGCloakVPN. Пути можно изменить позже: "
+                         "в %APPDATA%\\DGCloak\\bin. Пути можно изменить позже: "
                          "Дополнительно → «Пути к Cloak и OpenVPN…».")
                   ).grid(row=5, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 10))
         self.transient(app)
@@ -548,12 +599,12 @@ class SetupDialog(tk.Toplevel):
     def _install(self):
         app = self.app
         try:
-            # Cloak: свежий релиз GitHub -> %APPDATA%\DGCloakVPN\ck-client.exe
+            # Cloak: свежий релиз GitHub -> %APPDATA%\DGCloak\bin\ck-client.exe
             if not os.path.isfile(app.data["ck_client"]):
                 self._say("скачиваю свежий ck-client с GitHub…")
                 try:
                     url, _ = cloak_latest_url()
-                    dst = os.path.join(APP_DIR, "ck-client.exe")
+                    dst = os.path.join(BIN_DIR, "ck-client.exe")
                     download(url, dst, self._set_progress)
                     app.data["ck_client"] = os.path.normpath(dst)
                 except Exception as e:  # noqa: BLE001
@@ -757,6 +808,7 @@ class App(tk.Tk):
         self.title(APP_NAME)
         self.minsize(470, 10)
         self.resizable(False, False)  # фиксированный размер окна
+        migrate_dirs()
         self.data = load_data()
         self._status_msg = ("Отключено", "gray", {})
         self.ck = None

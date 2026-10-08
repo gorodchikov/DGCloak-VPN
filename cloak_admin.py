@@ -32,10 +32,13 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 
 APP_NAME = "DGCloak Admin"
-APP_DIR = os.path.join(os.environ.get("APPDATA", "."), "DGCloakAdmin")
+DGCLOAK_DIR = os.path.join(os.environ.get("APPDATA", "."), "DGCloak")
+OLD_APP_DIR = os.path.join(os.environ.get("APPDATA", "."), "DGCloakAdmin")
+OLD_VPN_DIR = os.path.join(os.environ.get("APPDATA", "."), "DGCloakVPN")
+APP_DIR = os.path.join(DGCLOAK_DIR, "Admin")
 DATA_FILE = os.path.join(APP_DIR, "data.json")
 BUNDLES_DIR = os.path.join(APP_DIR, "bundles")
-BIN_DIR = os.path.join(APP_DIR, "bin")  # скачанные нами plink/pscp
+BIN_DIR = os.path.join(DGCLOAK_DIR, "bin")  # общие зависимости: plink/pscp/ck-client
 
 # Скрипты лежат рядом с исходником/exe (для onefile — внутри _MEIPASS)
 if getattr(sys, "frozen", False):
@@ -108,6 +111,70 @@ mute-replay-warnings
 
 # ---------------------------------------------------------------- utilities
 
+def _move_file(src, dst):
+    """Переложить файл, если целевого ещё нет (дедупликация deps)."""
+    try:
+        if os.path.isfile(src) and not os.path.isfile(dst):
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.move(src, dst)
+    except OSError:
+        pass
+
+
+def _rewrite_paths(obj, old, new):
+    """Префикс старой папки → новой внутри data.json (ключи, бандлы)."""
+    if isinstance(obj, str):
+        return new + obj[len(old):] if obj.startswith(old) else obj
+    if isinstance(obj, list):
+        return [_rewrite_paths(x, old, new) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _rewrite_paths(v, old, new) for k, v in obj.items()}
+    return obj
+
+
+def migrate_dirs():
+    """Переезд %APPDATA%\\DGCloakAdmin → DGCloak\\Admin\\, бинарники —
+    в общий DGCloak\\bin\\ (клиент мигрирует свою папку сам при старте).
+    В тестах (APP_DIR пропатчен) — no-op."""
+    if APP_DIR != os.path.join(DGCLOAK_DIR, "Admin"):
+        return
+    if os.path.isdir(OLD_APP_DIR) and not os.path.isdir(APP_DIR):
+        try:
+            os.makedirs(DGCLOAK_DIR, exist_ok=True)
+            shutil.move(OLD_APP_DIR, APP_DIR)
+        except OSError:
+            return
+        # старый Admin\bin → общий bin
+        old_bin = os.path.join(APP_DIR, "bin")
+        if os.path.isdir(old_bin):
+            for f in os.listdir(old_bin):
+                _move_file(os.path.join(old_bin, f),
+                           os.path.join(BIN_DIR, f))
+            try:
+                os.rmdir(old_bin)
+            except OSError:
+                pass
+        _move_file(os.path.join(APP_DIR, "ck-client.exe"),
+                   os.path.join(BIN_DIR, "ck-client.exe"))
+        # пути в реестре: старый префикс → новый
+        try:
+            d = load_data()
+            d = _rewrite_paths(d, OLD_APP_DIR + os.sep, APP_DIR + os.sep)
+            save_data(d)
+        except Exception:
+            pass
+    # ck-client старого клиента → в общий bin (копия — старый клиент
+    # не ломаем; новый при своей миграции приберёт свою папку)
+    try:
+        src = os.path.join(OLD_VPN_DIR, "ck-client.exe")
+        dst = os.path.join(BIN_DIR, "ck-client.exe")
+        if os.path.isfile(src) and not os.path.isfile(dst):
+            os.makedirs(BIN_DIR, exist_ok=True)
+            shutil.copy2(src, dst)
+    except OSError:
+        pass
+
+
 def load_data():
     try:
         with open(DATA_FILE, encoding="utf-8") as f:
@@ -145,7 +212,7 @@ def find_exe(names, extra_dirs=None):
 
 
 def find_putty():
-    dirs = [BIN_DIR,
+    dirs = [BIN_DIR, os.path.join(OLD_APP_DIR, "bin"),  # до миграции
             r"C:\Program Files\PuTTY", r"C:\Program Files (x86)\PuTTY"]
     plink = find_exe(["plink.exe", "plink"], dirs)
     pscp = find_exe(["pscp.exe", "pscp"], dirs)
@@ -196,7 +263,9 @@ def find_ck_client(data):
     cands = [data.get("ck_client") or "",
              os.path.join(BIN_DIR, "ck-client.exe"),
              os.path.join(APP_DIR, "ck-client.exe"),
-             os.path.join(os.environ.get("APPDATA", "."), "DGCloakVPN", "ck-client.exe")]
+             os.path.join(OLD_APP_DIR, "bin", "ck-client.exe"),
+             os.path.join(DGCLOAK_DIR, "VPN", "ck-client.exe"),
+             os.path.join(OLD_VPN_DIR, "ck-client.exe")]
     for c in cands:
         if c and os.path.isfile(c):
             return c
@@ -1118,6 +1187,7 @@ class App(tk.Tk):
         self.title(APP_NAME)
         self.geometry("1040x680")
         self.resizable(False, False)
+        migrate_dirs()
         self.data = load_data()
         self.uiq = queue.Queue()
         self.busy = False
