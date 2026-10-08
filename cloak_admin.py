@@ -1274,14 +1274,16 @@ class App(tk.Tk):
     def _tab_users(self, nb):
         f = ttk.Frame(nb)
         nb.add(f, text="Пользователи")
-        self.v_users_srv = tk.StringVar(value="—")
+        self.v_users_srv = tk.StringVar(value="— реестр админки Cloak")
         ttk.Label(f, textvariable=self.v_users_srv,
                   foreground="#666").pack(anchor="w", padx=6, pady=(6, 0))
-        cols = ("cn", "uid", "sessions", "expiry", "online")
+        cols = ("cn", "uid", "sessions", "expiry", "mask", "online")
         self.users_tv = ttk.Treeview(f, columns=cols, show="headings", height=12)
         heads = {"cn": "Имя (CN)", "uid": "UID", "sessions": "Сессий",
-                 "expiry": "Истекает", "online": "Онлайн"}
-        widths = {"cn": 120, "uid": 180, "sessions": 60, "expiry": 110, "online": 60}
+                 "expiry": "Истекает", "mask": "Домен маскировки",
+                 "online": "Онлайн"}
+        widths = {"cn": 110, "uid": 165, "sessions": 55, "expiry": 95,
+                  "mask": 150, "online": 55}
         for c in cols:
             self.users_tv.heading(c, text=heads[c])
             self.users_tv.column(c, width=widths[c])
@@ -1289,15 +1291,23 @@ class App(tk.Tk):
 
         bf = ttk.Frame(f)
         bf.pack(fill="x", padx=6, pady=4)
-        self._mk_btn(bf, "Обновить", self._users_refresh).pack(side="left", padx=2)
-        self._mk_btn(bf, "Создать…", self._user_create).pack(side="left", padx=2)
-        self._mk_btn(bf, "Изменить…", self._user_edit).pack(side="left", padx=2)
-        self._mk_btn(bf, "Отключить сейчас", self._user_kill).pack(side="left", padx=2)
-        self._mk_btn(bf, "Отозвать и удалить", self._user_revoke).pack(side="left", padx=2)
-        self._mk_btn(bf, "Экспорт конфига…", self._user_export).pack(side="left", padx=2)
+        for i, (t, c) in enumerate((("Обновить", self._users_refresh),
+                                    ("Создать…", self._user_create),
+                                    ("Изменить…", self._user_edit))):
+            b = self._mk_btn(bf, t, c)
+            b.grid(row=0, column=i, sticky="ew", padx=2)
+            bf.columnconfigure(i, weight=1, uniform="ug1")
+        for i, (t, c) in enumerate((("Отключить сейчас", self._user_kill),
+                                    ("Отозвать и удалить", self._user_revoke),
+                                    ("Экспорт конфига…", self._user_export)),
+                                   start=3):
+            b = self._mk_btn(bf, t, c)
+            b.grid(row=0, column=i, sticky="ew", padx=2)
+            bf.columnconfigure(i, weight=1, uniform="ug2")
         ttk.Checkbutton(bf, text="Подробный вывод",
                         variable=self.verbose,
-                        command=self._on_verbose_toggle).pack(side="right", padx=4)
+                        command=self._on_verbose_toggle).grid(
+            row=0, column=6, sticky="e", padx=(8, 2))
 
         self.logframe_usr = ttk.LabelFrame(f, text="Лог")
         self.logframe_usr.pack(fill="both", expand=True, padx=6, pady=(0, 6))
@@ -2042,6 +2052,7 @@ class App(tk.Tk):
                              u.get("SessionsCap", "?"),
                              time.strftime("%d.%m.%Y", time.localtime(exp))
                              if exp else "—",
+                             kn.get("mask") or s.get("mask_domain", ""),
                              "●" if kn.get("cn") in online else "")))
             def fill():
                 if self._sel_srv_silent() is not s:
@@ -2049,7 +2060,7 @@ class App(tk.Tk):
                 self.users_tv.delete(*self.users_tv.get_children())
                 for uid, r in sorted(rows, key=lambda x: x[1][0]):
                     self.users_tv.insert("", "end", iid=uid, values=r)
-                self.v_users_srv.set("%s — живой список" % s["name"])
+                self.v_users_srv.set("%s — реестр админки Cloak" % s["name"])
             self.ui(fill)
             self.say("Юзеров: %s, онлайн: %s" % (len(rows), len(online)))
         self._worker(work)
