@@ -1042,7 +1042,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_NAME)
-        self.geometry("1040x640")
+        self.geometry("1040x680")
         self.resizable(False, False)
         self.data = load_data()
         self.uiq = queue.Queue()
@@ -1275,14 +1275,20 @@ class App(tk.Tk):
                                                       padx=(10, 0))
 
         row += 1
-        st = ttk.Style(self)
-        st.configure("Slim.Treeview.Heading", padding=(4, 1))
+        # нативная шапка treeview на Windows ~24px и не сжимается —
+        # рисуем свою тонкую строку заголовков поверх колонок
+        hdr = tk.Frame(f, bg="#e8e8e8")
+        hdr.grid(row=row, column=0, sticky="ew", padx=6, pady=(4, 0))
+        for w, t in ((337, "Шаг"), (57, "Статус"), (362, "Комментарий")):
+            c = tk.Frame(hdr, width=w, height=16, bg="#e8e8e8")
+            c.pack_propagate(False)
+            c.pack(side="left")
+            tk.Label(c, text=t, bg="#e8e8e8", font=("Segoe UI", 9),
+                     anchor="w", padx=6).pack(fill="both")
+
+        row += 1
         self.steps_tv = ttk.Treeview(f, columns=("st", "note"),
-                                     show="tree headings", height=9,
-                                     style="Slim.Treeview")
-        self.steps_tv.heading("#0", text="Шаг")
-        self.steps_tv.heading("st", text="Статус")
-        self.steps_tv.heading("note", text="Комментарий")
+                                     show="tree", height=9)
         self.steps_tv.column("#0", width=335)
         self.steps_tv.column("st", width=55, anchor="center")
         self.steps_tv.column("note", width=360)
