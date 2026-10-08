@@ -1648,12 +1648,27 @@ class App(tk.Tk):
 
         bf = ttk.Frame(f)
         bf.pack(fill="x", padx=6, pady=4)
+        _user_tips = {
+            "Обновить": "Опросить сервер: UID из admin-API Cloak,\n"
+                        "лимиты из users.json, кто онлайн — из OpenVPN",
+            "Создать…": "Сертификат OpenVPN + UID в Cloak;\n"
+                        "конфиг сохраняется в %APPDATA%\\DGCloak\\Admin\\bundles",
+            "Изменить…": "Лимиты/срок/маска выбранного юзера;\n"
+                         "при смене параметров конфиг перевыпускается",
+            "Отключить сейчас": "Разорвать живую сессию (mgmt OpenVPN).\n"
+                                "Юзер остаётся и может переподключиться",
+            "Отозвать и удалить": "Отозвать сертификат + удалить UID из Cloak\n"
+                                  "+ сбросить сессию. Необратимо",
+            "Экспорт конфига…": "Сохранить комплект подключения\n"
+                                "(ovpn + ключи + ck-конфиг) для выбранного юзера",
+        }
         for i, (t, c) in enumerate((("Обновить", self._users_refresh),
                                     ("Создать…", self._user_create),
                                     ("Изменить…", self._user_edit))):
             b = self._mk_btn(bf, t, c)
             b.grid(row=0, column=i, sticky="ew", padx=2)
             bf.columnconfigure(i, weight=1, uniform="ug1")
+            Tooltip(b, _user_tips[t])
         for i, (t, c) in enumerate((("Отключить сейчас", self._user_kill),
                                     ("Отозвать и удалить", self._user_revoke),
                                     ("Экспорт конфига…", self._user_export)),
@@ -1661,6 +1676,7 @@ class App(tk.Tk):
             b = self._mk_btn(bf, t, c)
             b.grid(row=0, column=i, sticky="ew", padx=2)
             bf.columnconfigure(i, weight=1, uniform="ug2")
+            Tooltip(b, _user_tips[t])
         cb_v = ttk.Checkbutton(bf, text="Подробный вывод",
                                variable=self.verbose,
                                command=self._on_verbose_toggle)
