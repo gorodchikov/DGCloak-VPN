@@ -2083,12 +2083,58 @@ class App(tk.Tk):
                 m = re.search(r'"RedirAddr":\s*"([^"]+)"', out)
                 if m:
                     s["mask_domain"] = m.group(1)
+                n = self._pull_users(ssh, s)
                 save_data(self.data)
-                self.say("Импорт: ключи подтянуты с «%s»" % s["name"])
+                self.say("Импорт: ключи подтянуты с «%s»%s"
+                         % (s["name"],
+                            ", юзеров восстановлено: %d" % n if n else ""))
+                self.ui(lambda: self._fill_users_local(s))
             else:
                 self.say("!! Не нашёл /etc/ck-server/* — сервер развёрнут?")
             self.ui(self._refresh_servers)
         self._worker(work)
+
+    # ---- юзеры: зеркало реестра на сервере ----
+    # /etc/dgcloak/users.json — связь CN↔UID + маскировка. Серверу он не
+    # нужен (Cloak знает UID, PKI знает CN) — это страховка для админки:
+    # после удаления сервера из списка / переезда на другой ПК «Подтянуть
+    # ключи» восстанавливает юзеров полностью, а не как «?».
+    REMOTE_USERS = "/etc/dgcloak/users.json"
+
+    def _push_users(self, ssh, s):
+        """Залить s["users"] на сервер. Ошибка не роняет операцию."""
+        try:
+            tmp = os.path.join(APP_DIR, "tmp-users.json")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(s.get("users", []), f, ensure_ascii=False, indent=1)
+            ssh.upload(tmp, "/tmp/dgcloak-users.json")
+            ssh.run("%sbash -c 'mkdir -p /etc/dgcloak && "
+                    "install -m600 /tmp/dgcloak-users.json %s && "
+                    "rm -f /tmp/dgcloak-users.json'"
+                    % (ssh.sudo, self.REMOTE_USERS), timeout=20)
+            self.vsay("  реестр юзеров синхронизирован на сервер")
+        except Exception as e:
+            self.say("  !! реестр на сервер не записался: %s" % e)
+
+    def _pull_users(self, ssh, s):
+        """Забрать реестр с сервера и влить в локальный (по CN; локальная
+        запись выигрывает — она свежее, если вдруг разошлись)."""
+        try:
+            out = ssh.run("%scat %s 2>/dev/null || echo '[]'"
+                          % (ssh.sudo, self.REMOTE_USERS), timeout=20)
+            remote = json.loads(out.strip() or "[]")
+        except Exception as e:
+            self.say("  реестр юзеров с сервера не прочитан: %s" % e)
+            return 0
+        if not isinstance(remote, list):
+            return 0
+        local = s.setdefault("users", [])
+        have = {u.get("cn") for u in local}
+        added = [u for u in remote
+                 if isinstance(u, dict) and u.get("cn") and u.get("uid")
+                 and u["cn"] not in have]
+        local.extend(added)
+        return len(added)
 
     # ---- юзеры ----
     def _api(self, s):
@@ -2211,6 +2257,7 @@ class App(tk.Tk):
                       "up_credit": up_credit, "down_credit": down_credit,
                       "created": time.strftime("%Y-%m-%d")})
         save_data(self.data)
+        self._push_users(ssh, s)
         self.say("Юзер «%s» создан, выдай конфиг юзеру: %s"
                  % (name, os.path.join(bundle, "%s.dgcloak" % name)))
         return bundle
@@ -2275,6 +2322,7 @@ class App(tk.Tk):
                         "up_credit": r["up_credit"],
                         "down_credit": r["down_credit"]})
             save_data(self.data)
+            self._push_users(ssh, s)
             # маскировка живёт в конфиге — перевыпускаем локальную копию
             out = ssh.run_script("user-cert.sh", cn, timeout=60)
             mats = parse_cert_bundle(out)
@@ -2358,6 +2406,7 @@ class App(tk.Tk):
                 self.say("  mgmt: %s" % e)
             s["users"] = [u for u in s.get("users", []) if u["cn"] != cn]
             save_data(self.data)
+            self._push_users(ssh, s)
             shutil.rmtree(os.path.join(BUNDLES_DIR, s["name"], cn),
                           ignore_errors=True)
             self.say("Юзер «%s» отозван и удалён." % cn)

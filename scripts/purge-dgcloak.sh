@@ -17,7 +17,7 @@ systemctl daemon-reload
 systemctl reset-failed 2>/dev/null
 
 # --- cloak / openvpn файлы ---
-rm -rf /etc/ck-server /var/lib/ck-server
+rm -rf /etc/ck-server /var/lib/ck-server /etc/dgcloak
 id cloak >/dev/null 2>&1 && userdel cloak
 rm -f /usr/local/bin/ck-server
 rm -rf /etc/openvpn/server /etc/openvpn/easyrsa /etc/openvpn/easy-rsa \
