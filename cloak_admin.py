@@ -35,6 +35,7 @@ APP_NAME = "DGCloak Admin"
 APP_DIR = os.path.join(os.environ.get("APPDATA", "."), "DGCloakAdmin")
 DATA_FILE = os.path.join(APP_DIR, "data.json")
 BUNDLES_DIR = os.path.join(APP_DIR, "bundles")
+BIN_DIR = os.path.join(APP_DIR, "bin")  # скачанные нами plink/pscp
 
 # Скрипты лежат рядом с исходником/exe (для onefile — внутри _MEIPASS)
 if getattr(sys, "frozen", False):
@@ -144,11 +145,51 @@ def find_exe(names, extra_dirs=None):
 
 
 def find_putty():
-    plink = find_exe(["plink.exe", "plink"],
-                     [r"C:\Program Files\PuTTY", r"C:\Program Files (x86)\PuTTY"])
-    pscp = find_exe(["pscp.exe", "pscp"],
-                    [r"C:\Program Files\PuTTY", r"C:\Program Files (x86)\PuTTY"])
+    dirs = [BIN_DIR,
+            r"C:\Program Files\PuTTY", r"C:\Program Files (x86)\PuTTY"]
+    plink = find_exe(["plink.exe", "plink"], dirs)
+    pscp = find_exe(["pscp.exe", "pscp"], dirs)
     return plink, pscp
+
+
+PUTTY_DL = "https://the.earth.li/~sgtatham/putty/latest/w64/%s"
+
+
+def download_putty(say):
+    """plink/pscp — одиночные exe с официального сайта PuTTY → BIN_DIR."""
+    os.makedirs(BIN_DIR, exist_ok=True)
+    for name in ("plink.exe", "pscp.exe"):
+        req = urllib.request.Request(PUTTY_DL % name,
+                                     headers={"User-Agent": APP_NAME})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            blob = r.read()
+        if not blob.startswith(b"MZ"):
+            raise RuntimeError("%s: скачалось не-exe (%d байт)"
+                               % (name, len(blob)))
+        p = os.path.join(BIN_DIR, name)
+        with open(p, "wb") as f:
+            f.write(blob)
+        say("  %s → %s (%.1f МБ)" % (name, p, len(blob) / 1e6))
+
+
+def install_openssh(say):
+    """OpenSSH-клиент — это Windows-компонент; ставится только из-под
+    админа. Возвращает True, если ssh.exe появился."""
+    try:
+        import ctypes
+        if not ctypes.windll.shell32.IsUserAnAdmin():
+            return False
+        say("  ставлю компонент «Клиент OpenSSH» (dism)…")
+        p = subprocess.run(
+            ["dism", "/Online", "/Add-Capability",
+             "/CapabilityName:OpenSSH.Client~~~~0.0.1.0"],
+            capture_output=True, text=True, timeout=600,
+            creationflags=CREATE_NO_WINDOW)
+        say("  dism: %s" % (p.stdout or p.stderr).strip().splitlines()[-1][:120])
+    except Exception as e:
+        say("  dism не сработал: %s" % e)
+    return bool(find_exe(["ssh.exe", "ssh"],
+                         [r"C:\Windows\System32\OpenSSH"]))
 
 
 def find_ck_client(data):
@@ -1085,6 +1126,48 @@ class App(tk.Tk):
                           lambda *a, k=key, v=var: self._opt_changed(k, v))
         self._refresh_servers()
         self.after(100, self._drain)
+        self._ensure_deps()
+
+    def _ensure_deps(self):
+        """Первый запуск на чистой машине: SSH-слой и ck-client.
+        plink/pscp качаем сами (одиночные exe); OpenSSH — это Windows-
+        компонент, ставим через dism только из-под админа, иначе совет."""
+        def work():
+            self.say("=== Проверка зависимостей ===")
+            openssh = [r"C:\Windows\System32\OpenSSH"]
+            if find_exe(["ssh.exe", "ssh"], openssh) and \
+                    find_exe(["scp.exe", "scp"], openssh):
+                self.say("  OpenSSH-клиент: на месте")
+            elif install_openssh(self.say):
+                self.say("  OpenSSH-клиент: установлен")
+            else:
+                self.say("  OpenSSH-клиент: НЕТ — нужен для входа по "
+                         "OpenSSH-ключу. Установка: Параметры → Приложения "
+                         "→ Дополнительные компоненты → «Клиент OpenSSH», "
+                         "либо используй пароль/.ppk (для них хватит PuTTY)")
+            plink, pscp = find_putty()
+            if plink and pscp:
+                self.say("  PuTTY (plink/pscp): на месте")
+            else:
+                try:
+                    self.say("  PuTTY (plink/pscp): нет — скачиваю с "
+                             "официального сайта…")
+                    download_putty(self.say)
+                except Exception as e:
+                    self.say("  !! plink/pscp не скачались (%s) — вход по "
+                             "паролю и по .ppk не будет работать. Поставь "
+                             "PuTTY или используй OpenSSH-ключ" % e)
+            if find_ck_client(self.data):
+                self.say("  ck-client: на месте")
+            else:
+                try:
+                    ck = download_ck_client(self.say)
+                    self.say("  ck-client → %s" % ck)
+                except Exception as e:
+                    self.say("  !! ck-client не скачался (%s) — вкладка "
+                             "«Пользователи» не заработает; деплой — будет"
+                             % e)
+        self._worker(work)
 
     def _opt_changed(self, key, var):
         """Поля маскировка/протокол/порт — per-server: правка сразу пишется
