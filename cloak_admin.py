@@ -1718,9 +1718,10 @@ class App(tk.Tk):
         if not messagebox.askyesno(
                 APP_NAME,
                 "Полный сброс «%s»:\n\n"
-                "будут удалены Cloak, OpenVPN, PKI, юзеры и наши\n"
-                "правила фаервола. SSH-доступ и твой юзер\n"
-                "НЕ затрагиваются — сервер можно развернуть заново.\n\n"
+                "будут удалены Cloak, OpenVPN, PKI, юзеры, наши\n"
+                "правила фаервола и локальные конфиги юзеров.\n"
+                "SSH-доступ и твой юзер НЕ затрагиваются —\n"
+                "сервер можно развернуть заново.\n\n"
                 "Продолжить?" % s["name"]):
             return
 
@@ -1734,6 +1735,9 @@ class App(tk.Tk):
             for k in ("deployed", "pubkey", "admin_uid", "users",
                       "steps", "reboot_required", "fw_backend"):
                 s.pop(k, None)
+            # локальные бандлы юзеров — сертификаты мертвы вместе с PKI
+            shutil.rmtree(os.path.join(BUNDLES_DIR, s["name"]),
+                          ignore_errors=True)
             save_data(self.data)
             self.ui(self._fill_steps)
             self.ui(self._refresh_servers)
