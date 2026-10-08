@@ -517,10 +517,11 @@ class CloakAPI:
     рестартовать при отказе соединения.
     """
 
-    def __init__(self, ck_exe, srv, log):
+    def __init__(self, ck_exe, srv, log, verbose=None):
         self.ck = ck_exe
         self.srv = srv
         self.log = log
+        self.verbose = verbose  # callable → bool: показывать info/debug ck-client
         self.proc = None
         self.base = None          # http://127.0.0.1:PORT
         self.cfg_path = os.path.join(APP_DIR, "tmp-admin-ckclient.json")
@@ -560,6 +561,14 @@ class CloakAPI:
         for line in stream:
             self._outq.put(line.rstrip("\n"))
 
+    def _log_line(self, line):
+        """Служебный вывод ck-client: info/debug — только в подробном режиме,
+        warn/error — всегда."""
+        v = self.verbose() if callable(self.verbose) else self.verbose
+        if not v and ("level=info" in line or "level=debug" in line):
+            return
+        self.log("  ck-client: %s" % line)
+
     def start(self, timeout=20):
         self._cfg()
         self._ready.clear()
@@ -578,7 +587,7 @@ class CloakAPI:
                 if self.proc.poll() is not None:
                     raise CloakAPIErr("ck-client -a завершился, rc=%s" % self.proc.returncode)
                 continue
-            self.log("  ck-client: %s" % line)
+            self._log_line(line)
             m = re.search(r"API base is (?:https?://)?([\d.]+:\d+)", line)
             if m:
                 self.base = "http://%s" % m.group(1)
@@ -978,6 +987,7 @@ class App(tk.Tk):
         self._logs = {}           # name -> [строки лога]
         self._log_name = None     # чей лог показан
         self._log_ctx = None      # на каком сервере идёт операция
+        self.verbose = tk.BooleanVar(value=False)
         self._fix_ctrl_bindings()
         self._build()
         for var, key in ((self.v_mask, "mask_domain"),
@@ -1117,6 +1127,8 @@ class App(tk.Tk):
         # --- лог ---
         bot = self.logframe = ttk.LabelFrame(self, text="Лог")
         bot.pack(fill="both", padx=6, pady=(0, 6))
+        ttk.Checkbutton(bot, text="Подробный вывод",
+                        variable=self.verbose).pack(anchor="e", padx=4)
         self.logw = tk.Text(bot, height=12, wrap="none",
                             font=("Consolas", 9))
         sb = ttk.Scrollbar(bot, command=self.logw.yview)
@@ -1880,7 +1892,7 @@ class App(tk.Tk):
             self.say("  ck-client.exe → %s" % ck)
         if not s.get("admin_uid") or not s.get("pubkey"):
             raise CloakAPIErr("Нет admin_uid/pubkey — сделай «Импорт» или деплой")
-        return CloakAPI(ck, s, self.say)
+        return CloakAPI(ck, s, self.say, verbose=self.verbose.get)
 
     def _users_refresh(self):
         s = self._sel_srv()
