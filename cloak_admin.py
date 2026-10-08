@@ -517,11 +517,11 @@ class CloakAPI:
     рестартовать при отказе соединения.
     """
 
-    def __init__(self, ck_exe, srv, log, verbose=None):
+    def __init__(self, ck_exe, srv, log, vlog=None):
         self.ck = ck_exe
         self.srv = srv
         self.log = log
-        self.verbose = verbose  # callable → bool: показывать info/debug ck-client
+        self.vlog = vlog  # лог служебных строк (скрываются галочкой)
         self.proc = None
         self.base = None          # http://127.0.0.1:PORT
         self.cfg_path = os.path.join(APP_DIR, "tmp-admin-ckclient.json")
@@ -562,12 +562,12 @@ class CloakAPI:
             self._outq.put(line.rstrip("\n"))
 
     def _log_line(self, line):
-        """Служебный вывод ck-client: info/debug — только в подробном режиме,
-        warn/error — всегда."""
-        v = self.verbose() if callable(self.verbose) else self.verbose
-        if not v and ("level=info" in line or "level=debug" in line):
-            return
-        self.log("  ck-client: %s" % line)
+        """Служебный вывод ck-client: info/debug — в подробный лог,
+        warn/error — всегда в основной."""
+        if "level=info" in line or "level=debug" in line:
+            (self.vlog or self.log)("  ck-client: %s" % line)
+        else:
+            self.log("  ck-client: %s" % line)
 
     def start(self, timeout=20):
         self._cfg()
@@ -1031,11 +1031,6 @@ class App(tk.Tk):
                     "Spinbox", "TSpinbox"):
             self.bind_class(cls, "<Control-KeyPress>", _ctrl)
 
-    def vsay(self, msg):
-        """Лог только в подробном режиме (галочка «Подробный вывод»)."""
-        if self.verbose.get():
-            self.say(msg)
-
     def ui(self, fn, *a):
         self.uiq.put((fn, a))
 
@@ -1051,18 +1046,28 @@ class App(tk.Tk):
             pass
         self.after(100, self._drain)
 
-    def say(self, msg):
+    def _say(self, msg, verbose=False):
+        """verbose=True — служебная строка: хранится в журнале, но на экране
+        видна только при включённом «Подробном выводе» (фильтр при показе —
+        галочка раскрывает и старые строки)."""
         line = "[%s] %s" % (time.strftime("%H:%M:%S"), msg)
         # активная операция пишет в журнал СВОЕГО сервера, даже если
         # юзер переключил выбор; без операции — в показанный журнал
         name = self._log_ctx or self._log_name
         if name is not None:
-            self._logs.setdefault(name, []).append(line)
-        if name == self._log_name or name is None:
+            self._logs.setdefault(name, []).append((line, verbose))
+        if (name == self._log_name or name is None) and \
+                (not verbose or self.verbose.get()):
             def w():
                 self.logw.insert("end", line + "\n")
                 self.logw.see("end")
             self.ui(w)
+
+    def say(self, msg):
+        self._say(msg)
+
+    def vsay(self, msg):
+        self._say(msg, verbose=True)
 
     def _log_load(self, name):
         """Показать журнал сервера (вызывается при выборе в списке)."""
@@ -1071,11 +1076,17 @@ class App(tk.Tk):
             self.logw.insert("end", "…идёт операция на «%s» — её "
                                     "лог пишется в её журнал…\n\n"
                                     % self._log_ctx)
-        lines = self._logs.get(name)
-        if lines:
-            self.logw.insert("end", "\n".join(lines) + "\n")
+        entries = self._logs.get(name)
+        if entries:
+            v = self.verbose.get()
+            self.logw.insert("end", "\n".join(
+                l for l, vb in entries if not vb or v) + "\n")
         self.logw.see("end")
         self.logframe.config(text="Лог — %s" % name)
+
+    def _on_verbose_toggle(self):
+        if self._log_name:
+            self._log_load(self._log_name)
 
     def _set_busy(self, b):
         self.busy = b
@@ -1133,7 +1144,8 @@ class App(tk.Tk):
         bot = self.logframe = ttk.LabelFrame(self, text="Лог")
         bot.pack(fill="both", padx=6, pady=(0, 6))
         ttk.Checkbutton(bot, text="Подробный вывод",
-                        variable=self.verbose).pack(anchor="e", padx=4)
+                        variable=self.verbose,
+                        command=self._on_verbose_toggle).pack(anchor="e", padx=4)
         self.logw = tk.Text(bot, height=12, wrap="none",
                             font=("Consolas", 9))
         sb = ttk.Scrollbar(bot, command=self.logw.yview)
@@ -1897,7 +1909,7 @@ class App(tk.Tk):
             self.say("  ck-client.exe → %s" % ck)
         if not s.get("admin_uid") or not s.get("pubkey"):
             raise CloakAPIErr("Нет admin_uid/pubkey — сделай «Импорт» или деплой")
-        return CloakAPI(ck, s, self.say, verbose=self.verbose.get)
+        return CloakAPI(ck, s, self.say, vlog=self.vsay)
 
     def _users_refresh(self):
         s = self._sel_srv()
