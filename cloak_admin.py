@@ -1649,10 +1649,21 @@ class App(tk.Tk):
             return
 
         def work():
-            ssh = SSH(s, self.say)
-            ssh.preflight()
-            self.say("=== Аудит статусов на «%s» ===" % s["name"])
-            out = ssh.run_script("probe.sh", timeout=120)
+            try:
+                ssh = SSH(s, self.say)
+                ssh.preflight()
+                self.say("=== Аудит статусов на «%s» ===" % s["name"])
+                out = ssh.run_script("probe.sh", timeout=120)
+            except Exception:
+                # probe не отработал (SSH/сеть/sudo) — реальное
+                # состояние неизвестно, старой ✓ верить нельзя
+                if s.get("deployed"):
+                    s["deployed"] = False
+                    save_data(self.data)
+                    self.say("  метку «развёрнут» снял — сервер не "
+                             "отвечает, состояние не проверено")
+                    self.ui(self._refresh_servers)
+                raise
             if self._apply_probe(s, out):
                 self.ui(self._fill_steps)
                 self.ui(self._refresh_servers)
@@ -1892,6 +1903,7 @@ class App(tk.Tk):
         return "ok", out.strip().replace("\n", " ")
 
     def _step_key(self, ssh, s):
+        old_key = s.get("key") or ""
         if s.get("key") or s.get("ppk"):
             # проверяем, что ключ реально работает — VM могли откатить
             # на снапшот без него (ключ «мёртв», пароль спасает как фолбэк)
@@ -1913,6 +1925,8 @@ class App(tk.Tk):
             raise SSHErr("не найден ssh-keygen (Windows OpenSSH)")
         kd = os.path.join(APP_DIR, "keys")
         os.makedirs(kd, exist_ok=True)
+        # наш старый сгенерированный ключ (имя от старого названия
+        # сервера) — после успешной установки нового сносим
         kp = os.path.join(kd, "%s_ed25519" % re.sub(r"[^\w-]", "_", s["name"]))
         if not os.path.isfile(kp):
             r = subprocess.run([kg, "-t", "ed25519", "-N", "", "-f", kp],
@@ -1929,6 +1943,17 @@ class App(tk.Tk):
         SSH(s2, self.say).preflight()
         s["key"] = kp
         save_data(self.data)
+        if (old_key and old_key != kp
+                and os.path.basename(old_key).endswith("_ed25519")
+                and os.path.normpath(old_key).startswith(
+                    os.path.normpath(kd + os.sep))):
+            for f in (old_key, old_key + ".pub"):
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
+            self.say("  старый ключ %s удалён"
+                     % os.path.basename(old_key))
         return "ok", "ключ установлен: %s" % os.path.basename(kp)
 
     def _step_audit(self, ssh, s):
