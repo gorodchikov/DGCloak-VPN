@@ -974,7 +974,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_NAME)
-        self.geometry("980x640")
+        self.geometry("1040x640")
+        self.resizable(False, False)
         self.data = load_data()
         self.uiq = queue.Queue()
         self.busy = False
@@ -1197,7 +1198,7 @@ class App(tk.Tk):
 
         row += 1
         self.steps_tv = ttk.Treeview(f, columns=("st", "note"),
-                                     show="tree headings", height=11)
+                                     show="tree headings", height=9)
         self.steps_tv.heading("#0", text="Шаг")
         self.steps_tv.heading("st", text="Статус")
         self.steps_tv.heading("note", text="Комментарий")
@@ -1225,7 +1226,6 @@ class App(tk.Tk):
         self._mk_btn(bf, "Только выбранный шаг",
                      self._step_run_sel).pack(side="left", padx=2)
         self._mk_btn(bf, "Проверить статусы", self._steps_reset).pack(side="left", padx=2)
-        self._mk_btn(bf, "Сбросить сервер", self._srv_purge).pack(side="left", padx=2)
         self._mk_btn(bf, "Управление фаерволом", self._fw_ports).pack(side="left", padx=2)
         b_imp = self._mk_btn(bf, "Подтянуть ключи", self._do_import)
         b_imp.pack(side="left", padx=2)
@@ -1234,6 +1234,14 @@ class App(tk.Tk):
                 "программы) — эта кнопка забирает с него ключи Cloak,\n"
                 "не переустанавливая ничего. После этого сервером можно\n"
                 "управлять: юзеры, конфиги, статусы.")
+
+        row += 1
+        bf2 = ttk.Frame(f)
+        bf2.grid(row=row, column=0, sticky="w", **pad)
+        self._mk_btn(bf2, "Сбросить сервер",
+                     self._srv_purge).pack(side="left", padx=2)
+        self._mk_btn(bf2, "Перезагрузить сервер",
+                     self._srv_reboot).pack(side="left", padx=2)
 
         row += 1
         ttk.Label(f, text="✓ готово   ⚠ обрати внимание   ✗ ошибка   – пропущен   … не выполнялся\n"
@@ -1245,7 +1253,7 @@ class App(tk.Tk):
         self.logframe_dep = ttk.LabelFrame(f, text="Лог")
         self.logframe_dep.grid(row=row, column=0, sticky="nsew", **pad)
         f.rowconfigure(row, weight=1)
-        self.logw_dep = tk.Text(self.logframe_dep, height=7, wrap="none",
+        self.logw_dep = tk.Text(self.logframe_dep, height=10, wrap="none",
                                 font=("Consolas", 9))
         sb = ttk.Scrollbar(self.logframe_dep, command=self.logw_dep.yview)
         self.logw_dep.config(yscrollcommand=sb.set)
@@ -1283,7 +1291,7 @@ class App(tk.Tk):
 
         self.logframe_usr = ttk.LabelFrame(f, text="Лог")
         self.logframe_usr.pack(fill="both", expand=True, padx=6, pady=(0, 6))
-        self.logw_usr = tk.Text(self.logframe_usr, height=7, wrap="none",
+        self.logw_usr = tk.Text(self.logframe_usr, height=10, wrap="none",
                                 font=("Consolas", 9))
         sb = ttk.Scrollbar(self.logframe_usr, command=self.logw_usr.yview)
         self.logw_usr.config(yscrollcommand=sb.set)
@@ -1458,6 +1466,46 @@ class App(tk.Tk):
             self.ui(self._fill_steps)
             self.ui(self._refresh_servers)
             self.say("=== Сброс завершён (rc=%s) ===" % rc)
+        self._worker(work)
+
+    def _srv_reboot(self):
+        """Перезагрузка сервера по SSH + ожидание подъёма обратно."""
+        s = self._sel_srv()
+        if not s:
+            return
+        if not messagebox.askyesno(
+                APP_NAME,
+                "Перезагрузить «%s»?\n\n"
+                "Сервер будет недоступен ~1 минуту." % s["name"]):
+            return
+
+        def work():
+            ssh = SSH(s, self.say)
+            ssh.preflight()
+            self.say("=== Перезагрузка «%s» ===" % s["name"])
+            try:
+                ssh.run(ssh.sudo + "systemctl reboot", timeout=15)
+            except Exception:
+                pass  # соединение рвётся при перезагрузке — это норма
+            self.say("  команда отправлена, жду подъёма…")
+            deadline = time.time() + 180
+            up = False
+            while time.time() < deadline:
+                time.sleep(6)
+                try:
+                    SSH(s, self.say).run("echo UP", timeout=12)
+                    up = True
+                    break
+                except Exception:
+                    pass
+            if up:
+                s.pop("reboot_required", None)
+                save_data(self.data)
+                self.ui(self._fill_steps)
+                self.say("  сервер поднялся")
+            else:
+                self.say("  !! сервер не ответил за 3 минуты — "
+                         "проверь консоль VM")
         self._worker(work)
 
     # ---- анимация «выполняется» + heartbeat ----
