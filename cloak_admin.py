@@ -1101,6 +1101,15 @@ class App(tk.Tk):
         if self._log_name:
             self._log_load(self._log_name)
 
+    def _copy_log(self, w_):
+        txt = w_.get("1.0", "end").rstrip()
+        self.clipboard_clear()
+        self.clipboard_append(txt)
+        self.say("Лог скопирован в буфер (%d символов)" % len(txt))
+
+    def _copy_log_dep(self):
+        self._copy_log(self.logw_dep)
+
     def _set_busy(self, b):
         self.busy = b
         state = "disabled" if b else "normal"
@@ -1185,16 +1194,16 @@ class App(tk.Tk):
         optf.grid(row=row, column=0, sticky="w", **pad)
         ttk.Label(optf, text="Домен для маскировки:").pack(side="left")
         self.v_mask = tk.StringVar(value="www.bing.com")
-        ttk.Entry(optf, textvariable=self.v_mask, width=22).pack(side="left", padx=4)
-        ttk.Label(optf, text="Протокол OpenVPN:").pack(side="left", padx=(10, 0))
+        ttk.Entry(optf, textvariable=self.v_mask, width=18).pack(side="left", padx=4)
+        ttk.Label(optf, text="Протокол:").pack(side="left", padx=(10, 0))
         self.v_proto = tk.StringVar(value="udp")
-        ttk.Combobox(optf, textvariable=self.v_proto, width=6, state="readonly",
+        ttk.Combobox(optf, textvariable=self.v_proto, width=5, state="readonly",
                      values=["udp", "tcp"]).pack(side="left")
-        ttk.Label(optf, text="(TCP — не рекомендуется, медленнее)",
+        ttk.Label(optf, text="(TCP медленнее)",
                   foreground="#a33").pack(side="left", padx=(2, 0))
         ttk.Label(optf, text="Cloak порт:").pack(side="left", padx=(10, 0))
         self.v_ckport = tk.StringVar(value="443")
-        ttk.Entry(optf, textvariable=self.v_ckport, width=6).pack(side="left")
+        ttk.Entry(optf, textvariable=self.v_ckport, width=5).pack(side="left")
 
         row += 1
         self.steps_tv = ttk.Treeview(f, columns=("st", "note"),
@@ -1202,17 +1211,16 @@ class App(tk.Tk):
         self.steps_tv.heading("#0", text="Шаг")
         self.steps_tv.heading("st", text="Статус")
         self.steps_tv.heading("note", text="Комментарий")
-        self.steps_tv.column("#0", width=320)
-        self.steps_tv.column("st", width=70, anchor="center")
-        self.steps_tv.column("note", width=220)
+        self.steps_tv.column("#0", width=335)
+        self.steps_tv.column("st", width=55, anchor="center")
+        self.steps_tv.column("note", width=360)
         # спиннер — canvas-дуга поверх ячейки «Статус» активного шага
         self.spin_cv = tk.Canvas(self.steps_tv, bd=0, highlightthickness=0,
                                  bg="white")
         self._spin_arc = self.spin_cv.create_arc(
             0, 0, 0, 0, start=0, extent=270, style="arc",
             width=2.5, outline="#357")
-        self.steps_tv.grid(row=row, column=0, sticky="nsew", **pad)
-        f.rowconfigure(row, weight=1)
+        self.steps_tv.grid(row=row, column=0, sticky="ew", **pad)
         f.columnconfigure(0, weight=1)
 
         row += 1
@@ -1221,27 +1229,29 @@ class App(tk.Tk):
         big = tk.Button(bf, text="▶  Развернуть всё", command=self._step_run_all,
                         font=("", 10, "bold"), bg="#2d7", fg="white",
                         activebackground="#2a6", padx=10, pady=2)
-        big.pack(side="left", padx=(2, 10))
+        big.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(2, 10))
         self._all_buttons.append(big)
-        self._mk_btn(bf, "Только выбранный шаг",
-                     self._step_run_sel).pack(side="left", padx=2)
-        self._mk_btn(bf, "Проверить статусы", self._steps_reset).pack(side="left", padx=2)
-        self._mk_btn(bf, "Управление фаерволом", self._fw_ports).pack(side="left", padx=2)
+        for i, (t, c) in enumerate((("Только выбранный шаг", self._step_run_sel),
+                                    ("Проверить статусы", self._steps_reset),
+                                    ("Управление фаерволом", self._fw_ports)),
+                                   start=1):
+            b = self._mk_btn(bf, t, c)
+            b.grid(row=0, column=i, sticky="ew", padx=2, pady=1)
+            bf.columnconfigure(i, weight=1, uniform="btn")
         b_imp = self._mk_btn(bf, "Подтянуть ключи", self._do_import)
-        b_imp.pack(side="left", padx=2)
+        b_imp.grid(row=0, column=4, sticky="ew", padx=2, pady=1)
+        bf.columnconfigure(4, weight=1, uniform="btn")
         Tooltip(b_imp,
                 "Если сервер уже настроен (вручную или другой версией\n"
                 "программы) — эта кнопка забирает с него ключи Cloak,\n"
                 "не переустанавливая ничего. После этого сервером можно\n"
                 "управлять: юзеры, конфиги, статусы.")
-
-        row += 1
-        bf2 = ttk.Frame(f)
-        bf2.grid(row=row, column=0, sticky="w", **pad)
-        self._mk_btn(bf2, "Сбросить сервер",
-                     self._srv_purge).pack(side="left", padx=2)
-        self._mk_btn(bf2, "Перезагрузить сервер",
-                     self._srv_reboot).pack(side="left", padx=2)
+        for i, (t, c) in enumerate((("Сбросить сервер", self._srv_purge),
+                                    ("Перезагрузить сервер", self._srv_reboot),
+                                    ("Копировать лог", self._copy_log_dep)),
+                                   start=1):
+            b = self._mk_btn(bf, t, c)
+            b.grid(row=1, column=i, sticky="ew", padx=2, pady=1)
 
         row += 1
         ttk.Label(f, text="✓ готово   ⚠ обрати внимание   ✗ ошибка   – пропущен   … не выполнялся\n"
