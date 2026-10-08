@@ -1364,8 +1364,11 @@ class App(tk.Tk):
         widths = {"cn": 120, "sessions": 50, "limit": 100, "quota": 100,
                   "expiry": 90, "mask": 140, "online": 55}
         for c in cols:
-            self.users_tv.heading(c, text=heads[c])
-            self.users_tv.column(c, width=widths[c])
+            ctr = c in ("sessions", "online")
+            self.users_tv.heading(c, text=heads[c],
+                                  anchor="center" if ctr else "w")
+            self.users_tv.column(c, width=widths[c],
+                                 anchor="center" if ctr else "w")
         self.users_tv.pack(fill="both", expand=True, padx=6, pady=6)
 
         bf = ttk.Frame(f)
