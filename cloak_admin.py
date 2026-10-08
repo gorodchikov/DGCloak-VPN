@@ -1425,9 +1425,11 @@ class App(tk.Tk):
         for u in s.get("users", []):
             exp = u.get("expiry", 0)
             self.users_tv.insert("", "end", iid=u["uid"], values=(
-                u["cn"], u["uid"][:20] + "…", u.get("sessions", "?"),
+                u["cn"], u.get("sessions", "?"),
+                _fmt_limits(u.get("up_rate"), u.get("down_rate")),
+                _fmt_quota(u.get("up_credit"), u.get("down_credit")),
                 time.strftime("%d.%m.%Y", time.localtime(exp)) if exp else "—",
-                ""))
+                u.get("mask") or s.get("mask_domain", ""), ""))
         self.v_users_srv.set("%s — реестр админки" % s["name"])
 
     def _sel_srv_silent(self):
