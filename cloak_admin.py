@@ -1448,11 +1448,11 @@ class App(tk.Tk):
 
         row += 1
         bf = ttk.Frame(f)
-        bf.grid(row=row, column=0, sticky="w", **pad)
+        bf.grid(row=row, column=0, sticky="ew", **pad)
         big = tk.Button(bf, text="▶  Развернуть всё", command=self._step_run_all,
                         font=("", 10, "bold"), bg="#2d7", fg="white",
                         activebackground="#2a6", padx=10, pady=2)
-        big.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(2, 10))
+        big.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(0, 10))
         self._all_buttons.append(big)
         Tooltip(big, "Шаги идут сверху вниз, готовые шаги — пропускаются")
         for i, (t, c) in enumerate((("Только выбранный шаг", self._step_run_sel),
@@ -1463,7 +1463,7 @@ class App(tk.Tk):
             b.grid(row=0, column=i, sticky="ew", padx=2, pady=1)
             bf.columnconfigure(i, weight=1, uniform="btn")
         b_imp = self._mk_btn(bf, "Импорт ключей", self._do_import)
-        b_imp.grid(row=0, column=4, sticky="ew", padx=2, pady=1)
+        b_imp.grid(row=0, column=4, sticky="ew", padx=(2, 0), pady=1)
         bf.columnconfigure(4, weight=1, uniform="btn")
         Tooltip(b_imp,
                 "Если сервер уже настроен (вручную или через DGCloak Admin)\n"
@@ -1476,7 +1476,8 @@ class App(tk.Tk):
                                     ("Очистить лог", self._clear_log_dep)),
                                    start=1):
             b = self._mk_btn(bf, t, c)
-            b.grid(row=1, column=i, sticky="ew", padx=2, pady=1)
+            b.grid(row=1, column=i, sticky="ew",
+                   padx=(2, 0) if i == 4 else 2, pady=1)
 
         row += 1
         leg = ttk.Frame(f)
