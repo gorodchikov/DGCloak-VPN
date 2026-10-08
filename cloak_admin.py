@@ -1169,8 +1169,20 @@ class App(tk.Tk):
                     shutil.move(old_ck, new_ck)
                 except OSError:
                     pass  # найдём и в старом месте
-            if find_ck_client(self.data):
-                self.say("  ck-client: на месте")
+            found = find_ck_client(self.data)
+            if found:
+                if os.path.normpath(found) != os.path.normpath(new_ck):
+                    # чужая копия (например VPN-клиента) — заберём себе:
+                    # админка не должна ломаться, если клиент снесут
+                    try:
+                        os.makedirs(BIN_DIR, exist_ok=True)
+                        shutil.copy2(found, new_ck)
+                        self.say("  ck-client: нашёл %s → скопировал в "
+                                 "bin\\" % found)
+                    except OSError:
+                        self.say("  ck-client: на месте (%s)" % found)
+                else:
+                    self.say("  ck-client: на месте")
             else:
                 try:
                     ck = download_ck_client(self.say)
