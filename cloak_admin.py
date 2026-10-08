@@ -2416,14 +2416,28 @@ class App(tk.Tk):
             ssh = SSH(s, self.say)
             # 1. revoke cert + crl (весь конвейер под sudo — CA может быть
             # в /root или в /home/*)
-            out = ssh.run(
-                "%sbash -c 'CADIR=$(ls -d /root/openvpn-ca "
-                "/home/*/openvpn-ca 2>/dev/null | head -1) && cd \"$CADIR\" && "
-                "./easyrsa --batch revoke %s && "
-                "./easyrsa --batch gen-crl && "
-                "install -m644 pki/crl.pem /etc/openvpn/server/crl.pem'"
-                % (ssh.sudo, cn), timeout=60)
-            self.say("  сертификат отозван")
+            # сертификата может не быть (сервер откачен/переставлен, а запись
+            # в реестре осталась) — это не причина бросать юзера «призраком»:
+            # дальше всё равно чистим UID и реестр
+            try:
+                ssh.run(
+                    "%sbash -c 'CADIR=$(ls -d /root/openvpn-ca "
+                    "/home/*/openvpn-ca 2>/dev/null | head -1) && cd \"$CADIR\" && "
+                    "test -s pki/issued/%s.crt && "
+                    "./easyrsa --batch revoke %s && "
+                    "./easyrsa --batch gen-crl && "
+                    "install -m644 pki/crl.pem /etc/openvpn/server/crl.pem'"
+                    % (ssh.sudo, cn, cn), timeout=60)
+                self.say("  сертификат отозван")
+            except SSHErr as e:
+                msg = str(e)
+                if "test -s" in msg or "not a valid certificate" in msg \
+                        or msg.rstrip().endswith("rc=1:") or "(пустой вывод)" in msg:
+                    self.say("  сертификата на сервере нет — пропускаю отзыв")
+                elif "already revoked" in msg.lower():
+                    self.say("  сертификат уже отозван")
+                else:
+                    raise
             # 2. delete UID
             if rec and rec.get("uid"):
                 try:
@@ -2433,7 +2447,10 @@ class App(tk.Tk):
                     api.stop()
                     self.say("  UID удалён")
                 except Exception as e:
-                    self.say("  UID: %s" % e)
+                    if "bucket not found" in str(e) or "404" in str(e):
+                        self.say("  UID в Cloak уже нет")
+                    else:
+                        self.say("  UID: %s" % e)
             # 3. kill live session
             try:
                 ssh.upload(os.path.join(SCRIPTS_DIR, "ovpn-mgmt.py"),
