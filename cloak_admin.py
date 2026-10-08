@@ -2128,11 +2128,28 @@ class App(tk.Tk):
                 m = re.search(r'"BindAddr":\s*\[\s*"[^"]*:(\d+)"', out)
                 if m:
                     s["ck_port"] = m.group(1)
-                n = self._pull_users(ssh, s)
+                added = self._pull_users(ssh, s)
                 save_data(self.data)
                 self.say("Импорт: ключи подтянуты с «%s»%s"
-                         % (s["name"],
-                            ", юзеров восстановлено: %d" % n if n else ""))
+                         % (s["name"], ", юзеров восстановлено: %d"
+                            % len(added) if added else ""))
+                # бандлы для восстановленных: сертификаты живут на
+                # сервере — пересобираем .dgcloak, чтобы bundles\
+                # не оставался пустым после переезда
+                for rec in added:
+                    try:
+                        mats = parse_cert_bundle(
+                            ssh.run_script("user-cert.sh", rec["cn"],
+                                           timeout=60))
+                        write_user_bundle(
+                            s, rec["cn"], rec["uid"], mats,
+                            os.path.join(BUNDLES_DIR, s["name"], rec["cn"]),
+                            rec.get("mask") or "")
+                        self.say("  конфиг «%s» → bundles\\%s"
+                                 % (rec["cn"], s["name"]))
+                    except Exception as e:
+                        self.say("  !! конфиг «%s» не пересобран: %s"
+                                 % (rec["cn"], e))
                 self.ui(lambda: self._fill_users_local(s))
             else:
                 self.say("!! Не нашёл /etc/ck-server/* — сервер развёрнут?")
@@ -2170,16 +2187,16 @@ class App(tk.Tk):
             remote = json.loads(out.strip() or "[]")
         except Exception as e:
             self.say("  реестр юзеров с сервера не прочитан: %s" % e)
-            return 0
+            return []
         if not isinstance(remote, list):
-            return 0
+            return []
         local = s.setdefault("users", [])
         have = {u.get("cn") for u in local}
         added = [u for u in remote
                  if isinstance(u, dict) and u.get("cn") and u.get("uid")
                  and u["cn"] not in have]
         local.extend(added)
-        return len(added)
+        return added
 
     # ---- юзеры ----
     def _api(self, s):
