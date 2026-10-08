@@ -1307,11 +1307,13 @@ class App(tk.Tk):
         """Чистит журнал ТЕКУЩЕГО сервера только в своём канале —
         записи другой вкладки и других серверов не трогаем."""
         name = self._log_name
-        if name is not None and name in self._logs:
-            self._logs[name] = [e for e in self._logs[name]
-                                if e[2] != tab]
+        line = "[%s] Лог очищен." % time.strftime("%H:%M:%S")
+        if name is not None:
+            self._logs[name] = [e for e in self._logs.get(name, [])
+                                if e[2] != tab] + [(line, False, tab)]
         w_ = self.logw_usr if tab == "users" else self.logw_dep
         w_.delete("1.0", "end")
+        w_.insert("end", line + "\n")
 
     def _clear_log_dep(self):
         self._clear_log("deploy")
