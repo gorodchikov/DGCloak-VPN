@@ -1316,9 +1316,6 @@ class App(tk.Tk):
     def _clear_log_dep(self):
         self._clear_log("deploy")
 
-    def _clear_log_usr(self):
-        self._clear_log("users")
-
     def _set_busy(self, b):
         self.busy = b
         state = "disabled" if b else "normal"
@@ -1546,8 +1543,6 @@ class App(tk.Tk):
                         variable=self.verbose,
                         command=self._on_verbose_toggle).grid(
             row=0, column=6, sticky="e", padx=(8, 2))
-        self._mk_btn(bf, "Очистить лог", self._clear_log_usr).grid(
-            row=0, column=7, sticky="e", padx=(8, 2))
 
         self.logframe_usr = ttk.LabelFrame(f, text="Лог")
         self.logframe_usr.pack(fill="both", expand=True, padx=6, pady=(0, 6))
