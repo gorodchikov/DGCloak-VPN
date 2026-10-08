@@ -850,7 +850,8 @@ class UserDialog(simpledialog.Dialog):
             exp_days = str(max(1, round((rec["expiry"] - time.time()) / 86400)))
         fields = [("name", "Имя (CN, [a-z0-9_-])", rec.get("cn", "")),
                   ("expiry_days", "Срок жизни, дней (0 = бессрочно)", exp_days),
-                  ("sessions", "Макс. сессий", str(rec.get("sessions") or 16)),
+                  ("sessions", "Макс. подключений под этим юзером",
+                   str(rec.get("sessions") or 16)),
                   ("up_mbits", "Лимит скорости ↑, Мбит/с (0 = безлимит)",
                    "%g" % (rec["up_rate"] * 8 / 1e6)
                    if rec.get("up_rate") and rec["up_rate"] < INT64_MAX else "0"),
@@ -1258,23 +1259,27 @@ class App(tk.Tk):
 
         row = 0
         optf = ttk.Frame(f)
-        optf.grid(row=row, column=0, sticky="w", **pad)
+        optf.grid(row=row, column=0, sticky="ew", **pad)
         ttk.Label(optf, text="Домен для маскировки:").pack(side="left")
         self.v_mask = tk.StringVar(value="www.bing.com")
         ttk.Entry(optf, textvariable=self.v_mask, width=36).pack(side="left", padx=4)
-        ttk.Label(optf, text="Протокол:").pack(side="left", padx=(10, 0))
+        self.v_ckport = tk.StringVar(value="443")
+        ttk.Entry(optf, textvariable=self.v_ckport, width=5).pack(side="right")
+        ttk.Label(optf, text="Cloak порт:").pack(side="right", padx=(10, 0))
+        ttk.Label(optf, text="(TCP медленнее)",
+                  foreground="#a33").pack(side="right", padx=(2, 0))
         self.v_proto = tk.StringVar(value="udp")
         ttk.Combobox(optf, textvariable=self.v_proto, width=5, state="readonly",
-                     values=["udp", "tcp"]).pack(side="left")
-        ttk.Label(optf, text="(TCP медленнее)",
-                  foreground="#a33").pack(side="left", padx=(2, 0))
-        ttk.Label(optf, text="Cloak порт:").pack(side="left", padx=(10, 0))
-        self.v_ckport = tk.StringVar(value="443")
-        ttk.Entry(optf, textvariable=self.v_ckport, width=5).pack(side="left")
+                     values=["udp", "tcp"]).pack(side="right")
+        ttk.Label(optf, text="Протокол OpenVPN:").pack(side="right",
+                                                      padx=(10, 0))
 
         row += 1
+        st = ttk.Style(self)
+        st.configure("Slim.Treeview.Heading", padding=(4, 1))
         self.steps_tv = ttk.Treeview(f, columns=("st", "note"),
-                                     show="tree headings", height=9)
+                                     show="tree headings", height=9,
+                                     style="Slim.Treeview")
         self.steps_tv.heading("#0", text="Шаг")
         self.steps_tv.heading("st", text="Статус")
         self.steps_tv.heading("note", text="Комментарий")
@@ -2183,7 +2188,7 @@ class App(tk.Tk):
                       "up_credit": up_credit, "down_credit": down_credit,
                       "created": time.strftime("%Y-%m-%d")})
         save_data(self.data)
-        self.say("Юзер «%s» создан. Конфиг: %s"
+        self.say("Юзер «%s» создан, выдай конфиг юзеру: %s"
                  % (name, os.path.join(bundle, "%s.dgcloak" % name)))
         return bundle
 
@@ -2252,9 +2257,8 @@ class App(tk.Tk):
             mats = parse_cert_bundle(out)
             bundle = os.path.join(BUNDLES_DIR, s["name"], cn)
             write_user_bundle(s, cn, uid, mats, bundle, r["mask"])
-            self.say("Юзер «%s» обновлён. Конфиг перевыпущен: %s\n"
-                     "  (маскировка меняется только в новом .dgcloak — "
-                     "выдай его юзеру)"
+            self.say("Юзер «%s» обновлён, конфиг перевыпущен, "
+                     "выдай его юзеру: %s"
                      % (cn, os.path.join(bundle, "%s.dgcloak" % cn)))
             self.ui(self._users_refresh)
         self._worker(work)
