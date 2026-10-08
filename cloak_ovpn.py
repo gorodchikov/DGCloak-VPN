@@ -222,22 +222,29 @@ def migrate_dirs():
     DGCloak\\bin\\ (админка мигрирует свою папку сама при старте)."""
     if APP_DIR != os.path.join(DGCLOAK_DIR, "VPN"):
         return
-    if not os.path.isdir(OLD_APP_DIR) or os.path.isdir(APP_DIR):
-        return
-    try:
-        os.makedirs(DGCLOAK_DIR, exist_ok=True)
-        shutil.move(OLD_APP_DIR, APP_DIR)
-    except OSError:
-        return
-    # свой ck-client — в общий bin (не дублировать между приложениями)
+    moved = False
+    if os.path.isdir(OLD_APP_DIR) and not os.path.isdir(APP_DIR):
+        try:
+            os.makedirs(DGCLOAK_DIR, exist_ok=True)
+            shutil.move(OLD_APP_DIR, APP_DIR)
+            moved = True
+        except OSError:
+            return
+    # свой ck-client — в общий bin; дубликат там — удалить (одна копия
+    # на обе программы). Каждый запуск — чистит и хвосты миграции.
     try:
         src = os.path.join(APP_DIR, "ck-client.exe")
         dst = os.path.join(BIN_DIR, "ck-client.exe")
-        if os.path.isfile(src) and not os.path.isfile(dst):
-            os.makedirs(BIN_DIR, exist_ok=True)
-            shutil.move(src, dst)
+        if os.path.isfile(src):
+            if os.path.isfile(dst):
+                os.remove(src)
+            else:
+                os.makedirs(BIN_DIR, exist_ok=True)
+                shutil.move(src, dst)
     except OSError:
         pass
+    if not moved:
+        return
     # пути в data.json: старый префикс → новый; ck_client указывал на
     # ck-client.exe — после переноса в bin переписываем точно
     try:

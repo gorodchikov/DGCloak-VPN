@@ -112,9 +112,14 @@ mute-replay-warnings
 # ---------------------------------------------------------------- utilities
 
 def _move_file(src, dst):
-    """Переложить файл, если целевого ещё нет (дедупликация deps)."""
+    """Переложить файл в общий bin; если там уже есть — удалить дубликат
+    (дедупликация deps — цель и есть одна копия на обе программы)."""
     try:
-        if os.path.isfile(src) and not os.path.isfile(dst):
+        if not os.path.isfile(src):
+            return
+        if os.path.isfile(dst):
+            os.remove(src)
+        else:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.move(src, dst)
     except OSError:
@@ -144,18 +149,6 @@ def migrate_dirs():
             shutil.move(OLD_APP_DIR, APP_DIR)
         except OSError:
             return
-        # старый Admin\bin → общий bin
-        old_bin = os.path.join(APP_DIR, "bin")
-        if os.path.isdir(old_bin):
-            for f in os.listdir(old_bin):
-                _move_file(os.path.join(old_bin, f),
-                           os.path.join(BIN_DIR, f))
-            try:
-                os.rmdir(old_bin)
-            except OSError:
-                pass
-        _move_file(os.path.join(APP_DIR, "ck-client.exe"),
-                   os.path.join(BIN_DIR, "ck-client.exe"))
         # пути в реестре: старый префикс → новый
         try:
             d = load_data()
@@ -163,6 +156,18 @@ def migrate_dirs():
             save_data(d)
         except Exception:
             pass
+    # Admin\bin → общий bin (и при миграции, и для чистки хвостов,
+    # если общий bin оказался занят раньше — дубликаты удаляются)
+    old_bin = os.path.join(APP_DIR, "bin")
+    if os.path.isdir(old_bin):
+        for f in os.listdir(old_bin):
+            _move_file(os.path.join(old_bin, f), os.path.join(BIN_DIR, f))
+        try:
+            os.rmdir(old_bin)
+        except OSError:
+            pass
+    _move_file(os.path.join(APP_DIR, "ck-client.exe"),
+               os.path.join(BIN_DIR, "ck-client.exe"))
     # ck-client старого клиента → в общий bin (копия — старый клиент
     # не ломаем; новый при своей миграции приберёт свою папку)
     try:
