@@ -685,15 +685,9 @@ def make_dgcloak(srv, name, uid, mats):
 
 
 def write_user_bundle(s, name, uid, mats, dst):
-    """Бандл юзера: .dgcloak (для клиента) + сырые .ovpn и ckclient-*.json."""
+    """Бандл юзера — один файл <name>.dgcloak (cloak+ovpn в одном JSON).
+    Сырые .ovpn/ckclient при желании вытаскиваются из него же."""
     os.makedirs(dst, exist_ok=True)
-    with open(os.path.join(dst, "%s.ovpn" % name), "w",
-              encoding="utf-8") as f:
-        f.write(make_ovpn(s.get("proto", "udp"), mats["ca"], mats["cert"],
-                          mats["key"], mats["ta"]))
-    with open(os.path.join(dst, "ckclient-%s.json" % name), "w",
-              encoding="utf-8") as f:
-        json.dump(make_ckclient(s, uid), f, indent=2)
     with open(os.path.join(dst, "%s.dgcloak" % name), "w",
               encoding="utf-8") as f:
         json.dump(make_dgcloak(s, name, uid, mats), f,
