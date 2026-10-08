@@ -818,6 +818,17 @@ class ServerDialog(simpledialog.Dialog):
         except ValueError:
             messagebox.showerror("Сервер", "SSH порт: число 1-65535", parent=self)
             return False
+        # частая ошибка — выбрать .pub вместо приватного ключа
+        key = self.vars["key"].get().strip()
+        if key.lower().endswith(".pub"):
+            priv = key[:-4]
+            if os.path.isfile(priv):
+                self.vars["key"].set(priv)
+            else:
+                messagebox.showerror(
+                    "Сервер", "Это публичный ключ (.pub) — нужен приватный,\n"
+                    "обычно тот же файл без расширения .pub", parent=self)
+                return False
         return True
 
     def apply(self):
