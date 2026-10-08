@@ -50,16 +50,28 @@ FAR_FUTURE = 2000000000  # ~2033 — «бессрочный» юзер Cloak
 
 
 def _fmt_rate(bps):
-    """байт/с → компактная строка; отсутствие/INT64_MAX = безлимит (∞).
-    Ноль в таблице показываем как есть — Cloak трактует его как запрет."""
+    """байт/с → Мбит/с компактно; отсутствие/INT64_MAX = безлимит (∞)."""
     if bps is None or bps >= INT64_MAX:
         return "∞"
-    kb = bps / 1024
-    return "%dK" % kb if kb < 1024 else "%.1fM" % (kb / 1024)
+    mb = bps * 8 / 1e6
+    return "%gМ" % round(mb, 1) if mb >= 1 else "%dк" % round(bps * 8 / 1e3)
+
+
+def _fmt_bytes(v):
+    """байт → объём (МБ/ГБ); отсутствие/INT64_MAX = безлимит (∞)."""
+    if v is None or v >= INT64_MAX:
+        return "∞"
+    return ("%gG" % round(v / 1073741824, 1)) if v >= 1073741824 \
+        else "%dM" % round(v / 1048576)
 
 
 def _fmt_limits(up, down):
     u, d = _fmt_rate(up), _fmt_rate(down)
+    return "∞" if u == "∞" and d == "∞" else "↑%s ↓%s" % (u, d)
+
+
+def _fmt_quota(up, down):
+    u, d = _fmt_bytes(up), _fmt_bytes(down)
     return "∞" if u == "∞" and d == "∞" else "↑%s ↓%s" % (u, d)
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -839,11 +851,11 @@ class UserDialog(simpledialog.Dialog):
         fields = [("name", "Имя (CN, [a-z0-9_-])", rec.get("cn", "")),
                   ("expiry_days", "Срок жизни, дней (0 = бессрочно)", exp_days),
                   ("sessions", "Макс. сессий", str(rec.get("sessions") or 16)),
-                  ("up_kbs", "Лимит скорости ↑, КБ/с (0 = безлимит)",
-                   str(rec["up_rate"] // 1024)
+                  ("up_mbits", "Лимит скорости ↑, Мбит/с (0 = безлимит)",
+                   "%g" % (rec["up_rate"] * 8 / 1e6)
                    if rec.get("up_rate") and rec["up_rate"] < INT64_MAX else "0"),
-                  ("down_kbs", "Лимит скорости ↓, КБ/с (0 = безлимит)",
-                   str(rec["down_rate"] // 1024)
+                  ("down_mbits", "Лимит скорости ↓, Мбит/с (0 = безлимит)",
+                   "%g" % (rec["down_rate"] * 8 / 1e6)
                    if rec.get("down_rate") and rec["down_rate"] < INT64_MAX else "0"),
                   ("up_mb", "Квота трафика ↑, МБ (0 = безлимит)",
                    str(rec["up_credit"] // 1048576)
@@ -869,12 +881,18 @@ class UserDialog(simpledialog.Dialog):
             messagebox.showerror("Юзер", "Имя: только латиница, цифры, _ и -",
                                  parent=self)
             return False
-        for k in ("expiry_days", "sessions", "up_kbs", "down_kbs",
-                  "up_mb", "down_mb"):
+        for k in ("expiry_days", "sessions", "up_mb", "down_mb"):
             try:
                 int(self.vars[k].get() or 0)
             except ValueError:
                 messagebox.showerror("Юзер", "Поле «%s» — только целое число" % k,
+                                     parent=self)
+                return False
+        for k in ("up_mbits", "down_mbits"):
+            try:
+                float(self.vars[k].get() or 0)
+            except ValueError:
+                messagebox.showerror("Юзер", "Поле «%s» — только число" % k,
                                      parent=self)
                 return False
         return True
@@ -887,10 +905,10 @@ class UserDialog(simpledialog.Dialog):
             "sessions": max(1, int(self.vars["sessions"].get() or 16)),
             # 0/пусто → INT64_MAX: в Cloak rate=0 = полный запрет трафика,
             # безлимит выражается только большим числом
-            "up_rate": INT64_MAX if int(self.vars["up_kbs"].get() or 0) <= 0
-                       else int(self.vars["up_kbs"].get()) * 1024,
-            "down_rate": INT64_MAX if int(self.vars["down_kbs"].get() or 0) <= 0
-                         else int(self.vars["down_kbs"].get()) * 1024,
+            "up_rate": INT64_MAX if float(self.vars["up_mbits"].get() or 0) <= 0
+                       else int(float(self.vars["up_mbits"].get()) * 125000),
+            "down_rate": INT64_MAX if float(self.vars["down_mbits"].get() or 0) <= 0
+                         else int(float(self.vars["down_mbits"].get()) * 125000),
             "up_credit": INT64_MAX if int(self.vars["up_mb"].get() or 0) <= 0
                         else int(self.vars["up_mb"].get()) * 1048576,
             "down_credit": INT64_MAX if int(self.vars["down_mb"].get() or 0) <= 0
@@ -2100,7 +2118,7 @@ class App(tk.Tk):
                 rows.append((uid, (kn.get("cn", "?"),
                              u.get("SessionsCap", "?"),
                              _fmt_limits(u.get("UpRate"), u.get("DownRate")),
-                             _fmt_limits(u.get("UpCredit"), u.get("DownCredit")),
+                             _fmt_quota(u.get("UpCredit"), u.get("DownCredit")),
                              time.strftime("%d.%m.%Y", time.localtime(exp))
                              if exp else "—",
                              kn.get("mask") or s.get("mask_domain", ""),
