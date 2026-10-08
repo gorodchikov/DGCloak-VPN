@@ -85,13 +85,43 @@ def draw_tray_icon(color, size=64):
     return canvas.resize((size, size), Image.LANCZOS)
 
 
-def save_ico(path="app.ico"):
-    img = draw_icon(BRAND, 256)
+def draw_admin_icon(color=BRAND, size=256):
+    """Плащ + бейдж-шестерёнка справа внизу — маркер «управление»."""
+    from PIL import Image, ImageDraw
+
+    N = 512
+    im = draw_icon(color, N)          # базовая фигура (плащ на плашке)
+    d = ImageDraw.Draw(im)
+
+    cx, cy, rb = 392, 392, 96         # бейдж в углу плашки
+    d.ellipse([cx - rb, cy - rb, cx + rb, cy + rb],
+              fill=(20, 27, 45, 255), outline=(255, 255, 255, 255), width=8)
+
+    # шестерёнка: 8 зубьев звёздчатым полигоном + ступица и отверстие
+    r1, r2, rhub, rhole = 62, 44, 26, 13
+    w = math.radians(13)
+    pts = []
+    for i in range(8):
+        a = i * math.pi / 4
+        pts += [(cx + r2 * math.cos(a - w), cy + r2 * math.sin(a - w)),
+                (cx + r1 * math.cos(a - w), cy + r1 * math.sin(a - w)),
+                (cx + r1 * math.cos(a + w), cy + r1 * math.sin(a + w)),
+                (cx + r2 * math.cos(a + w), cy + r2 * math.sin(a + w))]
+    g = _mix(_rgb(color), (255, 255, 255), 0.75) + (255,)
+    d.polygon(pts, fill=g)
+    d.ellipse([cx - rhub, cy - rhub, cx + rhub, cy + rhub], fill=g)
+    d.ellipse([cx - rhole, cy - rhole, cx + rhole, cy + rhole],
+              fill=(20, 27, 45, 255))
+    return im.resize((size, size), Image.LANCZOS)
+
+
+def save_ico(path="app.ico", admin=False):
+    img = (draw_admin_icon if admin else draw_icon)(BRAND, 256)
     img.save(path, format="ICO",
              sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
 
 
 if __name__ == "__main__":
     out = sys.argv[1] if len(sys.argv) > 1 else "app.ico"
-    save_ico(out)
+    save_ico(out, admin="--admin" in sys.argv)
     print("Создано:", out)

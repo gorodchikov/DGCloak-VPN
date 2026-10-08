@@ -6,7 +6,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[('scripts', 'scripts')],
-    hiddenimports=[],
+    hiddenimports=['PIL.Image', 'PIL.ImageDraw'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -33,7 +33,7 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     version='version_info.txt',
-    icon=['app.ico'],
+    icon=['admin.ico'],
 )
 coll = COLLECT(
     exe,

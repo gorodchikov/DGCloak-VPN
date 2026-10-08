@@ -16,6 +16,7 @@ SSH-слой — внешние plink/pscp (ppk нативно). Юзеры Cloa
 """
 
 import base64
+import io
 import json
 import os
 import queue
@@ -1192,6 +1193,14 @@ class App(tk.Tk):
         self.title(APP_NAME)
         self.geometry("1040x680")
         self.resizable(False, False)
+        try:  # иконка окна: плащ + шестерёнка (без Pillow — пропускаем)
+            import cloak_icon
+            buf = io.BytesIO()
+            cloak_icon.draw_admin_icon(cloak_icon.BRAND, 64).save(buf, "PNG")
+            self._win_icon = tk.PhotoImage(data=base64.b64encode(buf.getvalue()))
+            self.iconphoto(True, self._win_icon)
+        except Exception:
+            pass
         migrate_dirs()
         self.data = load_data()
         self.uiq = queue.Queue()

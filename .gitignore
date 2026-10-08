@@ -68,3 +68,4 @@ runtime.ovpn
 dist3/
 build3/
 dist-vpn/
+*.ico
