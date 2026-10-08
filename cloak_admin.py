@@ -1510,6 +1510,9 @@ class App(tk.Tk):
                     pass
             if up:
                 s.pop("reboot_required", None)
+                st = s.setdefault("steps", {})
+                if "reboot" in st.get("sysupd", {}).get("note", ""):
+                    st["sysupd"] = {"st": "ok", "note": "обновлено, reboot выполнен"}
                 save_data(self.data)
                 self.ui(self._fill_steps)
                 self.say("  сервер поднялся")
