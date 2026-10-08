@@ -1303,6 +1303,22 @@ class App(tk.Tk):
     def _copy_log_dep(self):
         self._copy_log(self.logw_dep)
 
+    def _clear_log(self, tab):
+        """Чистит журнал ТЕКУЩЕГО сервера только в своём канале —
+        записи другой вкладки и других серверов не трогаем."""
+        name = self._log_name
+        if name is not None and name in self._logs:
+            self._logs[name] = [e for e in self._logs[name]
+                                if e[2] != tab]
+        w_ = self.logw_usr if tab == "users" else self.logw_dep
+        w_.delete("1.0", "end")
+
+    def _clear_log_dep(self):
+        self._clear_log("deploy")
+
+    def _clear_log_usr(self):
+        self._clear_log("users")
+
     def _set_busy(self, b):
         self.busy = b
         state = "disabled" if b else "normal"
@@ -1459,20 +1475,23 @@ class App(tk.Tk):
                 "управлять: юзеры, конфиги, статусы.")
         for i, (t, c) in enumerate((("Сбросить сервер", self._srv_purge),
                                     ("Перезагрузить сервер", self._srv_reboot),
-                                    ("Копировать лог", self._copy_log_dep)),
+                                    ("Копировать лог", self._copy_log_dep),
+                                    ("Очистить лог", self._clear_log_dep)),
                                    start=1):
             b = self._mk_btn(bf, t, c)
             b.grid(row=1, column=i, sticky="ew", padx=2, pady=1)
-        # язык интерфейса — пока только элемент, перевод позже
-        self.v_lang = tk.StringVar(value="Русский")
-        ttk.Combobox(bf, textvariable=self.v_lang, state="readonly",
-                     values=["Русский", "English"]).grid(
-            row=1, column=4, sticky="ew", padx=2, pady=1)
 
         row += 1
-        ttk.Label(f, text="✓ готово   ⚠ обрати внимание   ✗ ошибка   "
-                          "– пропущен   … не выполнялся",
-                  foreground="#666").grid(row=row, column=0, sticky="w", **pad)
+        leg = ttk.Frame(f)
+        leg.grid(row=row, column=0, sticky="ew", **pad)
+        ttk.Label(leg, text="✓ готово   ⚠ обрати внимание   ✗ ошибка   "
+                            "– пропущен   … не выполнялся",
+                  foreground="#666").pack(side="left")
+        # язык интерфейса — пока только элемент, перевод позже
+        self.v_lang = tk.StringVar(value="Русский")
+        ttk.Combobox(leg, textvariable=self.v_lang, state="readonly",
+                     values=["Русский", "English"], width=9).pack(side="right")
+        ttk.Label(leg, text="Язык:").pack(side="right", padx=(0, 4))
 
         row += 1
         self.logframe_dep = ttk.LabelFrame(f, text="Лог")
@@ -1527,6 +1546,8 @@ class App(tk.Tk):
                         variable=self.verbose,
                         command=self._on_verbose_toggle).grid(
             row=0, column=6, sticky="e", padx=(8, 2))
+        self._mk_btn(bf, "Очистить лог", self._clear_log_usr).grid(
+            row=0, column=7, sticky="e", padx=(8, 2))
 
         self.logframe_usr = ttk.LabelFrame(f, text="Лог")
         self.logframe_usr.pack(fill="both", expand=True, padx=6, pady=(0, 6))
