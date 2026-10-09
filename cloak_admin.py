@@ -15,6 +15,7 @@ SSH-слой — внешние plink/pscp (ppk нативно). Юзеры Cloa
 `ck-client.exe -a` (admin-API), без SSH.
 """
 
+import atexit
 import base64
 import io
 import json
@@ -41,6 +42,8 @@ APP_DIR = os.path.join(DGCLOAK_DIR, "Admin")
 DATA_FILE = os.path.join(APP_DIR, "data.json")
 BUNDLES_DIR = os.path.join(APP_DIR, "bundles")
 BIN_DIR = os.path.join(DGCLOAK_DIR, "bin")  # общие зависимости: plink/pscp/ck-client
+VPN_DIR = os.path.join(DGCLOAK_DIR, "VPN")  # данные соседнего VPN-клиента
+PIDS_FILE = os.path.join(APP_DIR, "pids.json")  # наши дочерние plink/pscp/ssh
 
 # Скрипты лежат рядом с исходником/exe (для onefile — внутри _MEIPASS)
 if getattr(sys, "frozen", False):
@@ -50,6 +53,141 @@ else:
 SCRIPTS_DIR = os.path.join(BASE_DIR, "scripts")
 if not os.path.isdir(SCRIPTS_DIR) and getattr(sys, "_MEIPASS", None):
     SCRIPTS_DIR = os.path.join(sys._MEIPASS, "scripts")
+
+# ---- реестр дочерних процессов (plink/pscp/ssh/ck-client) ----
+# Сирота-plink на мёртвой SSH-сессии жил после закрытия админки и лочил dist\.
+# Поэтому: каждый Popen регистрируется в pids.json (PID → имя exe), на выходе
+# оставшихся добиваем taskkill'ом, а при старте чистим сирот от аварийного
+# завершения. Проверка имени exe защищает от переиспользования PID.
+_child_procs = {}          # pid -> basename(exe)
+_child_lock = threading.Lock()
+
+
+def _save_child_pids():
+    try:
+        os.makedirs(APP_DIR, exist_ok=True)
+        with open(PIDS_FILE, "w", encoding="utf-8") as f:
+            json.dump({str(k): v for k, v in _child_procs.items()}, f)
+    except OSError:
+        pass
+
+
+def track_proc(p):
+    """Зарегистрировать Popen — его добьют при выходе приложения."""
+    try:
+        argv = p.args if isinstance(p.args, (list, tuple)) else [p.args]
+        name = os.path.basename(str(argv[0] or "?"))
+    except (AttributeError, IndexError):
+        name = "?"
+    with _child_lock:
+        _child_procs[p.pid] = name
+        _save_child_pids()
+    return p
+
+
+def untrack_proc(p):
+    """Снять с учёта завершившийся процесс (живой остаётся до выхода)."""
+    if p.poll() is None:
+        return
+    with _child_lock:
+        if _child_procs.pop(p.pid, None) is not None:
+            _save_child_pids()
+
+
+def _tasklist_out(pid):
+    try:
+        return subprocess.run(
+            ["tasklist", "/FI", "PID eq %s" % int(pid), "/FO", "CSV", "/NH"],
+            capture_output=True, text=True, timeout=10,
+            stdin=subprocess.DEVNULL, creationflags=CREATE_NO_WINDOW).stdout
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return ""
+
+
+def _pid_exists(pid):
+    """CSV-строки начинаются с кавычки; INFO-строки — нет (locale-proof)."""
+    return any(l.startswith('"') for l in _tasklist_out(pid).splitlines())
+
+
+def _pid_running(pid, name):
+    """Жив ли процесс с этим PID и ожидаемым именем exe
+    (в реестре имя может быть без .exe — принимаем оба варианта)."""
+    want = {name.lower(), name.lower() + ".exe"}
+    for l in _tasklist_out(pid).splitlines():
+        parts = [x.strip('"') for x in l.split('","')]
+        if len(parts) > 1 and parts[0].lower() in want:
+            return True
+    return False
+
+
+def _kill_pid(pid):
+    """taskkill /F /T — процесс вместе с его дочерними."""
+    try:
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(int(pid))],
+                       capture_output=True, timeout=10,
+                       stdin=subprocess.DEVNULL, creationflags=CREATE_NO_WINDOW)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def kill_child_procs():
+    """atexit: завершить всех отслеживаемых детей, оставшихся живыми."""
+    with _child_lock:
+        items = list(_child_procs.items())
+        _child_procs.clear()
+        _save_child_pids()
+    for pid, name in items:
+        if _pid_running(pid, name):
+            _kill_pid(pid)
+
+
+atexit.register(kill_child_procs)
+
+
+def cleanup_stale_procs(log=print):
+    """При старте: добить детей, оставшихся от аварийного прошлого запуска."""
+    try:
+        with open(PIDS_FILE, encoding="utf-8") as f:
+            stale = json.load(f)
+    except (OSError, ValueError):
+        return
+    killed = []
+    for pid, name in stale.items():
+        if _pid_running(pid, name):
+            _kill_pid(pid)
+            killed.append("%s (PID %s)" % (name, pid))
+    if killed:
+        log("Завершил процессы от прошлого запуска: " + ", ".join(killed))
+    with _child_lock:
+        if not _child_procs:
+            _save_child_pids()   # файл устарел — обнуляем
+
+
+def vpn_active_host():
+    """Хост сервера активного подключения VPN-клиента (DGCloakVPN) или None:
+    читает %APPDATA%\\DGCloak\\VPN — pids.json (жив ли клиент) и
+    data.json/ck-конфиг профиля (куда он подключён)."""
+    try:
+        with open(os.path.join(VPN_DIR, "pids.json"), encoding="utf-8") as f:
+            pids = json.load(f)
+        if not any(_pid_exists(p) for p in pids.values() if p):
+            return None
+        with open(os.path.join(VPN_DIR, "data.json"), encoding="utf-8") as f:
+            vdata = json.load(f)
+        prof = next((p for p in vdata.get("profiles", [])
+                     if p.get("name") == vdata.get("last_profile")), None)
+        if not prof:
+            return None
+        host = prof.get("server") or prof.get("bypass_ip")
+        if not host:
+            ckp = prof.get("ck_config")
+            if ckp and os.path.isfile(ckp):
+                with open(ckp, encoding="utf-8") as f:
+                    host = json.load(f).get("RemoteHost")
+        return host or None
+    except (OSError, ValueError):
+        return None
+
 
 CK_VERSION = "2.12.0"
 INT64_MAX = 9223372036854775807
@@ -531,6 +669,16 @@ STRINGS_EN = {
     "Cloak": "Cloak",
     "Поднять в списке": "Move up",
     "Опустить в списке": "Move down",
+    "«%s» — сейчас это сервер твоего АКТИВНОГО VPN.\n\n"
+    "SSH-сессия идёт через этот же туннель: при его разрыве\n"
+    "(перезапуск OpenVPN/Cloak, смена фаервола, ребут, сброс)\n"
+    "связь оборвётся и операция зависнет или не завершится.\n\n"
+    "Рекомендуется отключить VPN. Продолжить?":
+        "\"%s\" is the server of your ACTIVE VPN connection.\n\n"
+        "The SSH session goes through this same tunnel: if it drops\n"
+        "(OpenVPN/Cloak restart, firewall change, reboot, purge),\n"
+        "the connection will break and the operation may hang.\n\n"
+        "Disconnecting the VPN first is recommended. Continue?",
 }
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -917,30 +1065,34 @@ class SSH:
     def _run_proc(self, args, input_text, timeout):
         """Popen с полл-циклом: честный таймаут И мгновенная отмена
         (SSH.op_cancel → убиваем процесс, не ждём весь timeout)."""
-        p = subprocess.Popen(args, stdin=subprocess.PIPE,
-                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                             text=True, encoding="utf-8", errors="replace",
-                             creationflags=CREATE_NO_WINDOW)
+        p = track_proc(subprocess.Popen(
+            args, stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace",
+            creationflags=CREATE_NO_WINDOW))
         t0 = time.time()
         first = True
-        while True:
-            try:
-                # input только в первом communicate — после TimeoutExpired
-                # повторяем без него, иначе RuntimeError
-                out, _ = p.communicate(
-                    input=(input_text or "") if first else None,
-                    timeout=0.25)
-                return p.returncode, out or ""
-            except subprocess.TimeoutExpired:
-                first = False
-                if SSH.op_cancel.is_set():
-                    p.kill()
-                    out, _ = p.communicate()
-                    return 130, (out or "") + self.t("(прервано пользователем)")
-                if time.time() - t0 > timeout:
-                    p.kill()
-                    out, _ = p.communicate()
-                    return 124, (out or "") + "TIMEOUT after %ss" % timeout
+        try:
+            while True:
+                try:
+                    # input только в первом communicate — после TimeoutExpired
+                    # повторяем без него, иначе RuntimeError
+                    out, _ = p.communicate(
+                        input=(input_text or "") if first else None,
+                        timeout=0.25)
+                    return p.returncode, out or ""
+                except subprocess.TimeoutExpired:
+                    first = False
+                    if SSH.op_cancel.is_set():
+                        p.kill()
+                        out, _ = p.communicate()
+                        return 130, (out or "") + self.t("(прервано пользователем)")
+                    if time.time() - t0 > timeout:
+                        p.kill()
+                        out, _ = p.communicate()
+                        return 124, (out or "") + "TIMEOUT after %ss" % timeout
+        finally:
+            untrack_proc(p)
 
     def _try(self, args, input_text, timeout):
         """Один запуск + TOFU retry по fingerprint для plink-семейства."""
@@ -1062,11 +1214,11 @@ class SSH:
                                     "(проверь связь/VPN)")
                              % (port, self.srv["host"]))
         args = self._argv(cmd)
-        p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                             text=True, encoding="utf-8", errors="replace",
-                             stdin=subprocess.PIPE if self.sudo_pw
-                             else subprocess.DEVNULL,
-                             creationflags=CREATE_NO_WINDOW)
+        p = track_proc(subprocess.Popen(
+            args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace",
+            stdin=subprocess.PIPE if self.sudo_pw else subprocess.DEVNULL,
+            creationflags=CREATE_NO_WINDOW))
         if self.sudo_pw:
             try:
                 p.stdin.write(self.sudo_pw + "\n")
@@ -1076,16 +1228,19 @@ class SSH:
         t0 = time.time()
         assert p.stdout is not None
         seen = []
-        for line in p.stdout:
-            if SSH.op_cancel.is_set():
-                p.kill()
-                raise SSHErr(self.t("(прервано пользователем)"))
-            seen.append(line)
-            on_line(line.rstrip("\n"))
-            if timeout and time.time() - t0 > timeout:
-                p.kill()
-                raise SSHErr(self.t("Таймаут %s с: %s") % (timeout, cmd[:80]))
-        p.wait(timeout=10)
+        try:
+            for line in p.stdout:
+                if SSH.op_cancel.is_set():
+                    p.kill()
+                    raise SSHErr(self.t("(прервано пользователем)"))
+                seen.append(line)
+                on_line(line.rstrip("\n"))
+                if timeout and time.time() - t0 > timeout:
+                    p.kill()
+                    raise SSHErr(self.t("Таймаут %s с: %s") % (timeout, cmd[:80]))
+            p.wait(timeout=10)
+        finally:
+            untrack_proc(p)
         out_tail = ""
         is_plink = os.path.basename(args[0]).lower().startswith("plink")
         if is_plink and p.returncode == 255:
@@ -1104,18 +1259,20 @@ class SSH:
                 inp2, need_pipe = None, False
             else:
                 inp2, need_pipe = "y\n", True
-            p2 = subprocess.Popen(args2, stdout=subprocess.PIPE,
-                                  stderr=subprocess.STDOUT, text=True,
-                                  encoding="utf-8", errors="replace",
-                                  stdin=subprocess.PIPE if need_pipe
-                                  else subprocess.DEVNULL,
-                                  creationflags=CREATE_NO_WINDOW)
+            p2 = track_proc(subprocess.Popen(
+                args2, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True,
+                encoding="utf-8", errors="replace",
+                stdin=subprocess.PIPE if need_pipe else subprocess.DEVNULL,
+                creationflags=CREATE_NO_WINDOW))
             try:
                 out, _ = p2.communicate(input=inp2,
                                         timeout=timeout or 300)
             except subprocess.TimeoutExpired:
                 p2.kill()
                 raise SSHErr(self.t("Таймаут: %s") % cmd[:80])
+            finally:
+                untrack_proc(p2)
             for line in (out or "").splitlines():
                 on_line(line)
             out_tail = out or ""
@@ -1234,12 +1391,12 @@ class CloakAPI:
     def start(self, timeout=20):
         self._cfg()
         self._ready.clear()
-        self.proc = subprocess.Popen(
+        self.proc = track_proc(subprocess.Popen(
             [self.ck, "-a", self.srv["admin_uid"], "-c", self.cfg_path],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace",
             stdin=subprocess.DEVNULL,
-            creationflags=CREATE_NO_WINDOW)
+            creationflags=CREATE_NO_WINDOW))
         threading.Thread(target=self._pump, args=(self.proc.stdout,), daemon=True).start()
         t0 = time.time()
         while time.time() - t0 < timeout:
@@ -1263,6 +1420,8 @@ class CloakAPI:
                 self.proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 self.proc.kill()
+        if self.proc is not None:
+            untrack_proc(self.proc)
         self.proc = None
         self.base = None
 
@@ -1761,6 +1920,7 @@ class App(tk.Tk):
                           lambda *a, k=key, v=var: self._opt_changed(k, v))
         self._refresh_servers()
         self.after(100, self._drain)
+        cleanup_stale_procs(log=self.say)
         threading.Thread(target=self._online_loop, daemon=True).start()
         self._ensure_deps()
 
@@ -2586,6 +2746,34 @@ class App(tk.Tk):
         ev.wait()
         return bool(box and box[0])
 
+    def _warn_own_tunnel(self, s):
+        """True — продолжать; False — юзер отказался.
+        Предупреждает, если сервер — эндпоинт активного VPN-клиента:
+        SSH к нему идёт через этот же туннель, и его разрыв
+        (ребут/сброс/перезапуск OpenVPN|Cloak) убьёт операцию."""
+        ep = vpn_active_host()
+        mine = (s.get("host") or "").strip().lower().rstrip(".")
+        if not ep or not mine:
+            return True
+        other = ep.strip().lower().rstrip(".")
+        same = mine == other
+        if not same:
+            try:  # разные записи одного хоста (домен vs IP)
+                same = socket.gethostbyname(mine) == socket.gethostbyname(other)
+            except OSError:
+                pass
+        if not same:
+            return True
+        msg = self.t(
+            "«%s» — сейчас это сервер твоего АКТИВНОГО VPN.\n\n"
+            "SSH-сессия идёт через этот же туннель: при его разрыве\n"
+            "(перезапуск OpenVPN/Cloak, смена фаервола, ребут, сброс)\n"
+            "связь оборвётся и операция зависнет или не завершится.\n\n"
+            "Рекомендуется отключить VPN. Продолжить?") % s["name"]
+        if threading.current_thread() is threading.main_thread():
+            return messagebox.askyesno(APP_NAME, msg)
+        return self.ask(APP_NAME, msg)
+
     def ask_port(self, title, text, default=443):
         """Ввод номера порта из рабочего потока; None — отмена."""
         ev = threading.Event()
@@ -2714,6 +2902,8 @@ class App(tk.Tk):
         s = self._sel_srv()
         if not s:
             return
+        if not self._warn_own_tunnel(s):
+            return
         if not messagebox.askyesno(
                 APP_NAME,
                 self.t("Полный сброс «%s»:\n\n"
@@ -2747,6 +2937,8 @@ class App(tk.Tk):
         """Перезагрузка сервера по SSH + ожидание подъёма обратно."""
         s = self._sel_srv()
         if not s:
+            return
+        if not self._warn_own_tunnel(s):
             return
         if not messagebox.askyesno(
                 APP_NAME,
@@ -2837,11 +3029,16 @@ class App(tk.Tk):
             messagebox.showinfo(APP_NAME, self.t("Выбери шаг в таблице"))
             return
         key = sel[0]
+        # read-only шаги не рвут туннель — предупреждать только об опасных
+        if key not in ("ssh", "key", "audit") and not self._warn_own_tunnel(s):
+            return
         self._worker(lambda: self._run_step(s, key))
 
     def _step_run_all(self):
         s = self._sel_srv()
         if not s:
+            return
+        if not self._warn_own_tunnel(s):
             return
 
         def work():
