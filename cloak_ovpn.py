@@ -1386,7 +1386,7 @@ class App(tk.Tk):
             return
         try:
             self.tray.icon = self._icons.get(color, self._icons["gray"])
-            self.tray.title = (APP_NAME + ":\n" + text)[:127]  # tooltip — тоже столбиком
+            self.tray.title = (APP_NAME + ":\n" + self._pad_tip(text))[:127]
             self.tray.update_menu()
             # уведомление — только при смене цвета (иначе аптайм спамит каждые 2 с)
             if color != self._last_tray_color and color in ("green", "red") \
@@ -1396,6 +1396,31 @@ class App(tk.Tk):
             self._last_tray_text = text
         except Exception as e:  # noqa: BLE001
             self._log_file(f"[tray] {e!r}\n")
+
+    def _pad_tip(self, text):
+        """Выровнять «метка: значение» в тултипе трея по пиксельной ширине —
+        шрифт тултипа пропорциональный (Segoe UI 9), обычная набивка пробелами
+        съезжает; добиваем до max-ширины метки в px."""
+        try:
+            import tkinter.font as tkfont
+            f = tkfont.Font(family="Segoe UI", size=9)
+            lines = text.splitlines()
+            pairs = []
+            for l in lines:
+                a, sep, b = l.partition(": ")
+                pairs.append((a + sep, b))
+            sp = f.measure(" ")
+            maxw = max(f.measure(a) for a, b in pairs if b)
+            out = []
+            for a, b in pairs:
+                if not b:
+                    out.append(a.rstrip())
+                    continue
+                n = max(1, round((maxw + sp - f.measure(a)) / sp))
+                out.append(a + " " * n + b)
+            return "\n".join(out)
+        except Exception:
+            return text
 
     def _on_unmap(self, e):
         # сворачивание в панель задач -> прячем в трей
