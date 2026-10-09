@@ -511,6 +511,8 @@ STRINGS_EN = {
     "Имя": "Name",
     "SSH": "SSH",
     "Cloak": "Cloak",
+    "Поднять в списке": "Move up",
+    "Опустить в списке": "Move down",
 }
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -2020,6 +2022,14 @@ class App(tk.Tk):
                      ("Изменить", self._srv_edit),
                      ("Удалить", self._srv_del)):
             self._mk_btn(btns, t, c).pack(side="left", padx=2)
+        dn = ttk.Button(btns, text="▼", width=3,
+                        command=lambda: self._srv_move(1))
+        self._tip(dn, "Опустить в списке")
+        dn.pack(side="right", padx=2)
+        up = ttk.Button(btns, text="▲", width=3,
+                        command=lambda: self._srv_move(-1))
+        self._tip(up, "Поднять в списке")
+        up.pack(side="right", padx=2)
 
         # --- правая колонка: вкладки ---
         nb = self.nb = ttk.Notebook(top)
@@ -2394,6 +2404,20 @@ class App(tk.Tk):
     def _sel_srv_silent(self):
         sel = self.srv_tv.selection()
         return self._srv_by_name(sel[0]) if sel else None
+
+    def _srv_move(self, d):
+        """▲/▼ — порядок серверов в списке (и в data.json)."""
+        s = self._sel_srv_silent()
+        if not s:
+            return
+        srvs = self.data["servers"]
+        i = srvs.index(s)
+        j = i + d
+        if not (0 <= j < len(srvs)):
+            return
+        srvs[i], srvs[j] = srvs[j], srvs[i]
+        save_data(self.data)
+        self._refresh_servers()  # выбор по iid=name переживает rebuild
 
     def _srv_add(self):
         d = ServerDialog(self)
