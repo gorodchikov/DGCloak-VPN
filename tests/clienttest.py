@@ -116,6 +116,9 @@ def t_lang(app):
     check("T2.1 t() переводит при en", app.t("Подключить") == "Connect")
     app.data["language"] = "ru"
     check("T2.2 t() оставляет RU при ru", app.t("Подключить") == "Подключить")
+    check("T2.3 t()/say() не падают на kwarg 's' (heartbeat)",
+          app.t("…жду OpenVPN {s} с; management: {m}; состояние: {st}",
+                s=5, m="x", st="y").startswith("…жду OpenVPN 5"))
     MSGBOX.clear()
     app.lang_combo.set("English")
     app._on_lang_pick(None)

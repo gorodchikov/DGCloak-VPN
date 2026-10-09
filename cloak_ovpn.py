@@ -1001,11 +1001,11 @@ class App(tk.Tk):
     def lang(self):
         return self.data.get("language", "ru")
 
-    def t(self, s, **kw):
+    def t(self, msg, **kw):
         """Перевод строки интерфейса на выбранный язык (ключа нет → русский)."""
         if self.lang() == "en":
-            s = STRINGS_EN.get(s, s)
-        return s.format(**kw) if kw else s
+            msg = STRINGS_EN.get(msg, msg)
+        return msg.format(**kw) if kw else msg
 
     # ---------- UI ----------
     def _build(self):
