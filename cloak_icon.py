@@ -96,7 +96,8 @@ def draw_admin_icon(color=BRAND, size=256):
     cx, cy = 392, 392                 # шестерёнка в углу плашки
 
     def gear(scale, fill):
-        r1, r2, rhub, rhole = 62 * scale, 44 * scale, 26 * scale, 13
+        r1, r2, rhub, rhole = (62 * scale, 44 * scale, 26 * scale,
+                               13 * scale)
         w = math.radians(13)
         pts = []
         for i in range(8):
@@ -110,8 +111,8 @@ def draw_admin_icon(color=BRAND, size=256):
         d.ellipse([cx - rhole, cy - rhole, cx + rhole, cy + rhole],
                   fill=(20, 27, 45, 255))
 
-    gear(1.18, (20, 27, 45, 255))     # тёмный контур — шестерёнка
-    gear(1.0, _mix(_rgb(color), (255, 255, 255), 0.75) + (255,))  # читается на плаще
+    gear(1.18 * 1.5, (20, 27, 45, 255))     # тёмный контур — шестерёнка
+    gear(1.5, _mix(_rgb(color), (255, 255, 255), 0.75) + (255,))  # читается на плаще
     return im.resize((size, size), Image.LANCZOS)
 
 
