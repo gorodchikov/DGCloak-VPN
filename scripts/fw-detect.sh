@@ -2,6 +2,8 @@
 # Аудит фаервола: бэкенд, политики, открытые входящие порты.
 # Read-only, ничего не меняет. Под sudo — для полного вывода правил.
 set -uo pipefail
+# Локализация вывода: админка передаёт DG_LANG=ru|en
+_() { if [ "${DG_LANG:-ru}" = en ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
 
 echo "===FW_BACKEND==="
 FW=none
@@ -39,7 +41,7 @@ case "$FW" in
     iptables-persistent|iptables-custom)
         iptables -S INPUT 2>/dev/null ;;
     *)
-        echo "нет правил (INPUT ACCEPT или пусто)" ;;
+        _ "нет правил (INPUT ACCEPT или пусто)" "no rules (INPUT ACCEPT or empty)" ;;
 esac
 
 echo "===LISTEN_TCP==="

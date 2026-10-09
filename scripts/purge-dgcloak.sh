@@ -3,6 +3,8 @@
 # sysctl, пакеты. SSH-доступ и юзеры НЕ трогаются.
 # Использование: sudo bash purge-dgcloak.sh [cloak_port]
 set -u
+# Локализация вывода: админка передаёт DG_LANG=ru|en
+_() { if [ "${DG_LANG:-ru}" = en ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
 export DEBIAN_FRONTEND=noninteractive
 CK_PORT="${1:-443}"
 EXT_IF=$(ip route show default | awk '{print $5; exit}')
@@ -26,7 +28,7 @@ rm -rf /etc/openvpn/server /etc/openvpn/easyrsa /etc/openvpn/easy-rsa \
 # --- фаервол: снимаем ТОЛЬКО наши следы, по бэкенду ---
 if nft list table inet dgcloak >/dev/null 2>&1; then
     nft delete table inet dgcloak
-    echo "nft: таблица inet dgcloak удалена"
+    _ "nft: таблица inet dgcloak удалена" "nft: table inet dgcloak removed"
 fi
 
 if command -v ufw >/dev/null 2>&1 && \
@@ -54,7 +56,7 @@ if command -v ufw >/dev/null 2>&1 && \
     iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -o "$EXT_IF" \
         -j MASQUERADE 2>/dev/null || true
     ufw reload >/dev/null 2>&1 || true
-    echo "ufw: наши правила сняты"
+    _ "ufw: наши правила сняты" "ufw: our rules removed"
 fi
 
 if command -v firewall-cmd >/dev/null 2>&1 && \
@@ -62,7 +64,7 @@ if command -v firewall-cmd >/dev/null 2>&1 && \
     firewall-cmd --permanent --remove-masquerade >/dev/null 2>&1 || true
     firewall-cmd --permanent "--remove-port=$CK_PORT/tcp" >/dev/null 2>&1 || true
     firewall-cmd --reload >/dev/null 2>&1 || true
-    echo "firewalld: masquerade и $CK_PORT/tcp сняты"
+    _ "firewalld: masquerade и $CK_PORT/tcp сняты" "firewalld: masquerade and $CK_PORT/tcp removed"
 fi
 
 if [ -f /etc/iptables/rules.v4 ]; then
@@ -75,11 +77,12 @@ if [ -f /etc/iptables/rules.v4 ]; then
         apt-get -o DPkg::Lock::Timeout=300 purge -y -qq \
             iptables-persistent 2>/dev/null
         rm -rf /etc/iptables
-        echo "iptables-persistent: правила и пакет удалены"
+        _ "iptables-persistent: правила и пакет удалены" "iptables-persistent: rules and package removed"
     else
         iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -o "$EXT_IF" \
             -j MASQUERADE 2>/dev/null || true
-        echo "iptables-persistent: чужой — удалён только masquerade"
+        _ "iptables-persistent: чужой — удалён только masquerade" \
+          "iptables-persistent: foreign — removed masquerade only"
     fi
 fi
 
@@ -95,8 +98,8 @@ apt-get -o DPkg::Lock::Timeout=300 autoremove -y -qq 2>/dev/null
 
 echo "=== VERIFY ==="
 systemctl list-units --all | grep -iE "ck-server|openvpn-server@" \
-    || echo "units: чисто"
-ss -tln 2>/dev/null | grep -E ":$CK_PORT |:1194 " || echo "порты свободны"
-dpkg -l openvpn easy-rsa 2>/dev/null | grep "^ii" || echo "пакеты вычищены"
-id cloak 2>/dev/null || echo "юзер cloak удалён"
+    || _ "units: чисто" "units: clean"
+ss -tln 2>/dev/null | grep -E ":$CK_PORT |:1194 " || _ "порты свободны" "ports are free"
+dpkg -l openvpn easy-rsa 2>/dev/null | grep "^ii" || _ "пакеты вычищены" "packages purged"
+id cloak 2>/dev/null || _ "юзер cloak удалён" "cloak user removed"
 echo "=== DONE purge ==="

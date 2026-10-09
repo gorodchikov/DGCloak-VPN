@@ -2,6 +2,8 @@
 # Read-only аудит сервера перед деплоем. Ничего не меняет.
 # Использование: bash detect.sh   (можно без sudo, но часть вывода будет пустой)
 set -uo pipefail
+# Локализация вывода: админка передаёт DG_LANG=ru|en
+_() { if [ "${DG_LANG:-ru}" = en ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
 
 echo "===OS==="
 . /etc/os-release 2>/dev/null
@@ -69,7 +71,7 @@ fi
 
 echo "===DOCKER==="
 if command -v docker >/dev/null 2>&1; then
-    docker ps -a --format '{{.Names}} {{.Ports}}' 2>/dev/null || echo "docker cli есть, демон недоступен"
+    docker ps -a --format '{{.Names}} {{.Ports}}' 2>/dev/null || _ "docker cli есть, демон недоступен" "docker cli present, daemon unavailable"
 else
     echo "no docker"
 fi

@@ -4,13 +4,16 @@
 # NAT — отдельной *nat-таблицей В КОНЦЕ /etc/ufw/before.rules (после COMMIT фильтра!).
 # Использование: sudo bash deploy-net-ufw.sh
 set -euo pipefail
+# Локализация вывода: админка передаёт DG_LANG=ru|en
+_() { if [ "${DG_LANG:-ru}" = en ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
 export DEBIAN_FRONTEND=noninteractive
 
 EXT_IF=$(ip route show default | awk '{print $5; exit}')
 F=/etc/ufw/before.rules
 echo "EXT_IF=$EXT_IF"
 
-[ -f "$F" ] || { echo "!! $F отсутствует — ufw не установлен?"; exit 1; }
+[ -f "$F" ] || { _ "!! $F отсутствует — ufw не установлен?" \
+                   "!! $F missing — is ufw installed?"; exit 1; }
 
 # ip_forward — в sysctl ufw (он перезаписывает /etc/sysctl.conf при reload)
 grep -q '^net/ipv4/ip_forward=1' /etc/ufw/sysctl.conf || \
@@ -36,7 +39,8 @@ EOF
 fi
 
 # Валидация файла БЕЗ применения — только потом reload
-iptables-restore --test < "$F" || { echo "!! before.rules syntax ERROR — не применяю"; exit 1; }
+iptables-restore --test < "$F" || { _ "!! before.rules syntax ERROR — не применяю" \
+    "!! before.rules syntax ERROR — not applying"; exit 1; }
 
 # Live-правило (идемпотентно, чтобы не ждать reload)
 iptables -t nat -C POSTROUTING -s 10.8.0.0/24 -o "$EXT_IF" -j MASQUERADE 2>/dev/null || \
@@ -48,17 +52,20 @@ ufw enable <<<"y" >/dev/null 2>&1 || ufw enable >/dev/null
 ufw reload
 
 # Контроль: цепочки реально загружены (иначе outbound мёртв)
-iptables -S ufw-before-input >/dev/null 2>&1 || { echo "!! ufw цепочки не загружены"; exit 1; }
+iptables -S ufw-before-input >/dev/null 2>&1 || { _ "!! ufw цепочки не загружены" \
+    "!! ufw chains not loaded"; exit 1; }
 
 # Контроль результата: masquerade НАШЕЙ подсети + forward-правила tun0.
 # Без них VPN подключается, но интернета нет (живой кейс: чужие
 # docker/amnezia masq-правила давали ложное «всё на месте»).
 iptables -t nat -S POSTROUTING | grep -q '10\.8\.0\.0/24 .*MASQUERADE' \
-    || { echo "!! masq для 10.8.0.0/24 не появился в POSTROUTING"; exit 1; }
+    || { _ "!! masq для 10.8.0.0/24 не появился в POSTROUTING" \
+            "!! no masq for 10.8.0.0/24 in POSTROUTING"; exit 1; }
 iptables -S | grep -q tun0 \
-    || { echo "!! нет forward-правил для tun0"; exit 1; }
+    || { _ "!! нет forward-правил для tun0" "!! no forward rules for tun0"; exit 1; }
 grep -q 'OPENVPN-NAT' "$F" \
-    || { echo "!! нет персиста masq в $F — после ребута сломается"; exit 1; }
+    || { _ "!! нет персиста masq в $F — после ребута сломается" \
+            "!! no masq persist in $F — will break after reboot"; exit 1; }
 
 echo '--- nat POSTROUTING ---'; iptables -t nat -S POSTROUTING | tail -3
 echo '--- ufw status ---'; ufw status | head -8

@@ -4,17 +4,21 @@
 # Если nftables на хосте чужой/пустой — создаём свою таблицу с NAT и forward.
 # Использование: sudo bash nat-enable.sh
 set -euo pipefail
+# Локализация вывода: админка передаёт DG_LANG=ru|en
+_() { if [ "${DG_LANG:-ru}" = en ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
 
 EXT_IF=$(ip route show default | awk '{print $5; exit}')
 echo "EXT_IF=$EXT_IF"
 
 if ! nft list table inet dgcloak >/dev/null 2>&1; then
-    echo "таблицы inet dgcloak нет — nftables чужой/пустой, создаём свою"
+    _ "таблицы inet dgcloak нет — nftables чужой/пустой, создаём свою" \
+      "no inet dgcloak table — nftables is foreign/empty, creating our own"
     nft add table inet dgcloak
     nft 'add chain inet dgcloak forward { type filter hook forward priority 0; policy accept; }'
     # если чужой ruleset дропает forward — наши accept-цепочки не спасут, предупреждаем
     nft list ruleset 2>/dev/null | grep -E 'hook forward' | grep 'policy drop' >/dev/null \
-        && echo "!! внимание: чужие правила с forward policy=drop могут блокировать VPN-трафик" || true
+        && _ "!! внимание: чужие правила с forward policy=drop могут блокировать VPN-трафик" \
+             "!! warning: foreign rules with forward policy=drop may block VPN traffic" || true
 fi
 
 # ip_forward
@@ -43,8 +47,9 @@ echo '--- forward ---'; nft list chain inet dgcloak forward
 
 # Контроль результата: masquerade именно 10.8.0.0/24 + forward tun0
 nft list chain inet dgcloak postrouting | grep -q '10\.8\.0\.0/24.*masquerade' \
-    || { echo "!! masq для 10.8.0.0/24 не появился"; exit 1; }
+    || { _ "!! masq для 10.8.0.0/24 не появился" \
+            "!! no masq for 10.8.0.0/24"; exit 1; }
 nft list chain inet dgcloak forward | grep -q 'iifname "tun0"' \
-    || { echo "!! нет forward-правил tun0"; exit 1; }
+    || { _ "!! нет forward-правил tun0" "!! no forward rules for tun0"; exit 1; }
 
 echo "=== OK nat-enable ==="

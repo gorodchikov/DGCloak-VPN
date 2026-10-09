@@ -6,6 +6,8 @@
 # отложенный откат (120с). Админка открывает НОВОЕ ssh-подключение и делает
 # canary-файл /tmp/dgcloak-fw-ok — если SSH жив, откат отменяется сам.
 set -euo pipefail
+# Локализация вывода: админка передаёт DG_LANG=ru|en
+_() { if [ "${DG_LANG:-ru}" = en ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
 export DEBIAN_FRONTEND=noninteractive
 
 SSH_PORTS=${1:?usage: deploy-net-iptables.sh <ssh_port,...> [cloak_port]}
@@ -19,7 +21,8 @@ sysctl -w net.ipv4.ip_forward=1 >/dev/null
 # iptables-persistent ставим явно (он снесёт ufw по Conflicts, если тот вдруг есть).
 # DPkg::Lock::Timeout: unattended-upgrades на свежем VPS может держать лок
 apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false update -qq \
-    || echo "!! apt update: часть репозиториев недоступна — ставим из имеющихся списков"
+    || _ "!! apt update: часть репозиториев недоступна — ставим из имеющихся списков" \
+         "!! apt update: some repositories unavailable — installing from existing lists"
 apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false install -y -qq iptables-persistent
 
 {
@@ -59,7 +62,8 @@ setsid bash -c 'sleep 120; if [ ! -f /tmp/dgcloak-fw-ok ]; then
     iptables-restore < /tmp/dgcloak-fw.bak
     netfilter-persistent save 2>/dev/null || true
 fi; rm -f /tmp/dgcloak-fw.bak /tmp/dgcloak-fw-ok' </dev/null >/dev/null 2>&1 &
-echo "rollback-таймер: 120с (ожидаю canary /tmp/dgcloak-fw-ok)"
+_ "rollback-таймер: 120с (ожидаю canary /tmp/dgcloak-fw-ok)" \
+  "rollback timer: 120s (waiting for canary /tmp/dgcloak-fw-ok)"
 
 iptables-restore < /etc/iptables/rules.v4
 netfilter-persistent save >/dev/null
@@ -70,8 +74,9 @@ echo '--- nat POSTROUTING ---'; iptables -t nat -S POSTROUTING | tail -3
 
 # Контроль результата: masquerade именно 10.8.0.0/24 + forward tun0
 iptables -t nat -S POSTROUTING | grep -q '10\.8\.0\.0/24 .*MASQUERADE' \
-    || { echo "!! masq для 10.8.0.0/24 не появился в POSTROUTING"; exit 1; }
+    || { _ "!! masq для 10.8.0.0/24 не появился в POSTROUTING" \
+            "!! no masq for 10.8.0.0/24 in POSTROUTING"; exit 1; }
 iptables -S FORWARD | grep -q tun0 \
-    || { echo "!! нет forward-правил для tun0"; exit 1; }
+    || { _ "!! нет forward-правил для tun0" "!! no forward rules for tun0"; exit 1; }
 
 echo "=== OK deploy-net-iptables ==="

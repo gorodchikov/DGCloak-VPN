@@ -3,6 +3,8 @@
 # Использование: sudo bash user-cert.sh <username>
 # Имя: только [a-zA-Z0-9_-] (идёт в CN и в пути файлов).
 set -euo pipefail
+# Локализация вывода: админка передаёт DG_LANG=ru|en
+_() { if [ "${DG_LANG:-ru}" = en ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
 USER_NAME=${1:?usage: user-cert.sh <name>}
 [[ "$USER_NAME" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "!! bad name: [a-zA-Z0-9_-] only"; exit 2; }
 
@@ -11,7 +13,8 @@ CADIR=""
 for d in /root/openvpn-ca /home/*/openvpn-ca; do
     if [ -d "$d/pki" ]; then CADIR="$d"; break; fi
 done
-[ -n "$CADIR" ] || { echo "!! openvpn-ca не найден (ни /root, ни /home/*/openvpn-ca)"; exit 1; }
+[ -n "$CADIR" ] || { _ "!! openvpn-ca не найден (ни /root, ни /home/*/openvpn-ca)" \
+    "!! openvpn-ca not found (neither /root nor /home/*/openvpn-ca)"; exit 1; }
 cd "$CADIR"
 # залипший lock от убитого easyrsa (обрыв SSH/таймаут): PID мёртв — снимаем
 if [ -f pki/lock.file ]; then
@@ -22,9 +25,9 @@ if [ ! -f "pki/issued/${USER_NAME}.crt" ]; then
     # --batch: без интерактива (printf-stdin ломался на SIGPIPE/pipefail)
     ./easyrsa --batch gen-req "$USER_NAME" nopass
     ./easyrsa --batch sign-req client "$USER_NAME"
-    echo "cert: создан $USER_NAME"
+    _ "cert: создан $USER_NAME" "cert: created $USER_NAME"
 else
-    echo "cert: уже существует $USER_NAME"
+    _ "cert: уже существует $USER_NAME" "cert: already exists $USER_NAME"
 fi
 
 echo "===CA===";    cat pki/ca.crt

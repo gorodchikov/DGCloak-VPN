@@ -2,6 +2,8 @@
 # Этап 3: ck-server (docs/server-setup.md, п.3).
 # Использование: sudo bash deploy-cloak.sh <mask_domain> [proto] [ck_ver] [port]
 set -euo pipefail
+# Локализация вывода: админка передаёт DG_LANG=ru|en
+_() { if [ "${DG_LANG:-ru}" = en ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
 
 MASK_DOMAIN=${1:?usage: deploy-cloak.sh <mask_domain> [proto] [ck_ver] [port]}
 OVPN_PROTO=${2:-udp}          # udp|tcp — совпадает с proto в server.conf и "UDP" у клиента
@@ -14,7 +16,8 @@ case "$(uname -m)" in
     aarch64|arm64)  CK_ARCH=arm64 ;;
     armv7l|armv6l)  CK_ARCH=arm ;;
     i386|i686)      CK_ARCH=386 ;;
-    *) echo "!! неизвестная архитектура: $(uname -m)"; exit 1 ;;
+    *) _ "!! неизвестная архитектура: $(uname -m)" \
+          "!! unknown architecture: $(uname -m)"; exit 1 ;;
 esac
 
 if ! command -v ck-server >/dev/null; then
@@ -90,8 +93,9 @@ systemctl restart ck-server
 sleep 2
 systemctl is-active ck-server
 if ! ss -tlpn | grep ":$CK_PORT " >/dev/null; then
-    echo "!! ck-server не слушает :$CK_PORT"
-    ss -tlnp | grep ":$CK_PORT " && echo "!! порт $CK_PORT занят другим сервисом (см. выше)"
+    _ "!! ck-server не слушает :$CK_PORT" "!! ck-server is not listening on :$CK_PORT"
+    ss -tlnp | grep ":$CK_PORT " && _ "!! порт $CK_PORT занят другим сервисом (см. выше)" \
+        "!! port $CK_PORT is held by another service (see above)"
     exit 1
 fi
 echo "===PUB==="; cat /etc/ck-server/publickey.txt

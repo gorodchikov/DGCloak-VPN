@@ -3,6 +3,8 @@
 #   sudo bash pkgs.sh check    — отчёт: что стоит, версии, последний релиз Cloak
 #   sudo bash pkgs.sh install  — поставить/обновить недостающее (apt)
 set -uo pipefail
+# Локализация вывода: админка передаёт DG_LANG=ru|en
+_() { if [ "${DG_LANG:-ru}" = en ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
 export DEBIAN_FRONTEND=noninteractive
 ACTION=${1:-check}
 APT="-o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false"
@@ -36,7 +38,8 @@ if [ "$ACTION" = check ]; then
     echo "===DONE==="
 elif [ "$ACTION" = install ]; then
     apt-get $APT update -qq \
-        || echo "!! apt update: часть репозиториев недоступна — ставим из имеющихся списков"
+        || _ "!! apt update: часть репозиториев недоступна — ставим из имеющихся списков" \
+             "!! apt update: some repositories unavailable — installing from existing lists"
     apt-get $APT install -y -qq $NEED_PKGS
     echo "=== OK pkgs install ==="
 else

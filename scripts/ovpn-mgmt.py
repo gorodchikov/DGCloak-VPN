@@ -4,12 +4,18 @@
 #   kill <CN>   — разорвать живую сессию юзера немедленно
 #   status      — содержимое management status (клиенты, байты)
 #   clients     — только список подключённых CN (удобно парсить)
+import os
 import socket
 import sys
 import time
 
 MGMT = ("127.0.0.1", 7505)
 PASS_FILE = "/etc/openvpn/server/mgmt.pass"
+_EN = os.environ.get("DG_LANG") == "en"
+
+
+def _(ru, en):
+    return en if _EN else ru
 
 
 def talk(cmds, wait=0.6):
@@ -41,14 +47,14 @@ def main():
         try:
             print(talk(["kill %s" % cn]))
         except (ConnectionRefusedError, socket.timeout, OSError) as e:
-            print("mgmt недоступен: %s" % e)
+            print(_("mgmt недоступен: %s", "mgmt unavailable: %s") % e)
     elif cmd == "status":
         print(talk(["status", "exit"]))
     elif cmd == "clients":
         try:
             txt = talk(["status", "exit"])
         except (ConnectionRefusedError, socket.timeout, OSError) as e:
-            print("mgmt недоступен: %s" % e)
+            print(_("mgmt недоступен: %s", "mgmt unavailable: %s") % e)
             sys.exit(0)
         for line in txt.splitlines():
             # CLIENT_LIST,cn,real-addr,virt-addr,...

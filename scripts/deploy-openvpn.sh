@@ -4,6 +4,8 @@
 # к эталону и перезапускает сервис.
 # Использование: sudo bash deploy-openvpn.sh [proto]   (proto = udp|tcp, дефолт udp)
 set -euo pipefail
+# Локализация вывода: админка передаёт DG_LANG=ru|en
+_() { if [ "${DG_LANG:-ru}" = en ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
 export DEBIAN_FRONTEND=noninteractive
 
 OVPN_PROTO=${1:-udp}
@@ -16,7 +18,8 @@ fi
 # не должен валить деплой — списки остальных репов обновились, install покажет
 # реальную ошибку, если пакетов нет
 apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false update -qq \
-    || echo "!! apt update: часть репозиториев недоступна — ставим из имеющихся списков"
+    || _ "!! apt update: часть репозиториев недоступна — ставим из имеющихся списков" \
+         "!! apt update: some repositories unavailable — installing from existing lists"
 apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false install -y -qq openvpn easy-rsa
 
 CADIR=/root/openvpn-ca
@@ -48,9 +51,9 @@ if [ ! -f pki/issued/server.crt ] || [ ! -f pki/private/server.key ]; then
     ./easyrsa --batch gen-dh
     ./easyrsa --batch gen-crl
     gen_ta ta.key
-    echo "PKI: создана"
+    _ "PKI: создана" "PKI: created"
 else
-    echo "PKI: уже есть, пропускаю генерацию"
+    _ "PKI: уже есть, пропускаю генерацию" "PKI: already exists, skipping generation"
 fi
 # материалы в /etc/openvpn/server — всегда (идемпотентно, даже после обрыва)
 [ -f ta.key ] || gen_ta ta.key

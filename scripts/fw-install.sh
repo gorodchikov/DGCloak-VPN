@@ -5,13 +5,16 @@
 # отменяется canary-файлом /tmp/dgcloak-fw-ok (трогает админка новым ssh-коннектом).
 # Использование: sudo bash fw-install.sh <ssh_ports_csv> <cloak_port>
 set -euo pipefail
+# Локализация вывода: админка передаёт DG_LANG=ru|en
+_() { if [ "${DG_LANG:-ru}" = en ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
 export DEBIAN_FRONTEND=noninteractive
 
 SSH_PORTS=${1:?usage: fw-install.sh <ssh_port,...> <cloak_port>}
 CLOAK_PORT=${2:-443}
 
 apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false update -qq \
-    || echo "!! apt update: часть репозиториев недоступна — ставим из имеющихся списков"
+    || _ "!! apt update: часть репозиториев недоступна — ставим из имеющихся списков" \
+         "!! apt update: some repositories unavailable — installing from existing lists"
 apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Check-Valid-Until=false install -y -qq nftables
 
 # --- новый ruleset ---
@@ -50,7 +53,7 @@ setsid bash -c 'sleep 120; if [ ! -f /tmp/dgcloak-fw-ok ]; then
     nft -f /tmp/dgcloak-fw.bak 2>/dev/null || true
     : > /etc/nftables.conf
 fi; rm -f /tmp/dgcloak-fw.bak /tmp/dgcloak-fw-ok' </dev/null >/dev/null 2>&1 &
-echo "rollback-таймер: 120с (ожидаю canary)"
+_ "rollback-таймер: 120с (ожидаю canary)" "rollback timer: 120s (waiting for canary)"
 
 systemctl enable --now nftables >/dev/null 2>&1 || true
 nft -f /etc/nftables.conf

@@ -4,35 +4,40 @@
 # если после чистки Amnezia в docker больше ничего не осталось.
 # Идемпотентно. НЕ трогает: ufw, OpenVPN, ck-server, cron.
 set -uo pipefail
+# Локализация вывода: админка передаёт DG_LANG=ru|en
+_() { if [ "${DG_LANG:-ru}" = en ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
 export DEBIAN_FRONTEND=noninteractive
 
 if ! command -v docker >/dev/null 2>&1; then
-    echo "docker нет — нечего чистить"; echo DONE; exit 0
+    _ "docker нет — нечего чистить" "no docker — nothing to clean"; echo DONE; exit 0
 fi
 
-echo '=== 1. контейнеры/образы Amnezia ==='
+_ '=== 1. контейнеры/образы Amnezia ===' '=== 1. Amnezia containers/images ==='
 # имена контейнеров Amnezia: amnezia-openvpn, amnezia-awg, amnezia-ipsec,
 # amnezia-shadowsocks, amnezia-cloak, amnezia-xray, amnezia-website, ...
 AMC=$(docker ps -aq --filter 'name=amnezia' 2>/dev/null || true)
 if [ -n "$AMC" ]; then
     docker rm -f $AMC 2>/dev/null || true
-    echo "удалены контейнеры: $(echo $AMC | wc -w)"
+    _ "удалены контейнеры: $(echo $AMC | wc -w)" \
+      "containers removed: $(echo $AMC | wc -w)"
 else
-    echo "amnezia-контейнеров нет"
+    _ "amnezia-контейнеров нет" "no amnezia containers"
 fi
 AMI=$(docker images --format '{{.ID}} {{.Repository}}' 2>/dev/null \
       | grep -i amnezia | awk '{print $1}' || true)
 if [ -n "$AMI" ]; then
     docker rmi -f $AMI 2>/dev/null || true
-    echo "удалены образы: $(echo $AMI | wc -w)"
+    _ "удалены образы: $(echo $AMI | wc -w)" \
+      "images removed: $(echo $AMI | wc -w)"
 else
-    echo "amnezia-образов нет"
+    _ "amnezia-образов нет" "no amnezia images"
 fi
 
-echo '=== 2. данные Amnezia ==='
+_ '=== 2. данные Amnezia ===' '=== 2. Amnezia data ==='
 rm -rf /opt/amnezia /root/amnezia* /etc/amnezia 2>/dev/null || true
 
-echo '=== 3. docker целиком — только если в нём больше ничего нет ==='
+_ '=== 3. docker целиком — только если в нём больше ничего нет ===' \
+  '=== 3. docker entirely — only if nothing else is left ==='
 LEFT_C=$(docker ps -aq 2>/dev/null | wc -l)
 LEFT_I=$(docker images -q 2>/dev/null | wc -l)
 if [ "$LEFT_C" = "0" ] && [ "$LEFT_I" = "0" ]; then
@@ -67,10 +72,12 @@ if [ "$LEFT_C" = "0" ] && [ "$LEFT_I" = "0" ]; then
     groupdel docker 2>/dev/null || true
     rm -f /usr/local/bin/docker-compose /usr/local/libexec/docker/cli-plugins/* 2>/dev/null || true
     ldconfig 2>/dev/null || true
-    echo "docker полностью снесён (был пустой)"
+    _ "docker полностью снесён (был пустой)" "docker fully removed (was empty)"
 else
-    echo "!! docker оставлен: чужих контейнеров=$LEFT_C образов=$LEFT_I"
-    echo "!! если 443 занят чужим контейнером — освободи вручную"
+    _ "!! docker оставлен: чужих контейнеров=$LEFT_C образов=$LEFT_I" \
+      "!! docker kept: foreign containers=$LEFT_C images=$LEFT_I"
+    _ "!! если 443 занят чужим контейнером — освободи вручную" \
+      "!! if 443 is held by a foreign container — free it manually"
 fi
 
 echo '=== verify ==='

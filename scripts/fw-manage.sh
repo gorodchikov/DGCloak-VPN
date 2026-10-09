@@ -6,6 +6,8 @@
 #   sudo bash fw-manage.sh allow tcp 8080
 #   sudo bash fw-manage.sh deny  tcp 8080
 set -euo pipefail
+# Локализация вывода: админка передаёт DG_LANG=ru|en
+_() { if [ "${DG_LANG:-ru}" = en ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
 
 ACTION=${1:?usage: fw-manage.sh list|allow|deny [proto port]}
 PROTO=${2:-tcp}
@@ -45,7 +47,8 @@ list)
         nftables) nft list ruleset ;;
         iptables-persistent) iptables -S INPUT ;;
         iptables-custom) iptables -S INPUT ;;
-        none) echo "фаервола нет — все входящие открыты" ;;
+        none) _ "фаервола нет — все входящие открыты" \
+                "no firewall — all inbound open" ;;
     esac
     ;;
 ports)
@@ -88,11 +91,12 @@ ports)
                         ;;
                 esac
             done ;;
-        none) echo "фаервола нет — снаружи открыто всё" ;;
+        none) _ "фаервола нет — снаружи открыто всё" \
+                "no firewall — everything is open from outside" ;;
     esac
     ;;
 allow|deny)
-    [ -n "$PORT" ] || { echo "!! нужен порт"; exit 2; }
+    [ -n "$PORT" ] || { _ "!! нужен порт" "!! port required"; exit 2; }
     case "$FW" in
         ufw)
             [ "$ACTION" = allow ] && ufw allow "$PORT/$PROTO" || ufw delete allow "$PORT/$PROTO" ;;
@@ -117,11 +121,12 @@ allow|deny)
                           | grep -oP 'handle \K\d+' | head -1) && [ -n "$H" ]; do
                     nft delete rule inet dgcloak input handle "$H"; n=$((n+1))
                 done
-                [ "$n" -gt 0 ] || echo "правило не найдено"
+                [ "$n" -gt 0 ] || _ "правило не найдено" "rule not found"
             fi
             nft list ruleset > /etc/nftables.conf ;;
         nftables)
-            echo "!! чужой ruleset nftables — правьте вручную на сервере"; exit 1 ;;
+            _ "!! чужой ruleset nftables — правьте вручную на сервере" \
+              "!! foreign nftables ruleset — edit manually on the server"; exit 1 ;;
         iptables-persistent|iptables-custom)
             if [ "$ACTION" = allow ]; then
                 iptables -C INPUT -p "$PROTO" --dport "$PORT" \
@@ -136,9 +141,11 @@ allow|deny)
             fi
             netfilter-persistent save >/dev/null 2>&1 \
               || iptables-save > /etc/iptables/rules.v4 2>/dev/null \
-              || echo "!! правило живёт до перезагрузки (на диск не сохранено)" ;;
+              || _ "!! правило живёт до перезагрузки (на диск не сохранено)" \
+                   "!! rule lives until reboot (not saved to disk)" ;;
         none)
-            echo "!! фаервол не установлен — сначала шаг «Фаервол»"; exit 1 ;;
+            _ "!! фаервол не установлен — сначала шаг «Фаервол»" \
+              "!! no firewall installed — run the 'Firewall' step first"; exit 1 ;;
     esac
     echo "ok: $ACTION $PROTO/$PORT"
     ;;

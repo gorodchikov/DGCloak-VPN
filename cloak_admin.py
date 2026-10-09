@@ -157,7 +157,7 @@ def cleanup_stale_procs(log=print):
             _kill_pid(pid)
             killed.append("%s (PID %s)" % (name, pid))
     if killed:
-        log("Завершил процессы от прошлого запуска: " + ", ".join(killed))
+        log(T("Завершил процессы от прошлого запуска: ") + ", ".join(killed))
     with _child_lock:
         if not _child_procs:
             _save_child_pids()   # файл устарел — обнуляем
@@ -674,6 +674,8 @@ STRINGS_EN = {
     "ck-server не активен, tcp/%s занят %s:%s":
         "ck-server is not active, tcp/%s held by %s:%s",
     "Язык интерфейса: %s": "Interface language: %s",
+    "Завершил процессы от прошлого запуска: ":
+        "Terminated leftover processes from previous run: ",
     "Имя": "Name",
     "SSH": "SSH",
     "Cloak": "Cloak",
@@ -1378,9 +1380,10 @@ class SSH:
             raise SSHErr(self.t("Нет скрипта: %s") % local)
         remote = "/tmp/dgadm-%s" % filename
         self.upload(local, remote)
-        # CRLF-страховка: скрипты редактируются на Windows
-        return self.run("sed -i 's/\\r$//' %s && %sbash %s %s"
-                        % (remote, self.sudo, remote, args),
+        # CRLF-страховка: скрипты редактируются на Windows.
+        # DG_LANG — язык вывода скрипта (env через sudo, env_keep не нужен).
+        return self.run("sed -i 's/\\r$//' %s && %senv DG_LANG=%s bash %s %s"
+                        % (remote, self.sudo, _LANG, remote, args),
                         timeout=timeout)
 
     def run_script_stream(self, filename, args, on_line, timeout=900):
@@ -1388,8 +1391,8 @@ class SSH:
         remote = "/tmp/dgadm-%s" % filename
         self.upload(local, remote)
         return self.run_stream(
-            "sed -i 's/\\r$//' %s && %sbash %s %s"
-            % (remote, self.sudo, remote, args),
+            "sed -i 's/\\r$//' %s && %senv DG_LANG=%s bash %s %s"
+            % (remote, self.sudo, _LANG, remote, args),
             on_line, timeout=timeout)
 
 
@@ -3812,16 +3815,16 @@ class App(tk.Tk):
             ssh.upload(os.path.join(SCRIPTS_DIR, "ovpn-mgmt.py"),
                        "/tmp/ovpn-mgmt.py")
             try:
-                out = ssh.run("%spython3 /tmp/ovpn-mgmt.py clients" % ssh.sudo,
-                              timeout=20)
+                out = ssh.run("%senv DG_LANG=%s python3 /tmp/ovpn-mgmt.py clients"
+                              % (ssh.sudo, _LANG), timeout=20)
                 online = {l.strip() for l in out.splitlines() if l.strip()}
             except Exception as e:
                 self.say(self.t("  mgmt не отвечает (%s) — включаю enable-mgmt…")
                          % str(e).splitlines()[-1][:120])
                 try:
                     ssh.run_script("enable-mgmt.sh", timeout=60)
-                    out = ssh.run("%spython3 /tmp/ovpn-mgmt.py clients"
-                                  % ssh.sudo, timeout=20)
+                    out = ssh.run("%senv DG_LANG=%s python3 /tmp/ovpn-mgmt.py clients"
+                                  % (ssh.sudo, _LANG), timeout=20)
                     online = {l.strip() for l in out.splitlines() if l.strip()}
                     self.say(self.t("  mgmt включён"))
                 except Exception as e2:
@@ -4073,8 +4076,8 @@ class App(tk.Tk):
             try:
                 ssh.upload(os.path.join(SCRIPTS_DIR, "ovpn-mgmt.py"),
                            "/tmp/ovpn-mgmt.py")
-                out = ssh.run("%spython3 /tmp/ovpn-mgmt.py kill %s"
-                              % (ssh.sudo, cn), timeout=20)
+                out = ssh.run("%senv DG_LANG=%s python3 /tmp/ovpn-mgmt.py kill %s"
+                              % (ssh.sudo, _LANG, cn), timeout=20)
                 # не просто SUCCESS — его mgmt шлёт и на пароль
                 if "SUCCESS: common name" in out:
                     self.say(self.t("  сессия сброшена"))
@@ -4115,13 +4118,13 @@ class App(tk.Tk):
             ssh = SSH(s, self.say)
             ssh.upload(os.path.join(SCRIPTS_DIR, "ovpn-mgmt.py"),
                        "/tmp/ovpn-mgmt.py")
-            online = ssh.run("%spython3 /tmp/ovpn-mgmt.py clients"
-                             % ssh.sudo, timeout=20)
+            online = ssh.run("%senv DG_LANG=%s python3 /tmp/ovpn-mgmt.py clients"
+                             % (ssh.sudo, _LANG), timeout=20)
             if cn not in {l.strip() for l in online.splitlines()}:
                 self.say(self.t("«%s» не онлайн — сбрасывать нечего") % cn)
                 return
-            out = ssh.run("%spython3 /tmp/ovpn-mgmt.py kill %s"
-                          % (ssh.sudo, cn), timeout=20)
+            out = ssh.run("%senv DG_LANG=%s python3 /tmp/ovpn-mgmt.py kill %s"
+                          % (ssh.sudo, _LANG, cn), timeout=20)
             if "SUCCESS: common name" in out:
                 self.say(self.t("Сессия «%s» сброшена") % cn)
             else:
