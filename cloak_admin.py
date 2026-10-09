@@ -3108,7 +3108,7 @@ class App(tk.Tk):
 
     def _run_step(self, s, key):
         title = dict(self.STEPS)[key]
-        self.say(self.t("=== Шаг: %s ===") % title)
+        self.say(self.t("=== Шаг: %s ===") % self.t(title))
         st = s.setdefault("steps", {})
         self.ui(self._spin_start, key, s["name"])
         try:
