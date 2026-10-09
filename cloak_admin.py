@@ -271,8 +271,32 @@ STRINGS_EN = {
         "UID %s…\nnot in the admin registry — CN unknown, we can't touch\nthe certificate or live session.\n\nDelete UID from Cloak? (new connections will be blocked)",
     "Порт %s/%s помечен «%s».\nЗакрытие может отрезать доступ к серверу или VPN.\n\nВсё равно закрыть?":
         "Port %s/%s is marked \"%s\".\nClosing it may cut off access to the server or VPN.\n\nClose anyway?",
-    "Порт %s занят (Amnezia/docker).\nСнести Amnezia? Чужие контейнеры не трогаем.":
-        "Port %s is busy (Amnezia/docker).\nRemove Amnezia? Foreign containers are untouched.",
+    "На «%s» остановленные Amnezia-контейнеры с автозапуском (%s):\nпосле перезагрузки сервера они воскреснут и могут занять порт %s.\n\nОтключить их автозапуск? (контейнеры не удаляются)":
+        "\"%s\" has stopped Amnezia containers with autostart (%s):\nafter a reboot they'll come back and may grab port %s.\n\nDisable their autostart? (containers are not removed)",
+    "  автозапуск amnezia-контейнеров отключён: %s":
+        "  autostart disabled for amnezia containers: %s",
+    "  порт %s держит «%s» — это SSH, гасить нельзя, выбираем другой порт":
+        "  port %s is held by \"%s\" — that's SSH, can't quench; pick another port",
+    "Порт %s занят контейнером «%s».\nЗагасить его? (остановка + отключение автозапуска,\nконтейнер НЕ удаляется)":
+        "Port %s is held by container \"%s\".\nQuench it? (stop + autostart off,\ncontainer is NOT removed)",
+    "  гашу контейнер «%s»…": "  quenching container \"%s\"…",
+    "  контейнер «%s» загашен (stop + restart=no)":
+        "  container \"%s\" quenched (stop + restart=no)",
+    "Порт %s занят сервисом «%s».\nЗагасить его? (systemctl stop + отключение автозапуска)":
+        "Port %s is held by service \"%s\".\nQuench it? (systemctl stop + autostart off)",
+    "  гашу сервис «%s»…": "  quenching service \"%s\"…",
+    "  сервис «%s» загашен (disable --now)":
+        "  service \"%s\" quenched (disable --now)",
+    "  порт %s держит процесс «%s» — автоматически не освободить":
+        "  port %s is held by process \"%s\" — can't free it automatically",
+    "Порт %s занят (%s), Cloak на него не встанет.\nУкажи другой порт:":
+        "Port %s is busy (%s), Cloak can't use it.\nEnter another port:",
+    "%s занят (%s)": "%s busy (%s)",
+    "не удалось подобрать свободный порт":
+        "couldn't find a free port",
+    "  фаервол: открыт tcp/%s": "  firewall: tcp/%s opened",
+    "  !! не смог открыть tcp/%s в фаерволе: %s":
+        "  !! couldn't open tcp/%s in firewall: %s",
     "Полное обновление системы на «%s» (apt update + full-upgrade + autoremove)?\n\nНа свежеустановленной системе это может занять\n10–30 минут — прогресс виден в логе.\nЕсли обновление потребует перезагрузку,\nприложение предложит её в конце.":
         "Full system update on \"%s\" (apt update + full-upgrade + autoremove)?\n\nOn a fresh install this may take\n10–30 minutes — progress is shown in the log.\nIf the update requires a reboot,\nthe app will offer it at the end.",
     "Обновление системы на «%s» требует перезагрузки.\nПерезагрузить сервер сейчас?\n\n(поднимется через ~1 минуту; завершённые шаги деплоя повторять не нужно)":
@@ -2422,6 +2446,22 @@ class App(tk.Tk):
         ev.wait()
         return bool(box and box[0])
 
+    def ask_port(self, title, text, default=443):
+        """Ввод номера порта из рабочего потока; None — отмена."""
+        ev = threading.Event()
+        box = []
+
+        def q():
+            try:
+                box.append(simpledialog.askinteger(
+                    title, text, initialvalue=default,
+                    minvalue=1, maxvalue=65535))
+            finally:
+                ev.set()
+        self.ui(q)
+        ev.wait()
+        return box[0] if box else None
+
     def _fill_steps(self):
         s = self._sel_srv_silent()
         st = (s or {}).get("steps", {})
@@ -3004,24 +3044,103 @@ class App(tk.Tk):
                             % (fw, ck, str(e)[:80]))
         return "ok", self.t("NAT через %s, Cloak tcp/%s открыт") % (fw, ck)
 
+    def _port_owner(self, ssh, ck):
+        """port-owner.sh → (owner|None, [stopped-amnezia-автозапуск…])."""
+        owner, autostart = None, []
+        for ln in ssh.run_script("port-owner.sh", ck, timeout=30).splitlines():
+            ln = ln.strip()
+            if ln.startswith("OWNER="):
+                owner = ln[6:]
+            elif ln.startswith("AUTOSTART="):
+                autostart = [x for x in ln[10:].split(",") if x]
+        return owner, autostart
+
     def _step_cloak(self, ssh, s):
         mask = self.v_mask.get().strip() or "www.bing.com"
         proto = self.v_proto.get()
         ck = str(s.get("ck_port") or self.v_ckport.get().strip() or "443")
-        # sudo: без него ss -p прячет имена чужих процессов → ложный "занят"
-        busy = ssh.run("%sss -tlnp | grep ':%s ' || echo free"
-                       % (ssh.sudo, ck), timeout=20)
-        if "free" not in busy and "ck-server" not in busy:
-            if s.get("has_docker") or "docker" in busy.lower():
-                if not self.ask(APP_NAME,
-                                self.t("Порт %s занят (Amnezia/docker).\n"
-                                "Снести Amnezia? Чужие контейнеры не трогаем.")
-                                % ck):
-                    return "fail", self.t("%s занят, чистка отменена") % ck
-                ssh.run_script("purge-amnezia.sh", timeout=600)
-            else:
-                return "fail", self.t("%s занят чужим сервисом: %s") % (
-                    ck, busy.strip()[:100])
+
+        # --- префлайт: свободен ли порт, кто держит, что с этим делать ---
+        for _try in range(5):
+            owner, autostart = self._port_owner(ssh, ck)
+            if owner is None or owner == "proc:ck-server":
+                # свободен / наш же — но есть ли stopped amnezia с
+                # автозапуском, которая воскреснет и отнимет порт?
+                if autostart and self.ask(APP_NAME, self.t(
+                        "На «%s» остановленные Amnezia-контейнеры с "
+                        "автозапуском (%s):\nпосле перезагрузки сервера "
+                        "они воскреснут и могут занять порт %s.\n\n"
+                        "Отключить их автозапуск? (контейнеры не удаляются)")
+                        % (s["name"], ", ".join(autostart), ck)):
+                    ssh.run("%sdocker update --restart=no %s"
+                            % (ssh.sudo, " ".join(autostart)), timeout=60)
+                    self.say(self.t("  автозапуск amnezia-контейнеров "
+                             "отключён: %s") % ", ".join(autostart))
+                break
+
+            typ, _, who = owner.partition(":")
+            freed = False
+            # SSH-сервис/процесс гасить нельзя — убьём собственную сессию
+            if "ssh" in who.lower():
+                self.say(self.t("  порт %s держит «%s» — это SSH, гасить "
+                         "нельзя, выбираем другой порт") % (ck, who))
+            elif typ == "docker":
+                if self.ask(APP_NAME, self.t(
+                        "Порт %s занят контейнером «%s».\n"
+                        "Загасить его? (остановка + отключение автозапуска,\n"
+                        "контейнер НЕ удаляется)") % (ck, who)):
+                    self.say(self.t("  гашу контейнер «%s»…") % who)
+                    ssh.run("%sdocker stop %s && "
+                            "%sdocker update --restart=no %s"
+                            % (ssh.sudo, who, ssh.sudo, who), timeout=120)
+                    self.say(self.t("  контейнер «%s» загашен "
+                             "(stop + restart=no)") % who)
+                    # заодно у остальных amnezia-* снять автозапуск
+                    if who.startswith("amnezia"):
+                        ssh.run("%sbash -c 'for c in $(docker ps -aq "
+                                "--filter name=amnezia); do "
+                                "docker update --restart=no $c; done'"
+                                % ssh.sudo, timeout=120)
+                    time.sleep(1)
+                    freed = self._port_owner(ssh, ck)[0] is None
+            elif typ == "svc":
+                if self.ask(APP_NAME, self.t(
+                        "Порт %s занят сервисом «%s».\n"
+                        "Загасить его? (systemctl stop + отключение "
+                        "автозапуска)") % (ck, who)):
+                    self.say(self.t("  гашу сервис «%s»…") % who)
+                    ssh.run("%ssystemctl disable --now %s"
+                            % (ssh.sudo, who), timeout=60)
+                    self.say(self.t("  сервис «%s» загашен "
+                             "(disable --now)") % who)
+                    time.sleep(1)
+                    freed = self._port_owner(ssh, ck)[0] is None
+            else:  # proc — безопасной автоматической остановки нет
+                self.say(self.t("  порт %s держит процесс «%s» — "
+                         "автоматически не освободить") % (ck, who))
+            if freed:
+                continue  # перепроверим (плюс AUTOSTART-ветка)
+            # не освободили / отказались → другой порт
+            alt = self.ask_port(APP_NAME, self.t(
+                "Порт %s занят (%s), Cloak на него не встанет.\n"
+                "Укажи другой порт:") % (ck, owner), 443)
+            if not alt:
+                return "fail", self.t("%s занят (%s)") % (ck, owner)
+            ck = str(alt)
+        else:
+            return "fail", self.t("не удалось подобрать свободный порт")
+
+        # шаг 8 (NAT/fw) открывал порт из s["ck_port"] — если тут выбрали
+        # другой, открываем его (allow идемпотентен)
+        if ck != str(s.get("ck_port") or ""):
+            try:
+                ssh.run_script("fw-manage.sh", "allow tcp %s" % ck,
+                               timeout=60)
+                self.say(self.t("  фаервол: открыт tcp/%s") % ck)
+            except Exception as e:
+                self.say(self.t("  !! не смог открыть tcp/%s в фаерволе: %s")
+                         % (ck, str(e)[:80]))
+
         out = ssh.run_script("deploy-cloak.sh",
                              "%s %s %s %s" % (mask, proto, CK_VERSION, ck),
                              timeout=300)
