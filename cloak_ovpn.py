@@ -258,7 +258,9 @@ STRINGS_EN = {
     "ВНУТРЕННЯЯ ОШИБКА:\n{tb}": "INTERNAL ERROR:\n{tb}",
     "не удалось создать папку {d}: {e}": "cannot create folder {d}: {e}",
     "{k}: {e}": "{k}: {e}",
-    "Подключено: {name} · {ip} · {up}{extra}": "Connected: {name} · {ip} · {up}{extra}",
+    "Подключено: {name}\nVPN IP: {ip}\n"
+    "Время подключения: {up}\nСкорость: {rate}{warn}":
+        "Connected: {name}\nVPN IP: {ip}\nUptime: {up}\nSpeed: {rate}{warn}",
     "НЕТ ОБХОДА — риск петли": "NO BYPASS — loop risk",
     "Соединение оборвалось — переподключение ({n}/3)…":
         "Connection dropped — reconnecting ({n}/3)…",
@@ -1017,6 +1019,8 @@ class App(tk.Tk):
         self.up_since = None
         self.bypass_missing = False
         self.traffic = None
+        self._stats_prev = None
+        self._rate = None
         self.tray = None
         self.cur_name = ""
         self._icons = {}
@@ -1375,7 +1379,7 @@ class App(tk.Tk):
             return
         try:
             self.tray.icon = self._icons.get(color, self._icons["gray"])
-            self.tray.title = f"{APP_NAME}: {text}"[:120]
+            self.tray.title = (APP_NAME + ":\n" + text)[:127]  # tooltip — тоже столбиком
             self.tray.update_menu()
             # уведомление — только при смене цвета (иначе аптайм спамит каждые 2 с)
             if color != self._last_tray_color and color in ("green", "red") \
@@ -1758,7 +1762,14 @@ class App(tk.Tk):
                 elif "bytesin=" in line:
                     m = re.search(r"bytesin=(\d+),bytesout=(\d+)", line)
                     if m:
-                        self.traffic = (int(m.group(1)), int(m.group(2)))
+                        now, i, o = time.time(), int(m.group(1)), int(m.group(2))
+                        if self._stats_prev:
+                            dt = now - self._stats_prev[0]
+                            if dt > 0:  # байт/с: in = ↓, out = ↑
+                                self._rate = ((i - self._stats_prev[1]) / dt,
+                                              (o - self._stats_prev[2]) / dt)
+                        self._stats_prev = (now, i, o)
+                        self.traffic = (i, o)
                 elif line.startswith(">FATAL:"):
                     self.say("OpenVPN: {line}", line=line)
                 elif line:
@@ -1781,20 +1792,23 @@ class App(tk.Tk):
         threading.Thread(target=self._monitor, args=(stop,), daemon=True).start()
 
     def _conn_status(self):
-        """Статус живого соединения: имя · внешний IP · аптайм · трафик · «нет обхода»."""
+        """Статус живого соединения: имя / VPN IP / аптайм / скорость / «нет обхода»."""
         p = self.active
         if not p:
             return
-        up = time.strftime("%H:%M:%S", time.gmtime(max(0, time.time() - (self.up_since or time.time()))))
-        extra = ""
-        if self.traffic:
-            extra = " · ↑{0} ↓{1}".format(_fmt_bytes(self.traffic[0]), _fmt_bytes(self.traffic[1]))
+        up = time.strftime("%H:%M:%S",
+                           time.gmtime(max(0, time.time() - (self.up_since or time.time()))))
+        rate = ("↑{}/s ↓{}/s".format(_fmt_bytes(self._rate[1]), _fmt_bytes(self._rate[0]))
+                if self._rate else "—")
+        warn = ""
         color = "green"
         if self.bypass_missing:
             color = "orange"
-            extra += " · " + self.t("НЕТ ОБХОДА — риск петли")
-        self.set_status("Подключено: {name} · {ip} · {up}{extra}", color,
-                        name=p["name"], ip=self.ext_ip or "?", up=up, extra=extra)
+            warn = "\n" + self.t("НЕТ ОБХОДА — риск петли")
+        self.set_status("Подключено: {name}\nVPN IP: {ip}\n"
+                        "Время подключения: {up}\nСкорость: {rate}{warn}", color,
+                        name=p["name"], ip=self.ext_ip or "—", up=up,
+                        rate=rate, warn=warn)
 
     def _monitor(self, stop):
         warned = set()
@@ -1853,6 +1867,8 @@ class App(tk.Tk):
         self.ext_ip = None
         self.bypass_missing = False
         self.traffic = None
+        self._stats_prev = None
+        self._rate = None
 
     def _stop_vpn(self):
         vpn = self.vpn
