@@ -1920,6 +1920,7 @@ class App(tk.Tk):
         self._online = {}         # (name, ssh|cloak) -> bool: порт доступен
         self._no_sel_ev = False   # глушит <<TreeviewSelect>> при rebuild
         self.verbose = tk.BooleanVar(value=False)
+        self._verbose_on = False  # потокобезопасный дубль для _say
         self._fix_ctrl_bindings()
         self._build()
         for var, key in ((self.v_mask, "mask_domain"),
@@ -2117,8 +2118,10 @@ class App(tk.Tk):
         tab = self._op_tab or self._cur_tab()
         if name is not None:
             self._logs.setdefault(name, []).append((line, verbose, tab))
+        # self._verbose_on — обычный bool-дубль tk-переменной: _say зовут
+        # из рабочих потоков, а tk-переменные читать оттуда нельзя
         if (name == self._log_name or name is None) and \
-                (not verbose or self.verbose.get()):
+                (not verbose or self._verbose_on):
             w_ = self.logw_usr if tab == "users" else self.logw_dep
             def w(w_=w_):
                 w_.insert("end", line + "\n")
@@ -2149,6 +2152,7 @@ class App(tk.Tk):
         s = self._srv_by_name(name)
         v = bool(s and s.get("log_verbose"))
         self.verbose.set(v)
+        self._verbose_on = v
         for tab, w_ in (("deploy", self.logw_dep), ("users", self.logw_usr)):
             w_.delete("1.0", "end")
             if self._log_ctx and self._log_ctx != name and self._op_tab == tab:
@@ -2164,8 +2168,9 @@ class App(tk.Tk):
 
     def _on_verbose_toggle(self):
         s = self._srv_by_name(self._log_name) if self._log_name else None
+        self._verbose_on = self.verbose.get()
         if s is not None:
-            s["log_verbose"] = self.verbose.get()
+            s["log_verbose"] = self._verbose_on
             save_data(self.data)
         if self._log_name:
             self._log_load(self._log_name)
