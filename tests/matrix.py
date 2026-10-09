@@ -10,6 +10,8 @@
   M6  флаг deployed в реестре = реальности по probe
   M7  (id, version) покрыты картой supported в _step_audit —
       то есть дистрибутив стенда вообще поддерживается деплоем
+  M8  локализация probe: сырой вывод без кириллицы (токены), а заметки
+      после _apply_probe — на языке UI (en → ASCII, ru → кириллица)
 
 Запуск: python tests/matrix.py
 Новый дистрибутив: VM + запись в labs.json + supported в _step_audit →
@@ -24,6 +26,8 @@ import cloak_admin as CA
 
 sup = supported_os()
 info("supported в _step_audit: %s" % sup)
+
+app = lib.make_app()  # для M8 (разбор probe-вывода через _apply_probe)
 
 for lb in labs()["labs"]:
     if not lb.get("auto"):
@@ -95,7 +99,28 @@ for lb in labs()["labs"]:
             check("%s: M6 реестр=реальность" % tag,
                   bool(s.get("deployed")) == bool(real_dep),
                   "реестр=%s, probe=%s" % (s.get("deployed"), real_dep))
+
+            # M8 локализация: probe.sh отдаёт машинные токены (ASCII),
+            # текст заметки рождается в _apply_probe на языке UI —
+            # регрессия «EN-интерфейс + RU-заметки» (Montreal).
+            cyr_raw = [l for l in out.splitlines()
+                       if re.search(r"[а-яА-ЯёЁ]", l)]
+            check("%s: M8 сырой probe без кириллицы" % tag,
+                  not cyr_raw, cyr_raw[:2] or "ascii-only")
+            for lang, want_cyr in (("en", False), ("ru", True)):
+                app.lang = lang
+                s2 = {"name": "%s-m8-%s" % (name, lang), "steps": {}}
+                app._apply_probe(s2, out)
+                notes = [r["note"] for r in s2["steps"].values()]
+                cyr = [n for n in notes if re.search(r"[а-яА-ЯёЁ]", n)]
+                if lang == "en":
+                    check("%s: M8 en-заметки без кириллицы" % tag,
+                          not cyr, cyr[:2] or "ok")
+                else:  # ru — хотя бы одна заметка с кириллицей
+                    check("%s: M8 ru-заметки по-русски" % tag,
+                          bool(cyr), notes[:2])
+            app.lang = "ru"
         except Exception as e:
             check("%s: M5/M6 probe" % tag, False, e)
 
-finish()
+finish(app)
