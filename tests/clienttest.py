@@ -358,11 +358,14 @@ def t_connect(app):
         # статус активного соединения: имя · IP · аптайм · трафик
         app.ext_ip = "2.2.2.2"
         app._rate = (1500.0, 2500000.0)
+        app.up_since = time.time() - 60
         app._conn_status()
         st = app._status_msg[0]
-        check("T11.9 _conn_status: столбик имя/IP/аптайм/скорость",
-              st == "Подключено: {name}\nVPN IP: {ip}\n"
-                    "Подключено в течение: {up}\nСкорость: {rate}{warn}")
+        lines = st.splitlines()
+        cols = [lines[i].index(v) for i, v in
+                enumerate(("u1", "2.2.2.2", "00:01", "↓1.5 KB/s ↑2.4 MB/s"))]
+        check("T11.9 _conn_status: столбик, значения выровнены",
+              len(lines) == 4 and len(set(cols)) == 1, st)
         check("T11.10 _fmt_bytes",
               CO._fmt_bytes(500) == "500 B" and CO._fmt_bytes(2500000) == "2.4 MB",
               CO._fmt_bytes(2500000))

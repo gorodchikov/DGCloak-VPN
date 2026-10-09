@@ -258,9 +258,9 @@ STRINGS_EN = {
     "ВНУТРЕННЯЯ ОШИБКА:\n{tb}": "INTERNAL ERROR:\n{tb}",
     "не удалось создать папку {d}: {e}": "cannot create folder {d}: {e}",
     "{k}: {e}": "{k}: {e}",
-    "Подключено: {name}\nVPN IP: {ip}\n"
-    "Подключено в течение: {up}\nСкорость: {rate}{warn}":
-        "Connected: {name}\nVPN IP: {ip}\nUptime: {up}\nSpeed: {rate}{warn}",
+    "Подключено:": "Connected:",
+    "Подключено в течение:": "Uptime:",
+    "Скорость:": "Speed:",
     "НЕТ ОБХОДА — риск петли": "NO BYPASS — loop risk",
     "Соединение оборвалось — переподключение ({n}/3)…":
         "Connection dropped — reconnecting ({n}/3)…",
@@ -1115,8 +1115,9 @@ class App(tk.Tk):
         self.btn = ttk.Button(box, text=t("Подключить"), width=BTN_W, command=self._toggle)
         self.btn.grid(row=1, column=0, sticky="w", pady=(0, 4))
         # статус — отдельной строкой под кнопкой, столбиком; окно подгоняет высоту
+        # моноширинный шрифт — значения статуса выравниваются столбцом
         self.status = ttk.Label(box, text=t("Отключено"), foreground="gray",
-                                justify="left", anchor="nw")
+                                justify="left", anchor="nw", font=("Consolas", 9))
         self.status.grid(row=2, column=0, columnspan=2, sticky="w", padx=2, pady=(0, 4))
 
         self.b_adv = ttk.Button(box, text=t("Дополнительно ▾"), width=BTN_W, command=self._toggle_adv)
@@ -1804,15 +1805,19 @@ class App(tk.Tk):
                            time.gmtime(max(0, time.time() - (self.up_since or time.time()))))
         rate = ("↓{}/s ↑{}/s".format(_fmt_bytes(self._rate[0]), _fmt_bytes(self._rate[1]))
                 if self._rate else "—")
-        warn = ""
+        # метки добиваются пробелами до одной ширины → значения строго друг под другом
+        labels = (self.t("Подключено:"), "VPN IP:",
+                  self.t("Подключено в течение:"), self.t("Скорость:"))
+        w = max(len(x) for x in labels) + 1
+        lines = ["{:<{w}}{}".format(labels[0], p["name"], w=w),
+                 "{:<{w}}{}".format(labels[1], self.ext_ip or "—", w=w),
+                 "{:<{w}}{}".format(labels[2], up, w=w),
+                 "{:<{w}}{}".format(labels[3], rate, w=w)]
         color = "green"
         if self.bypass_missing:
             color = "orange"
-            warn = "\n" + self.t("НЕТ ОБХОДА — риск петли")
-        self.set_status("Подключено: {name}\nVPN IP: {ip}\n"
-                        "Подключено в течение: {up}\nСкорость: {rate}{warn}", color,
-                        name=p["name"], ip=self.ext_ip or "—", up=up,
-                        rate=rate, warn=warn)
+            lines.append(self.t("НЕТ ОБХОДА — риск петли"))
+        self.set_status("\n".join(lines), color)
 
     def _monitor(self, stop):
         warned = set()
