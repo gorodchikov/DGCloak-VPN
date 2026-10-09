@@ -1386,7 +1386,7 @@ class App(tk.Tk):
             return
         try:
             self.tray.icon = self._icons.get(color, self._icons["gray"])
-            self.tray.title = (APP_NAME + ":\n" + self._pad_tip(text))[:127]
+            self.tray.title = self._pad_tip(text)[:127]
             self.tray.update_menu()
             # уведомление — только при смене цвета (иначе аптайм спамит каждые 2 с)
             if color != self._last_tray_color and color in ("green", "red") \
