@@ -485,6 +485,8 @@ STRINGS_EN = {
     "ck-server не активен": "ck-server is not active",
     "Язык интерфейса: %s": "Interface language: %s",
     "Имя": "Name",
+    "SSH": "SSH",
+    "Cloak": "Cloak",
 }
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -1649,7 +1651,7 @@ class App(tk.Tk):
         self._log_name = None     # чей лог показан
         self._log_ctx = None      # на каком сервере идёт операция
         self._op_tab = None       # канал лога операции: "deploy"|"users"
-        self._online = {}         # name -> bool: доступность SSH-порта
+        self._online = {}         # (name, ssh|cloak) -> bool: порт доступен
         self._no_sel_ev = False   # глушит <<TreeviewSelect>> при rebuild
         self.verbose = tk.BooleanVar(value=False)
         self._fix_ctrl_bindings()
@@ -1978,14 +1980,14 @@ class App(tk.Tk):
         # --- левая колонка: серверы (таблица: имя+метка шагов / онлайн) ---
         left = self._tw(ttk.LabelFrame(top), "Серверы")
         left.pack(side="left", fill="y", padx=(0, 6))
-        self._srv_heads = {"name": "Имя", "online": "Онлайн"}
-        self.srv_tv = ttk.Treeview(left, columns=("name", "online"),
+        self._srv_heads = {"name": "Имя", "ssh": "SSH", "cloak": "Cloak"}
+        self.srv_tv = ttk.Treeview(left, columns=("name", "ssh", "cloak"),
                                    show="headings", height=18,
                                    selectmode="browse")
-        for c, w in (("name", 190), ("online", 60)):
+        for c, w in (("name", 170), ("ssh", 45), ("cloak", 55)):
             self.srv_tv.heading(c, text=self.t(self._srv_heads[c]))
             self.srv_tv.column(c, width=w, stretch=(c == "name"),
-                               anchor="center" if c == "online" else "w")
+                               anchor="w" if c == "name" else "center")
         self.srv_tv.pack(fill="both", expand=True, padx=4, pady=4)
         self.srv_tv.bind("<<TreeviewSelect>>", lambda e: self._on_srv_select())
         btns = ttk.Frame(left)
@@ -2249,8 +2251,8 @@ class App(tk.Tk):
             return " ✓"
         return ""
 
-    def _srv_online_txt(self, name):
-        ok = self._online.get(name)
+    def _srv_online_txt(self, name, which):
+        ok = self._online.get((name, which))
         return "" if ok is None else ("✓" if ok else "✗")
 
     def _refresh_servers(self):
@@ -2266,25 +2268,36 @@ class App(tk.Tk):
                 self.srv_tv.insert(
                     "", "end", iid=name,
                     values=(name + self._srv_mark(s),
-                            self._srv_online_txt(name)))
+                            self._srv_online_txt(name, "ssh"),
+                            self._srv_online_txt(name, "cloak")))
             if keep and self.srv_tv.exists(keep):
                 self.srv_tv.selection_set(keep)
         finally:
             self._no_sel_ev = False
         self._apply_opt_lock()
 
-    # ---- онлайн-индикатор: TCP-коннект на SSH-порт, без логина ----
+    # ---- онлайн-индикаторы: TCP-коннект на порты, без логина ----
+    # ssh → ssh_port сервера; cloak → ck_port (есть только после деплоя).
     def _online_loop(self):
         while True:
             for s in list(self.data.get("servers", [])):
+                host = s.get("host")
                 threading.Thread(
                     target=self._probe_srv,
-                    args=(s.get("name"), s.get("host"),
+                    args=(s.get("name"), "ssh", host,
                           int(s.get("ssh_port") or 22)),
                     daemon=True).start()
+                ck = s.get("ck_port")
+                if ck:
+                    threading.Thread(
+                        target=self._probe_srv,
+                        args=(s.get("name"), "cloak", host, int(ck)),
+                        daemon=True).start()
+                else:
+                    self._online[(s.get("name"), "cloak")] = None
             time.sleep(15)
 
-    def _probe_srv(self, name, host, port):
+    def _probe_srv(self, name, which, host, port):
         ok = False
         if host:
             try:
@@ -2292,14 +2305,15 @@ class App(tk.Tk):
                 ok = True
             except OSError:
                 pass
-        prev = self._online.get(name)
-        self._online[name] = ok
+        key = (name, which)
+        prev = self._online.get(key)
+        self._online[key] = ok
         if prev != ok:
-            self.ui(lambda: self._srv_online_set(name))
+            self.ui(lambda: self._srv_online_set(name, which))
 
-    def _srv_online_set(self, name):
+    def _srv_online_set(self, name, which):
         if self.srv_tv.exists(name):
-            self.srv_tv.set(name, "online", self._srv_online_txt(name))
+            self.srv_tv.set(name, which, self._srv_online_txt(name, which))
 
     def _apply_opt_lock(self):
         """Порт/протокол зашиты в конфиги юзеров — правка на развёрнутом
