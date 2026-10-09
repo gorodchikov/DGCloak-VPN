@@ -482,6 +482,7 @@ STRINGS_EN = {
     "active, tcp/%s слушает, маскировка %s": "active, tcp/%s listening, mask %s",
     "active, но порт %s не слушает/нет конфига": "active, but port %s not listening/no config",
     "ck-server не активен": "ck-server is not active",
+    "Язык интерфейса: %s": "Interface language: %s",
 }
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -1688,6 +1689,9 @@ class App(tk.Tk):
         self.data["language"] = lang
         save_data(self.data)
         self._apply_lang()
+        # на новом языке: RU→EN пишет по-английски, EN→RU по-русски
+        self.say(self.t("Язык интерфейса: %s") %
+                 self.v_lang.get())
 
     def _apply_lang(self):
         """Живое переключение: виджеты/тултипы/вкладки/заголовки.
