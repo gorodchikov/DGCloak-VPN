@@ -93,7 +93,7 @@ def draw_admin_icon(color=BRAND, size=256):
     im = draw_icon(color, N)          # базовая фигура (плащ на плашке)
     d = ImageDraw.Draw(im)
 
-    cx, cy = 392, 392                 # шестерёнка в углу плашки
+    cx, cy = 352, 352                 # шестерёнка в углу плашки (внутри окантовки)
 
     def gear(scale, fill):
         r1, r2, rhub, rhole = (62 * scale, 44 * scale, 26 * scale,
