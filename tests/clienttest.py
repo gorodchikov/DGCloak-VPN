@@ -362,7 +362,7 @@ def t_connect(app):
         st = app._status_msg[0]
         check("T11.9 _conn_status: столбик имя/IP/аптайм/скорость",
               st == "Подключено: {name}\nVPN IP: {ip}\n"
-                    "Время подключения: {up}\nСкорость: {rate}{warn}")
+                    "Подключено в течение: {up}\nСкорость: {rate}{warn}")
         check("T11.10 _fmt_bytes",
               CO._fmt_bytes(500) == "500 B" and CO._fmt_bytes(2500000) == "2.4 MB",
               CO._fmt_bytes(2500000))

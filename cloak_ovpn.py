@@ -259,7 +259,7 @@ STRINGS_EN = {
     "не удалось создать папку {d}: {e}": "cannot create folder {d}: {e}",
     "{k}: {e}": "{k}: {e}",
     "Подключено: {name}\nVPN IP: {ip}\n"
-    "Время подключения: {up}\nСкорость: {rate}{warn}":
+    "Подключено в течение: {up}\nСкорость: {rate}{warn}":
         "Connected: {name}\nVPN IP: {ip}\nUptime: {up}\nSpeed: {rate}{warn}",
     "НЕТ ОБХОДА — риск петли": "NO BYPASS — loop risk",
     "Соединение оборвалось — переподключение ({n}/3)…":
@@ -1112,18 +1112,18 @@ class App(tk.Tk):
         self.b_exit = ttk.Button(btns, text=t("Выход"), width=BTN_S, command=self._exit_clicked)
         self.b_exit.pack(side="left", padx=(2, 0))
 
-        mid = ttk.Frame(box)
-        mid.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 6))
-        self.btn = ttk.Button(mid, text=t("Подключить"), width=BTN_W, command=self._toggle)
-        self.btn.pack(side="left")
-        self.status = ttk.Label(mid, text=t("Отключено"), foreground="gray", wraplength=380)
-        self.status.pack(side="left", padx=12)
+        self.btn = ttk.Button(box, text=t("Подключить"), width=BTN_W, command=self._toggle)
+        self.btn.grid(row=1, column=0, sticky="w", pady=(0, 4))
+        # статус — отдельной строкой под кнопкой, столбиком; окно подгоняет высоту
+        self.status = ttk.Label(box, text=t("Отключено"), foreground="gray",
+                                justify="left", anchor="nw")
+        self.status.grid(row=2, column=0, columnspan=2, sticky="w", padx=2, pady=(0, 4))
 
         self.b_adv = ttk.Button(box, text=t("Дополнительно ▾"), width=BTN_W, command=self._toggle_adv)
-        self.b_adv.grid(row=2, column=0, sticky="w")
+        self.b_adv.grid(row=3, column=0, sticky="w")
         # выбор языка — в основном окне справа снизу (та же колонка, что и «Выход»)
         langf = ttk.Frame(box)
-        langf.grid(row=2, column=1, sticky="e")
+        langf.grid(row=3, column=1, sticky="e")
         self.lang_label = ttk.Label(langf, text=t("Язык:"))
         self.lang_label.pack(side="left")
         self.lang_combo = ttk.Combobox(langf, state="readonly", width=8,
@@ -1297,6 +1297,10 @@ class App(tk.Tk):
         def apply():
             self.status.config(text=self.t(text, **kw), foreground=color)
             self._tray_update(self.t(text, **kw), color)
+            self.update_idletasks()
+            h = self.winfo_reqheight()  # многострочный статус → подогнать высоту окна
+            if abs(h - self.winfo_height()) > 4:
+                self.geometry(f"{self.winfo_reqwidth()}x{h}")
         self.ui(apply)
 
     # ---------- иконка и трей ----------
@@ -1798,7 +1802,7 @@ class App(tk.Tk):
             return
         up = time.strftime("%H:%M:%S",
                            time.gmtime(max(0, time.time() - (self.up_since or time.time()))))
-        rate = ("↑{}/s ↓{}/s".format(_fmt_bytes(self._rate[1]), _fmt_bytes(self._rate[0]))
+        rate = ("↓{}/s ↑{}/s".format(_fmt_bytes(self._rate[0]), _fmt_bytes(self._rate[1]))
                 if self._rate else "—")
         warn = ""
         color = "green"
@@ -1806,7 +1810,7 @@ class App(tk.Tk):
             color = "orange"
             warn = "\n" + self.t("НЕТ ОБХОДА — риск петли")
         self.set_status("Подключено: {name}\nVPN IP: {ip}\n"
-                        "Время подключения: {up}\nСкорость: {rate}{warn}", color,
+                        "Подключено в течение: {up}\nСкорость: {rate}{warn}", color,
                         name=p["name"], ip=self.ext_ip or "—", up=up,
                         rate=rate, warn=warn)
 
