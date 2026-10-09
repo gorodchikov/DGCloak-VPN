@@ -355,14 +355,13 @@ if lab2:
     check("G2 виджет deploy без строк юзера", CN not in wtxt(app.logw_dep))
     tab(app, 1)
 
-    # G3: экспорт в temp-папку (askdirectory подменён)
+    # G3: экспорт через «Сохранить как…» (asksaveasfilename подменён)
     app._selected_user = lambda: (CN, rec, rec["uid"] if rec else "?")
-    _orig_dir = _fd.askdirectory
-    exp = tempfile.mkdtemp(dir=lib.TMP)
-    _fd.askdirectory = lambda **k: exp
+    _orig_save = _fd.asksaveasfilename
+    f_ = os.path.join(tempfile.mkdtemp(dir=lib.TMP), "%s.dgcloak" % CN)
+    _fd.asksaveasfilename = lambda **k: f_
     if rec:
         app._user_export(); wait_idle(app, 120)
-        f_ = os.path.join(exp, CN, "%s.dgcloak" % CN)
         check("G3 экспорт: .dgcloak на месте", os.path.isfile(f_), f_)
         check("G3 строка «Конфиг …» в users-канале",
               any("Конфиг" in l and CN in l
@@ -375,7 +374,7 @@ if lab2:
         check("G4 дубль CN отклонён без операции",
               errs and not app.busy, errs)
         _mb.showerror = _orig_err
-    _fd.askdirectory = _orig_dir
+    _fd.asksaveasfilename = _orig_save
 
     # G5: отзыв + удаление (askyesno → True)
     _mb.askyesno = lambda *a, **k: True

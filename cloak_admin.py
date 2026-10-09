@@ -40,7 +40,7 @@ OLD_APP_DIR = os.path.join(os.environ.get("APPDATA", "."), "DGCloakAdmin")
 OLD_VPN_DIR = os.path.join(os.environ.get("APPDATA", "."), "DGCloakVPN")
 APP_DIR = os.path.join(DGCLOAK_DIR, "Admin")
 DATA_FILE = os.path.join(APP_DIR, "data.json")
-BUNDLES_DIR = os.path.join(APP_DIR, "bundles")
+BUNDLES_DIR = os.path.join(APP_DIR, "user_bundles")  # <сервер>\<юзер>.dgcloak, плоско
 BIN_DIR = os.path.join(DGCLOAK_DIR, "bin")  # общие зависимости: plink/pscp/ck-client
 VPN_DIR = os.path.join(DGCLOAK_DIR, "VPN")  # данные соседнего VPN-клиента
 PIDS_FILE = os.path.join(APP_DIR, "pids.json")  # наши дочерние plink/pscp/ssh
@@ -476,7 +476,8 @@ STRINGS_EN = {
     "«%s» не онлайн — сбрасывать нечего": "\"%s\" is not online — nothing to reset",
     "CN этого юзера неизвестен — mgmt kill работает только по CN.":
         "This user's CN is unknown — mgmt kill works by CN only.",
-    "Куда сложить конфиг «%s»": "Where to save the \"%s\" config",
+    "Куда сохранить конфиг «%s»": "Where to save the \"%s\" config",
+    "Все файлы": "All files",
     "DGCloak Admin уже запущен.": "DGCloak Admin is already running.",
     "Управление фаерволом — %s": "Firewall management — %s",
     # --- исключения / SSH-слой ---
@@ -595,7 +596,7 @@ STRINGS_EN = {
     "  реестр юзеров с сервера не прочитан: %s": "  couldn't read user registry from server: %s",
     "  реестр юзеров синхронизирован на сервер": "  user registry synced to server",
     "  !! реестр на сервер не записался: %s": "  !! registry write to server failed: %s",
-    "  конфиг «%s» → bundles\\%s": "  config \"%s\" → bundles\\%s",
+    "  конфиг «%s» → user_bundles\\%s": "  config \"%s\" → user_bundles\\%s",
     "  !! конфиг «%s» не пересобран: %s": "  !! config \"%s\" not rebuilt: %s",
     "  сертификат отозван": "  certificate revoked",
     "  сертификат уже отозван": "  certificate already revoked",
@@ -797,6 +798,60 @@ def migrate_dirs():
             shutil.copy2(src, dst)
     except OSError:
         pass
+    _migrate_layout()
+
+
+def _key_remap():
+    """{старый путь: новый} для переезда keys\\<srv>_ed25519 → keys\\<srv>\\key."""
+    kd = os.path.join(APP_DIR, "keys")
+    out = {}
+    if os.path.isdir(kd):
+        for f in os.listdir(kd):
+            if f.endswith("_ed25519"):
+                out[os.path.join(kd, f)] = \
+                    os.path.join(kd, f[:-len("_ed25519")], "key")
+    return out
+
+
+def _migrate_layout():
+    """Плоская раскладка: keys\\<srv>\\key(.pub) и
+    user_bundles\\<srv>\\<юзер>.dgcloak (бывш. bundles\\<srv>\\<юзер>\\)."""
+    # ключи
+    remap = _key_remap()
+    for old, new in remap.items():
+        os.makedirs(os.path.dirname(new), exist_ok=True)
+        _move_file(old, new)
+        _move_file(old + ".pub", new + ".pub")
+    if remap:
+        try:  # пути ключей в реестре следом за файлами
+            d = load_data()
+            for s in d.get("servers", []):
+                if s.get("key") in remap:
+                    s["key"] = remap[s["key"]]
+            save_data(d)
+        except Exception:
+            pass
+    # бандлы: bundles → user_bundles, внутри — сплющить <cn>\<cn>.dgcloak
+    old_bd = os.path.join(APP_DIR, "bundles")
+    if os.path.isdir(old_bd) and not os.path.isdir(BUNDLES_DIR):
+        try:
+            shutil.move(old_bd, BUNDLES_DIR)
+        except OSError:
+            pass
+    if os.path.isdir(BUNDLES_DIR):
+        for srv in os.listdir(BUNDLES_DIR):
+            sd = os.path.join(BUNDLES_DIR, srv)
+            if not os.path.isdir(sd):
+                continue
+            for sub in list(os.listdir(sd)):
+                p = os.path.join(sd, sub)
+                if os.path.isdir(p):      # старая схема: папка на юзера
+                    for f in os.listdir(p):
+                        _move_file(os.path.join(p, f), os.path.join(sd, f))
+                    try:
+                        os.rmdir(p)
+                    except OSError:
+                        pass
 
 
 def load_data():
@@ -1608,8 +1663,13 @@ class ServerDialog(simpledialog.Dialog):
             e = ttk.Entry(f, textvariable=v, width=42)
             e.grid(row=i, column=1, padx=4, pady=3)
             if k in ("ppk", "key"):
+                ft = ([("PuTTY key", "*.ppk")] if k == "ppk"
+                      else [("OpenSSH key", "id_*")])
+                ft.append((self.t("Все файлы"), "*.*"))
                 ttk.Button(f, text="…", width=2,
-                           command=lambda v=v: v.set(filedialog.askopenfilename() or v.get())
+                           command=lambda v=v, ft=ft: v.set(
+                               filedialog.askopenfilename(filetypes=ft)
+                               or v.get())
                            ).grid(row=i, column=2)
             if k == "password":
                 e.config(show="*")
@@ -2750,7 +2810,9 @@ class App(tk.Tk):
                                "SSH-ключ остаётся в %s —\n"
                                "им можно зайти на сервер и потом.\n"
                                "Сам сервер не трогаем.")
-                               % (s["name"], os.path.join(APP_DIR, "keys"))):
+                               % (s["name"], os.path.join(
+                                   APP_DIR, "keys",
+                                   re.sub(r"[^\w-]", "_", s["name"])))):
             self.data["servers"].remove(s)
             save_data(self.data)
             self._logs.pop(s["name"], None)
@@ -3174,11 +3236,14 @@ class App(tk.Tk):
                       [r"C:\Windows\System32\OpenSSH"])
         if not kg:
             raise SSHErr(self.t("не найден ssh-keygen (Windows OpenSSH)"))
-        kd = os.path.join(APP_DIR, "keys")
+        # ключи по подпапкам: keys\<сервер>\key(.pub) — общая папка
+        # на всех серверов в один уровень быстро превращается в свалку
+        kd = os.path.join(APP_DIR, "keys",
+                          re.sub(r"[^\w-]", "_", s["name"]))
         os.makedirs(kd, exist_ok=True)
         # наш старый сгенерированный ключ (имя от старого названия
         # сервера) — после успешной установки нового сносим
-        kp = os.path.join(kd, "%s_ed25519" % re.sub(r"[^\w-]", "_", s["name"]))
+        kp = os.path.join(kd, "key")
         if not os.path.isfile(kp):
             r = subprocess.run([kg, "-t", "ed25519", "-N", "", "-f", kp],
                                capture_output=True, text=True, timeout=30,
@@ -3629,7 +3694,7 @@ class App(tk.Tk):
                          % (s["name"], self.t(", юзеров восстановлено: %d")
                             % len(added) if added else ""))
                 # бандлы для восстановленных: сертификаты живут на
-                # сервере — пересобираем .dgcloak, чтобы bundles\
+                # сервере — пересобираем .dgcloak, чтобы user_bundles\
                 # не оставался пустым после переезда
                 for rec in added:
                     try:
@@ -3638,9 +3703,9 @@ class App(tk.Tk):
                                            timeout=60))
                         write_user_bundle(
                             s, rec["cn"], rec["uid"], mats,
-                            os.path.join(BUNDLES_DIR, s["name"], rec["cn"]),
+                            os.path.join(BUNDLES_DIR, s["name"]),
                             rec.get("mask") or "")
-                        self.say(self.t("  конфиг «%s» → bundles\\%s")
+                        self.say(self.t("  конфиг «%s» → user_bundles\\%s")
                                  % (rec["cn"], s["name"]))
                     except Exception as e:
                         self.say(self.t("  !! конфиг «%s» не пересобран: %s")
@@ -3812,8 +3877,8 @@ class App(tk.Tk):
                                   up_credit=up_credit, down_credit=down_credit)
         finally:
             api.stop()
-        # 3. конфиг
-        bundle = os.path.join(BUNDLES_DIR, s["name"], name)
+        # 3. конфиг (флажно: user_bundles\<сервер>\<юзер>.dgcloak)
+        bundle = os.path.join(BUNDLES_DIR, s["name"])
         write_user_bundle(s, name, uid, mats, bundle, mask)
         # 4. запись в реестр
         users = s.setdefault("users", [])
@@ -3901,7 +3966,7 @@ class App(tk.Tk):
                 # маскировка живёт в конфиге — перевыпускаем локальную копию
                 out = ssh.run_script("user-cert.sh", cn, timeout=60)
                 mats = parse_cert_bundle(out)
-                bundle = os.path.join(BUNDLES_DIR, s["name"], cn)
+                bundle = os.path.join(BUNDLES_DIR, s["name"])
                 write_user_bundle(s, cn, uid, mats, bundle, r["mask"])
                 self.say(self.t("Юзер «%s» обновлён, конфиг перевыпущен, "
                          "выдай его юзеру: %s")
@@ -4013,8 +4078,11 @@ class App(tk.Tk):
             s["users"] = [u for u in s.get("users", []) if u["cn"] != cn]
             save_data(self.data)
             self._push_users(ssh, s)
-            shutil.rmtree(os.path.join(BUNDLES_DIR, s["name"], cn),
-                          ignore_errors=True)
+            try:  # файл юзера в плоской user_bundles\<сервер>\
+                os.remove(os.path.join(BUNDLES_DIR, s["name"],
+                                       "%s.dgcloak" % cn))
+            except OSError:
+                pass
             self.say(self.t("Юзер «%s» отозван и удалён.") % cn)
             self.ui(self._users_refresh)
         self._worker(work)
@@ -4059,7 +4127,12 @@ class App(tk.Tk):
             messagebox.showinfo(APP_NAME, self.t("«%s» заведён вне этой админки — "
                                 "экспорт конфига недоступен") % cn)
             return
-        dst = filedialog.askdirectory(title=self.t("Куда сложить конфиг «%s»") % cn)
+        # «Сохранить как…» — файл один, подпапка с именем юзера не нужна;
+        # юзер сам выбирает имя и место
+        dst = filedialog.asksaveasfilename(
+            title=self.t("Куда сохранить конфиг «%s»") % cn,
+            initialfile="%s.dgcloak" % cn, defaultextension=".dgcloak",
+            filetypes=[("DGCloak", "*.dgcloak"), (self.t("Все файлы"), "*.*")])
         if not dst:
             return
 
@@ -4067,16 +4140,16 @@ class App(tk.Tk):
             ssh = SSH(s, self.say)
             out = ssh.run_script("user-cert.sh", cn, timeout=60)
             mats = parse_cert_bundle(out)
-            bundle = os.path.join(dst, cn)
-            write_user_bundle(s, cn, rec["uid"], mats, bundle,
-                              rec.get("mask") or "")
+            with open(dst, "w", encoding="utf-8") as f:
+                json.dump(make_dgcloak(s, cn, rec["uid"], mats,
+                                       rec.get("mask") or ""),
+                          f, ensure_ascii=False, indent=2)
             # каноническая копия в %APPDATA% — у восстановленных
             # импортом юзеров её может не быть вовсе
             write_user_bundle(s, cn, rec["uid"], mats,
-                              os.path.join(BUNDLES_DIR, s["name"], cn),
+                              os.path.join(BUNDLES_DIR, s["name"]),
                               rec.get("mask") or "")
-            self.say(self.t("Конфиг «%s» → %s")
-                     % (cn, os.path.join(bundle, "%s.dgcloak" % cn)))
+            self.say(self.t("Конфиг «%s» → %s") % (cn, dst))
         self._worker(work)
 
 
