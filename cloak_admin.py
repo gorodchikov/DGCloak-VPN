@@ -145,6 +145,17 @@ STRINGS_EN = {
     "Лог очищен.": "Log cleared.",
     "Язык:": "Language:",
     "Подробный вывод": "Verbose output",
+    "Стоп операцию": "Abort operation",
+    "с": "s",
+    "Убить зависшую SSH-команду\n(провайдер рвёт связь, сервер молчит)":
+        "Kill the hung SSH command\n(ISP dropped the link, server went silent)",
+    "  прерываю операцию…": "  aborting the operation…",
+    "(прервано пользователем)": "(aborted by user)",
+    "…операция идёт уже %d с": "…operation running for %ds already",
+    "операция на «%s», можно прервать кнопкой «Стоп»":
+        "operation on «%s», press «Abort operation» to stop it",
+    "SSH tcp/%s на %s недоступен (проверь связь/VPN)":
+        "SSH tcp/%s on %s is unreachable (check connectivity/VPN)",
     "Шаг": "Step",
     "Статус": "Status",
     "— выбери сервер": "— select a server",
@@ -813,10 +824,15 @@ class SSH:
       - srv["password"] → plink -pw
     """
 
+    # Общий флаг отмены на текущую операцию: кнопка «Прервать» выставляет его,
+    # а цикл ожидания процесса в _run_proc убивает запущенный plink/ssh.
+    op_cancel = threading.Event()
+
     def __init__(self, srv, log):
         self.t = T
         self.srv = srv
         self.log = log
+        self._probed = False  # первый _spawn делает быстрый TCP-чек порта
         self.plink = self.pscp = self.ssh_exe = self.scp_exe = None
         # root не имеет sudo на Debian-minimal; для него префикс не нужен.
         # -n: без пароля → сразу ошибка, а не подвисший промпт.
@@ -865,6 +881,10 @@ class SSH:
             return [self.ssh_exe] + no_stdin + ["-o", "BatchMode=yes",
                     "-o", "StrictHostKeyChecking=accept-new",
                     "-o", "ConnectTimeout=15",
+                    # провайдер может тихо резать сессию — keepalive ловит
+                    # это за ~30с вместо ожидания полного таймаута команды
+                    "-o", "ServerAliveInterval=15",
+                    "-o", "ServerAliveCountMax=2",
                     "-i", self.srv["key"], "-p", str(self.srv.get("ssh_port", 22)),
                     self._target(), cmd]
         plink, _ = self._find_putty()
@@ -880,6 +900,8 @@ class SSH:
         if (self.backend == "openssh" and not self._auth_pw
                 and self.srv.get("key")):
             return [self.scp_exe, "-B", "-o", "StrictHostKeyChecking=accept-new",
+                    "-o", "ServerAliveInterval=15",
+                    "-o", "ServerAliveCountMax=2",
                     "-i", self.srv["key"], "-P", str(self.srv.get("ssh_port", 22)),
                     local_path, "%s:%s" % (self._target(), remote_path)]
         _, pscp = self._find_putty()
@@ -892,35 +914,65 @@ class SSH:
               local_path, "%s:%s" % (self._target(), remote_path)]
         return a
 
+    def _run_proc(self, args, input_text, timeout):
+        """Popen с полл-циклом: честный таймаут И мгновенная отмена
+        (SSH.op_cancel → убиваем процесс, не ждём весь timeout)."""
+        p = subprocess.Popen(args, stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, encoding="utf-8", errors="replace",
+                             creationflags=CREATE_NO_WINDOW)
+        t0 = time.time()
+        first = True
+        while True:
+            try:
+                # input только в первом communicate — после TimeoutExpired
+                # повторяем без него, иначе RuntimeError
+                out, _ = p.communicate(
+                    input=(input_text or "") if first else None,
+                    timeout=0.25)
+                return p.returncode, out or ""
+            except subprocess.TimeoutExpired:
+                first = False
+                if SSH.op_cancel.is_set():
+                    p.kill()
+                    out, _ = p.communicate()
+                    return 130, (out or "") + self.t("(прервано пользователем)")
+                if time.time() - t0 > timeout:
+                    p.kill()
+                    out, _ = p.communicate()
+                    return 124, (out or "") + "TIMEOUT after %ss" % timeout
+
     def _try(self, args, input_text, timeout):
         """Один запуск + TOFU retry по fingerprint для plink-семейства."""
         # stdin=PIPE обязателен: в --noconsole exe нет консольного stdin,
         # наследование битого хэндла роняет ssh/scp молча с пустым выводом
-        p = subprocess.run(args, input=input_text or "", capture_output=True,
-                           text=True, encoding="utf-8", errors="replace",
-                           timeout=timeout,
-                           creationflags=CREATE_NO_WINDOW)
-        out = (p.stdout or "") + (p.stderr or "")
+        rc, out = self._run_proc(args, input_text, timeout)
         base = os.path.basename(args[0]).lower()
-        if (base.startswith(("plink", "pscp")) and p.returncode != 0
+        if (base.startswith(("plink", "pscp")) and rc != 0
                 and "host key" in out and "-hostkey" not in args):
             # plink в нон-консоли не читает 'y' со stdin — достаём fingerprint
             # из текста промпта и повторяем с -hostkey (TOFU, без интерактива)
             fp = re.search(r"fingerprint is:\s*\S+\s+\d+\s+(SHA256:\S+)", out)
             if fp:
                 # -hostkey — опция, должна стоять ДО host (иначе уедет в remote-команду)
-                p = subprocess.run(args[:-2] + ["-hostkey", fp.group(1)]
-                                   + args[-2:],
-                                   input=input_text or "", capture_output=True,
-                                   text=True, encoding="utf-8", errors="replace",
-                                   timeout=timeout,
-                                   creationflags=CREATE_NO_WINDOW)
-                out = (p.stdout or "") + (p.stderr or "")
-        return p.returncode, out
+                rc, out = self._run_proc(args[:-2] + ["-hostkey", fp.group(1)]
+                                         + args[-2:], input_text, timeout)
+        return rc, out
 
     def _spawn(self, args, input_text=None, timeout=180):
         """Запуск с фолбэком: ключ openssh отвергнут сервером
         (VM пересоздана/снапшот откачен) → повтор по паролю через plink."""
+        # Быстрый TCP-чек порта перед первым запуском: при мёртвом хосте
+        # отвечаем за секунды вместо серии plink-таймаутов по 180с
+        if not self._probed:
+            self._probed = True
+            port = int(self.srv.get("ssh_port") or 22)
+            try:
+                socket.create_connection((self.srv["host"], port), 4).close()
+            except OSError:
+                return 1, self.t("SSH tcp/%s на %s недоступен "
+                                 "(проверь связь/VPN)") % (port,
+                                                          self.srv["host"])
         rc, out = self._try(args, input_text, timeout)
         if (rc != 0 and self.backend == "openssh"
                 and self.srv.get("password")
@@ -999,6 +1051,16 @@ class SSH:
 
     def run_stream(self, cmd, on_line, timeout=None):
         """Стриминг stdout+stderr построчно (для долгих деплой-скриптов)."""
+        # тот же быстрый TCP-чек, что в _spawn: мёртвый хост → отказ за секунды
+        if not self._probed:
+            self._probed = True
+            port = int(self.srv.get("ssh_port") or 22)
+            try:
+                socket.create_connection((self.srv["host"], port), 4).close()
+            except OSError:
+                raise SSHErr(self.t("SSH tcp/%s на %s недоступен "
+                                    "(проверь связь/VPN)")
+                             % (port, self.srv["host"]))
         args = self._argv(cmd)
         p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              text=True, encoding="utf-8", errors="replace",
@@ -1015,6 +1077,9 @@ class SSH:
         assert p.stdout is not None
         seen = []
         for line in p.stdout:
+            if SSH.op_cancel.is_set():
+                p.kill()
+                raise SSHErr(self.t("(прервано пользователем)"))
             seen.append(line)
             on_line(line.rstrip("\n"))
             if timeout and time.time() - t0 > timeout:
@@ -1978,6 +2043,13 @@ class App(tk.Tk):
         state = "disabled" if b else "normal"
         for btn in self._all_buttons:
             btn.config(state=state)
+        if hasattr(self, "btn_stop"):
+            self.btn_stop.config(state="normal" if b else "disabled")
+        if b:
+            self._beat_last = 0
+            self._op_tick()
+        else:
+            self.title(APP_NAME)
 
     def _worker(self, fn, ctx=None):
         """ctx — имя сервера, чей журнал получает лог (если операция
@@ -1987,6 +2059,8 @@ class App(tk.Tk):
                                 % (self._log_ctx or "?"))
             return
         self.busy = True
+        SSH.op_cancel.clear()
+        self._op_started = time.time()
         tab = self._cur_tab()  # вкладка-источник — читаем в главном потоке
         self.ui(lambda: self._set_busy(True))
 
@@ -2001,8 +2075,34 @@ class App(tk.Tk):
                 self._log_ctx = None
                 self._op_tab = None
                 self.busy = False
+                self._op_started = None
                 self.ui(lambda: self._set_busy(False))
         threading.Thread(target=run, daemon=True).start()
+
+    def _op_tick(self):
+        """Пульс операции в заголовке окна + heartbeat в журнал —
+        длинный SSH-таймаут не должен выглядеть как зависшее окно."""
+        if not self.busy:
+            self.title(APP_NAME)
+            return
+        el = int(time.time() - (self._op_started or time.time()))
+        self.title("%s — %s (%d %s)" % (
+            APP_NAME,
+            self.t("операция на «%s», можно прервать кнопкой «Стоп»")
+            % (self._log_ctx or "?"),
+            el, self.t("с")))
+        if el and el % 15 == 0 and el != getattr(self, "_beat_last", 0):
+            self._beat_last = el
+            self.vsay("…операция идёт уже %d с" % el)
+        self.after(1000, self._op_tick)
+
+    def _op_stop(self):
+        """Кнопка «Стоп»: не ждём таймаут plink — убиваем текущий процесс,
+        операция завершится ошибкой и разблокирует интерфейс."""
+        if not self.busy:
+            return
+        SSH.op_cancel.set()
+        self.say(self.t("  прерываю операцию…"))
 
     # ---- layout ----
     def _build(self):
@@ -2037,6 +2137,15 @@ class App(tk.Tk):
                         command=lambda: self._srv_move(-1))
         self._tip(up, "Поднять в списке")
         up.pack(side="right", padx=2)
+        # «Стоп» живёт вне _all_buttons: именно он должен оставаться живым,
+        # пока остальные кнопки заблокированы висящей операцией
+        self.btn_stop = ttk.Button(left, state="disabled",
+                                   command=self._op_stop)
+        self._i18n.append((self.btn_stop, "Стоп операцию", ()))
+        self.btn_stop.config(text=self.t("Стоп операцию"))
+        self._tip(self.btn_stop, "Убить зависшую SSH-команду\n"
+                  "(провайдер рвёт связь, сервер молчит)")
+        self.btn_stop.pack(fill="x", padx=4, pady=(0, 4))
 
         # --- правая колонка: вкладки ---
         nb = self.nb = ttk.Notebook(top)
