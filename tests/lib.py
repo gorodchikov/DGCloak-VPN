@@ -96,8 +96,10 @@ def add_srv(app, srv):
 
 
 def sel(app, i):
-    app.srv_list.selection_clear(0, "end")
-    app.srv_list.selection_set(i)
+    kids = app.srv_tv.get_children()
+    app.srv_tv.selection_remove(app.srv_tv.selection())
+    if i < len(kids):
+        app.srv_tv.selection_set(kids[i])
     app._on_srv_select()
     pump(app, 0.15)
 

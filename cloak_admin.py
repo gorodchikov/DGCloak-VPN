@@ -23,6 +23,7 @@ import queue
 import re
 import secrets
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -483,6 +484,7 @@ STRINGS_EN = {
     "active, но порт %s не слушает/нет конфига": "active, but port %s not listening/no config",
     "ck-server не активен": "ck-server is not active",
     "Язык интерфейса: %s": "Interface language: %s",
+    "Имя": "Name",
 }
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -1647,6 +1649,8 @@ class App(tk.Tk):
         self._log_name = None     # чей лог показан
         self._log_ctx = None      # на каком сервере идёт операция
         self._op_tab = None       # канал лога операции: "deploy"|"users"
+        self._online = {}         # name -> bool: доступность SSH-порта
+        self._no_sel_ev = False   # глушит <<TreeviewSelect>> при rebuild
         self.verbose = tk.BooleanVar(value=False)
         self._fix_ctrl_bindings()
         self._build()
@@ -1657,6 +1661,7 @@ class App(tk.Tk):
                           lambda *a, k=key, v=var: self._opt_changed(k, v))
         self._refresh_servers()
         self.after(100, self._drain)
+        threading.Thread(target=self._online_loop, daemon=True).start()
         self._ensure_deps()
 
     # ---- локализация ----
@@ -1709,6 +1714,8 @@ class App(tk.Tk):
             ctr = c in ("sessions", "online")
             self.users_tv.heading(c, text=self.t(ru),
                                   anchor="center" if ctr else "w")
+        for c, ru in self._srv_heads.items():
+            self.srv_tv.heading(c, text=self.t(ru))
         self._fill_steps()
         if self._log_name:
             self._log_load(self._log_name)
@@ -1968,12 +1975,19 @@ class App(tk.Tk):
         top = ttk.Frame(self)
         top.pack(fill="both", expand=True, padx=6, pady=6)
 
-        # --- левая колонка: серверы ---
+        # --- левая колонка: серверы (таблица: имя+метка шагов / онлайн) ---
         left = self._tw(ttk.LabelFrame(top), "Серверы")
         left.pack(side="left", fill="y", padx=(0, 6))
-        self.srv_list = tk.Listbox(left, width=30, exportselection=False)
-        self.srv_list.pack(fill="both", expand=True, padx=4, pady=4)
-        self.srv_list.bind("<<ListboxSelect>>", lambda e: self._on_srv_select())
+        self._srv_heads = {"name": "Имя", "online": "Онлайн"}
+        self.srv_tv = ttk.Treeview(left, columns=("name", "online"),
+                                   show="headings", height=18,
+                                   selectmode="browse")
+        for c, w in (("name", 190), ("online", 60)):
+            self.srv_tv.heading(c, text=self.t(self._srv_heads[c]))
+            self.srv_tv.column(c, width=w, stretch=(c == "name"),
+                               anchor="center" if c == "online" else "w")
+        self.srv_tv.pack(fill="both", expand=True, padx=4, pady=4)
+        self.srv_tv.bind("<<TreeviewSelect>>", lambda e: self._on_srv_select())
         btns = ttk.Frame(left)
         btns.pack(fill="x", padx=4, pady=4)
         for t, c in (("Добавить", self._srv_add),
@@ -2223,18 +2237,69 @@ class App(tk.Tk):
         self.logw_usr.pack(fill="both", expand=True, padx=4, pady=4)
 
     # ---- серверы ----
+    def _srv_mark(self, s):
+        """Метка у имени: ✓ только когда ВСЕ шаги деплоя ok; ⚠ если есть
+        warn/fail. Частичный деплой/не аудирован — без метки."""
+        steps = s.get("steps") or {}
+        vals = [r.get("st") for r in steps.values()]
+        if any(v in ("warn", "fail") for v in vals):
+            return " ⚠"
+        if all(k in steps for k, _ in self.STEPS) and \
+                all(v == "ok" for v in vals):
+            return " ✓"
+        return ""
+
+    def _srv_online_txt(self, name):
+        ok = self._online.get(name)
+        return "" if ok is None else ("✓" if ok else "✗")
+
     def _refresh_servers(self):
         # delete+insert сносит выделение — сохраняем его, иначе
         # _sel_srv_silent() вернёт None и спиннер шага спрячется
-        sel = self.srv_list.curselection()
+        sel = self.srv_tv.selection()
         keep = sel[0] if sel else None
-        self.srv_list.delete(0, "end")
-        for s in self.data["servers"]:
-            mark = " ✓" if s.get("deployed") else ""
-            self.srv_list.insert("end", "%s%s" % (s["name"], mark))
-        if keep is not None and keep < self.srv_list.size():
-            self.srv_list.selection_set(keep)  # не генерит <<ListboxSelect>>
+        self._no_sel_ev = True
+        try:
+            self.srv_tv.delete(*self.srv_tv.get_children())
+            for s in self.data["servers"]:
+                name = s["name"]
+                self.srv_tv.insert(
+                    "", "end", iid=name,
+                    values=(name + self._srv_mark(s),
+                            self._srv_online_txt(name)))
+            if keep and self.srv_tv.exists(keep):
+                self.srv_tv.selection_set(keep)
+        finally:
+            self._no_sel_ev = False
         self._apply_opt_lock()
+
+    # ---- онлайн-индикатор: TCP-коннект на SSH-порт, без логина ----
+    def _online_loop(self):
+        while True:
+            for s in list(self.data.get("servers", [])):
+                threading.Thread(
+                    target=self._probe_srv,
+                    args=(s.get("name"), s.get("host"),
+                          int(s.get("ssh_port") or 22)),
+                    daemon=True).start()
+            time.sleep(15)
+
+    def _probe_srv(self, name, host, port):
+        ok = False
+        if host:
+            try:
+                socket.create_connection((host, port), timeout=4).close()
+                ok = True
+            except OSError:
+                pass
+        prev = self._online.get(name)
+        self._online[name] = ok
+        if prev != ok:
+            self.ui(lambda: self._srv_online_set(name))
+
+    def _srv_online_set(self, name):
+        if self.srv_tv.exists(name):
+            self.srv_tv.set(name, "online", self._srv_online_txt(name))
 
     def _apply_opt_lock(self):
         """Порт/протокол зашиты в конфиги юзеров — правка на развёрнутом
@@ -2247,13 +2312,15 @@ class App(tk.Tk):
         self.w_proto.config(state="disabled" if locked else "readonly")
 
     def _sel_srv(self):
-        i = self.srv_list.curselection()
-        if not i:
+        sel = self.srv_tv.selection()
+        if not sel:
             messagebox.showinfo(APP_NAME, self.t("Выбери сервер слева"))
             return None
-        return self.data["servers"][i[0]]
+        return self._srv_by_name(sel[0])
 
     def _on_srv_select(self):
+        if self._no_sel_ev:
+            return
         s = self._sel_srv_silent()
         if s:
             self._log_name = s["name"]
@@ -2283,8 +2350,8 @@ class App(tk.Tk):
         self.v_users_srv.set(self.t(self._usr_note[0]) % self._usr_note[1])
 
     def _sel_srv_silent(self):
-        i = self.srv_list.curselection()
-        return self.data["servers"][i[0]] if i else None
+        sel = self.srv_tv.selection()
+        return self._srv_by_name(sel[0]) if sel else None
 
     def _srv_add(self):
         d = ServerDialog(self)
