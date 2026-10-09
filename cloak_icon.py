@@ -98,14 +98,15 @@ def draw_admin_icon(color=BRAND, size=256):
     def gear(scale, fill):
         r1, r2, rhub, rhole = (62 * scale, 44 * scale, 26 * scale,
                                13 * scale)
-        w = math.radians(13)
+        wb = math.radians(15)   # полуугол основания зуба (у диска)
+        wt = math.radians(6)    # полуугол вершины — зуб сужается наружу
         pts = []
         for i in range(8):
             a = i * math.pi / 4
-            pts += [(cx + r2 * math.cos(a - w), cy + r2 * math.sin(a - w)),
-                    (cx + r1 * math.cos(a - w), cy + r1 * math.sin(a - w)),
-                    (cx + r1 * math.cos(a + w), cy + r1 * math.sin(a + w)),
-                    (cx + r2 * math.cos(a + w), cy + r2 * math.sin(a + w))]
+            pts += [(cx + r2 * math.cos(a - wb), cy + r2 * math.sin(a - wb)),
+                    (cx + r1 * math.cos(a - wt), cy + r1 * math.sin(a - wt)),
+                    (cx + r1 * math.cos(a + wt), cy + r1 * math.sin(a + wt)),
+                    (cx + r2 * math.cos(a + wb), cy + r2 * math.sin(a + wb))]
         d.polygon(pts, fill=fill)
         d.ellipse([cx - rhub, cy - rhub, cx + rhub, cy + rhub], fill=fill)
         d.ellipse([cx - rhole, cy - rhole, cx + rhole, cy + rhole],

@@ -1991,6 +1991,7 @@ class App(tk.Tk):
         self._verbose_on = False  # потокобезопасный дубль для _say
         self._fix_ctrl_bindings()
         self._build()
+        self.after_idle(self._fit_width)
         for var, key in ((self.v_mask, "mask_domain"),
                          (self.v_proto, "proto"),
                          (self.v_ckport, "ck_port")):
@@ -2068,6 +2069,17 @@ class App(tk.Tk):
         if getattr(self, "_usr_note", None):
             ru, a = self._usr_note
             self.v_users_srv.set(self.t(ru) % a)
+        self.after_idle(self._fit_width)
+
+    def _fit_width(self):
+        """Подогнать окно под текущий язык: RU-подписи кнопок длиннее EN,
+        при фиксированной геометрии они обрезались. Окно растёт до ширины,
+        реально запрошенной виджетами (не меньше стартовой)."""
+        self.update_idletasks()
+        w = max(1040, self.winfo_reqwidth())
+        h = max(680, self.winfo_reqheight())
+        if (w, h) != (self.winfo_width(), self.winfo_height()):
+            self.geometry("%dx%d" % (w, h))
 
     def _ensure_deps(self):
         """Первый запуск на чистой машине: SSH-слой и ck-client.

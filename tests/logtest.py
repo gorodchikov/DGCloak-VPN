@@ -360,12 +360,20 @@ if lab2:
     _orig_save = _fd.asksaveasfilename
     f_ = os.path.join(tempfile.mkdtemp(dir=lib.TMP), "%s.dgcloak" % CN)
     _fd.asksaveasfilename = lambda **k: f_
+    _orig_info = _mb.showinfo
+    _shown = []
+    _mb.showinfo = lambda *a, **k: _shown.append(str(a[1])[:60])
     if rec:
+        info("busy перед экспортом: %s" % app.busy)
         app._user_export(); wait_idle(app, 120)
-        check("G3 экспорт: .dgcloak на месте", os.path.isfile(f_), f_)
+        info("busy после ожидания: %s; showinfo: %s" % (app.busy, _shown))
+        info("журнал users: %s" % jrnl(app, lab2["name"], "users")[-6:])
+        check("G3 экспорт: .dgcloak на месте", os.path.isfile(f_),
+              [f_] + jrnl(app, lab2["name"], "users")[-4:])
         check("G3 строка «Конфиг …» в users-канале",
               any("Конфиг" in l and CN in l
-                  for l in jrnl(app, lab2["name"], "users")))
+                  for l in jrnl(app, lab2["name"], "users")),
+              jrnl(app, lab2["name"], "users")[-4:])
         # повторный create того же CN — отказ до SSH
         errs = []
         _orig_err = _mb.showerror
@@ -375,6 +383,7 @@ if lab2:
               errs and not app.busy, errs)
         _mb.showerror = _orig_err
     _fd.asksaveasfilename = _orig_save
+    _mb.showinfo = _orig_info
 
     # G5: отзыв + удаление (askyesno → True)
     _mb.askyesno = lambda *a, **k: True
