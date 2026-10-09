@@ -678,6 +678,14 @@ STRINGS_EN = {
     "Cloak": "Cloak",
     "Поднять в списке": "Move up",
     "Опустить в списке": "Move down",
+    "Уже написанное остаётся на прежнем языке:\n"
+    "записи в логе и статусы/заметки шагов деплоя.\n\n"
+    "Чтобы обновить статусы шагов — нажми\n"
+    "«Проверить статусы».":
+        "Already-written content stays in the previous language:\n"
+        "log entries and deployment step statuses/notes.\n\n"
+        "To refresh step statuses, click\n"
+        "\"Check statuses\".",
     "«%s» — сейчас это сервер твоего АКТИВНОГО VPN.\n\n"
     "SSH-сессия идёт через этот же туннель: при его разрыве\n"
     "(перезапуск OpenVPN/Cloak, смена фаервола, ребут, сброс)\n"
@@ -1964,6 +1972,12 @@ class App(tk.Tk):
         self.data["language"] = lang
         save_data(self.data)
         self._apply_lang()
+        messagebox.showinfo(
+            APP_NAME,
+            self.t("Уже написанное остаётся на прежнем языке:\n"
+                   "записи в логе и статусы/заметки шагов деплоя.\n\n"
+                   "Чтобы обновить статусы шагов — нажми\n"
+                   "«Проверить статусы»."))
         # на новом языке: RU→EN пишет по-английски, EN→RU по-русски
         self.say(self.t("Язык интерфейса: %s") %
                  self.v_lang.get())
