@@ -115,18 +115,26 @@ STRINGS_EN = {
     "Локальный порт Cloak (-l)": "Local Cloak port (-l)",
     "Сервер Cloak (-s), если не в конфиге": "Cloak server (-s), if not in config",
     "Порт сервера Cloak (-p)": "Cloak server port (-p)",
-    "IP сервера Cloak: исключить из туннеля": "Cloak server IP: bypass tunnel",
+    "IP обхода туннеля (пусто = из ck-конфига)": "Bypass IP (empty = from ck config)",
     "UDP-режим (-u, для OpenVPN по UDP)": "UDP mode (-u, for OpenVPN over UDP)",
     "Весь трафик через VPN (redirect-gateway local def1)":
         "Route all traffic via VPN (redirect-gateway local def1)",
-    "Порт — локальный порт Cloak (-l); remote в .ovpn подставляется автоматически.\n"
-    "IP-обход добавит маршрут через основной шлюз, чтобы трафик Cloak\n"
-    "не заворачивался в сам VPN. Файлы профиля копируются в папку\n"
-    "программы — исходные после этого можно удалить.":
-        "Port — local Cloak port (-l); remote in .ovpn is injected automatically.\n"
-        "Bypass IP adds a route via the main gateway so Cloak traffic\n"
-        "doesn't go into the VPN itself. Profile files are copied into the\n"
-        "program folder — the originals can be deleted.",
+    "Порт — куда ck-client принимает OpenVPN (-l); в .ovpn remote\n"
+    "перезаписывается на 127.0.0.1:порт. Сервер (-s) и его порт (-p)\n"
+    "переопределяют RemoteHost/RemotePort из ck-конфига. IP обхода —\n"
+    "маршрут до сервера через основной шлюз, чтобы трафик Cloak не\n"
+    "заворачивался в сам VPN; пусто = RemoteHost из ck-конфига.\n"
+    "UDP — транспорт Cloak по UDP (-u); включается и по \"UDP\":true\n"
+    "в ck-конфиге. Файлы профиля копируются в папку программы —\n"
+    "исходные после этого можно удалить.":
+        "Port — where ck-client accepts OpenVPN (-l); remote in .ovpn is\n"
+        "rewritten to 127.0.0.1:port. Server (-s) and its port (-p) override\n"
+        "RemoteHost/RemotePort from the ck config. Bypass IP — a route to\n"
+        "the server via the main gateway so Cloak traffic doesn't loop into\n"
+        "the VPN itself; empty = RemoteHost from the ck config.\n"
+        "UDP — Cloak transport over UDP (-u); also enabled by \"UDP\":true\n"
+        "in the ck config. Profile files are copied into the program\n"
+        "folder — the originals can be deleted afterwards.",
     "Файлы профиля скопированы в папку данных программы.":
         "Profile files copied to the program data folder.",
     # трей
@@ -167,7 +175,89 @@ STRINGS_EN = {
     "Отключаюсь…": "Disconnecting…",
     "Cloak готов.": "Cloak ready.",
     "management подключён.": "management connected.",
-    "Состояние OpenVPN: ": "OpenVPN state: ",
+    "Состояние OpenVPN: {st}": "OpenVPN state: {st}",
+    "Ошибка: {e}": "Error: {e}",
+    "Профиль: {w}": "Profile: {w}",
+    "Запуск: {a}": "Launching: {a}",
+    "Завершил оставшиеся от прошлого запуска: {lst}":
+        "Killed leftovers from the previous run: {lst}",
+    "Уже запущен {exe} (PID {pids}). Завершите процесс и повторите.":
+        "{exe} is already running (PID {pids}). Terminate it and retry.",
+    "Порт {port} уже занят другим процессом.":
+        "Port {port} is already in use by another process.",
+    "Системный маршрут 127.0.0.1 отсутствовал — восстановлен.":
+        "System route 127.0.0.1 was missing — restored.",
+    "Локальный адрес 127.0.0.1 не отвечает — сломана таблица маршрутов "
+    "(обычно после аварийного завершения OpenVPN). Перезагрузите ПК.":
+        "Local address 127.0.0.1 does not respond — the routing table is broken "
+        "(usually after an abnormal OpenVPN exit). Reboot the PC.",
+    "После отключения маршрут 127.0.0.1 пропал — восстановлен.":
+        "Route 127.0.0.1 disappeared after disconnect — restored.",
+    "ВНИМАНИЕ: 127.0.0.1 перестал отвечать — таблица маршрутов повреждена. "
+    "Остальные программы (например v2rayN) могут не работать до перезагрузки.":
+        "WARNING: 127.0.0.1 stopped responding — the routing table is corrupted. "
+        "Other programs (e.g. v2rayN) may not work until reboot.",
+    "Не удалось резолвить RemoteHost «{h}» — обход не добавлен.":
+        "Failed to resolve RemoteHost «{h}» — bypass route not added.",
+    "Обходной маршрут до сервера: {h} → {ip}": "Server bypass route: {h} → {ip}",
+    "В ck-конфиге UDP:true — включаю UDP-режим автоматически.":
+        "ck config has UDP:true — enabling UDP mode automatically.",
+    "Cloak завершился с кодом {rc}": "Cloak exited with code {rc}",
+    "OpenVPN завершился с кодом {rc}": "OpenVPN exited with code {rc}",
+    "Cloak не поднял порт за 15 с (ошибка: {err})":
+        "Cloak did not open the port within 15 s (error: {err})",
+    "OpenVPN не вышел в CONNECTED за 60 с (последнее состояние: {st})":
+        "OpenVPN did not reach CONNECTED within 60 s (last state: {st})",
+    "…жду OpenVPN {s} с; management: {m}; состояние: {st}":
+        "…waiting for OpenVPN {s} s; management: {m}; state: {st}",
+    "подключён": "connected",
+    "нет": "none",
+    "нет данных": "no data",
+    "не определён": "unknown",
+    "ВНИМАНИЕ: обходной маршрут до сервера Cloak не задан "
+    "(ни bypass_ip, ни RemoteHost) — при полном туннеле "
+    "транспорт зациклится через ~25 с!":
+        "WARNING: no bypass route to the Cloak server (neither bypass_ip nor "
+        "RemoteHost) — in full-tunnel mode the transport will loop within ~25 s!",
+    "ВНИМАНИЕ: OpenVPN не смог добавить маршруты (Access is denied) — трафик не идёт "
+    "через VPN. Запустите программу от имени администратора.":
+        "WARNING: OpenVPN failed to add routes (Access is denied) — traffic does not "
+        "go through the VPN. Run the program as administrator.",
+    "Не удалось подключиться к management-интерфейсу OpenVPN.":
+        "Failed to connect to the OpenVPN management interface.",
+    "OpenVPN запрашивает логин/пароль — это пока не поддерживается: {line}":
+        "OpenVPN requests login/password — not supported yet: {line}",
+    "OpenVPN: {line}": "OpenVPN: {line}",
+    "mgmt: {line}": "mgmt: {line}",
+    "management: ошибка чтения {e}": "management: read error {e}",
+    "management-соединение закрыто.": "management connection closed.",
+    "Cloak остановился (код {rc}) — VPN не работает.":
+        "Cloak stopped (code {rc}) — VPN down.",
+    "OpenVPN завершился (код {rc}).": "OpenVPN exited (code {rc}).",
+    "Внешний IP до подключения: {ip}": "External IP before connect: {ip}",
+    "Внешний IP через VPN: {ip} (до подключения: {prev})":
+        "External IP via VPN: {ip} (before connect: {prev})",
+    "Внимание: нет прав администратора. OpenVPN не сможет создать адаптер — "
+    "запустите программу от имени администратора.":
+        "Warning: no administrator rights. OpenVPN cannot create an adapter — "
+        "run the program as administrator.",
+    "Иконка и трей отключены: установите пакеты  pip install pystray pillow":
+        "Tray icon disabled: run  pip install pystray pillow",
+    "Не удалось создать иконку в трее: {e}": "Failed to create tray icon: {e}",
+    "Язык интерфейса переключён. Уже выведенные в лог записи "
+    "останутся на прежнем языке — переводятся только новые.":
+        "Interface language switched. Log entries already written remain "
+        "in the previous language — only new ones are translated.",
+    "В последнем релизе Cloak не найден ck-client-windows-amd64*.exe":
+        "ck-client-windows-amd64*.exe not found in the latest Cloak release",
+    "Cloak не скачался: {e}. Скачайте вручную: github.com/cbeuw/Cloak/releases":
+        "Cloak download failed: {e}. Download manually: github.com/cbeuw/Cloak/releases",
+    "winget вернул код {rc} — установите OpenVPN вручную.":
+        "winget returned code {rc} — install OpenVPN manually.",
+    "{title} есть, но не запускается: {path}": "{title} exists but failed to run: {path}",
+    "ВНУТРЕННЯЯ ОШИБКА:\n{tb}": "INTERNAL ERROR:\n{tb}",
+    "не удалось создать папку {d}: {e}": "cannot create folder {d}: {e}",
+    "{k}: {e}": "{k}: {e}",
     "Внимание: нет прав администратора. OpenVPN не сможет создать адаптер — "
     "запустите программу от имени администратора.":
         "Warning: no administrator rights. OpenVPN cannot create the adapter — "
@@ -320,8 +410,8 @@ def find_procs(exe_name):
     """PID уже запущенных процессов с таким именем."""
     try:
         out = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {exe_name}", "/FO", "CSV", "/NH"],
-                             capture_output=True, text=True, timeout=10,
-                             stdin=subprocess.DEVNULL, creationflags=NO_WINDOW).stdout
+                             capture_output=True, text=True, errors="replace", timeout=10,
+                             stdin=subprocess.DEVNULL, creationflags=NO_WINDOW).stdout or ""
     except (OSError, subprocess.SubprocessError):
         return []
     pids = []
@@ -340,9 +430,9 @@ def proc_cmdlines(exe_name):
     try:
         out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive",
                               "-Command", ps],
-                             capture_output=True, text=True, timeout=15,
+                             capture_output=True, text=True, errors="replace", timeout=15,
                              stdin=subprocess.DEVNULL,
-                             creationflags=NO_WINDOW).stdout
+                             creationflags=NO_WINDOW).stdout or ""
     except (OSError, subprocess.SubprocessError):
         return {}
     res = {}
@@ -357,8 +447,8 @@ def pid_running(pid, exe_name):
     """Жив ли процесс с этим PID и ожидаемым именем exe (защита от повторного использования PID)."""
     try:
         out = subprocess.run(["tasklist", "/FI", f"PID eq {int(pid)}", "/FO", "CSV", "/NH"],
-                             capture_output=True, text=True, timeout=10,
-                             stdin=subprocess.DEVNULL, creationflags=NO_WINDOW).stdout
+                             capture_output=True, text=True, errors="replace", timeout=10,
+                             stdin=subprocess.DEVNULL, creationflags=NO_WINDOW).stdout or ""
     except (OSError, subprocess.SubprocessError, ValueError):
         return False
     for line in out.splitlines():
@@ -463,6 +553,18 @@ def cloak_latest_url():
     raise RuntimeError("В последнем релизе Cloak не найден ck-client-windows-amd64*.exe")
 
 
+def external_ip(timeout=4):
+    """Внешний IP по api.ipify.org (для лога до/после подключения). None при ошибке."""
+    try:
+        req = urllib.request.Request("https://api.ipify.org",
+                                     headers={"User-Agent": "DGCloakVPN"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            ip = r.read().decode("ascii", "replace").strip()
+        return ip if re.fullmatch(r"[0-9a-fA-F:.]{3,45}", ip) else None
+    except Exception:  # noqa: BLE001 — нет сети/таймаут: это только информация для лога
+        return None
+
+
 def download(url, dst, on_progress):
     """Скачать файл, вызывая on_progress(получено, всего)."""
     os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -488,17 +590,18 @@ def _under_profiles_dir(path):
     return os.path.abspath(path).startswith(os.path.abspath(PROFILES_DIR) + os.sep)
 
 
-def import_profile_files(r):
+def import_profile_files(r, tr=None):
     """Скопировать файлы профиля (конфиг Cloak, .ovpn и его внешние ключи) в
     PROFILES_DIR/<имя>/ и подставить новые пути в r — исходники можно удалить.
-    Возвращает список предупреждений."""
+    Возвращает список предупреждений (переведённых через tr, если передан)."""
+    tr = tr or (lambda s, **kw: s.format(**kw) if kw else s)
     warnings = []
     safe = re.sub(r"[^\w\-]+", "_", r.get("name", "")).strip("_") or "profile"
     dest = os.path.join(PROFILES_DIR, safe)
     try:
         os.makedirs(dest, exist_ok=True)
     except OSError as e:
-        return [f"не удалось создать папку {dest}: {e}"]
+        return [tr("не удалось создать папку {d}: {e}", d=dest, e=e)]
     ovpn_src_dir = None
     for key in ("ck_config", "ovpn"):
         src = (r.get(key) or "").strip()
@@ -513,7 +616,7 @@ def import_profile_files(r):
         try:
             shutil.copy2(src_abs, dst)
         except OSError as e:
-            warnings.append(f"{key}: {e}")
+            warnings.append(tr("{k}: {e}", k=key, e=e))
             continue
         r[key] = dst
         if key == "ovpn":
@@ -537,7 +640,7 @@ def import_profile_files(r):
                     if os.path.isfile(cand) and not _under_profiles_dir(cand):
                         shutil.copy2(cand, os.path.join(dest, os.path.basename(cand)))
         except OSError as e:
-            warnings.append(f"ovpn: {e}")
+            warnings.append(tr("{k}: {e}", k="ovpn", e=e))
     return warnings
 
 
@@ -616,7 +719,8 @@ class SetupDialog(tk.Toplevel):
                     download(url, dst, self._set_progress)
                     app.data["ck_client"] = os.path.normpath(dst)
                 except Exception as e:  # noqa: BLE001
-                    self._say(f"Cloak не скачался: {e}. Скачайте вручную: github.com/cbeuw/Cloak/releases")
+                    self._say(app.t("Cloak не скачался: {e}. Скачайте вручную: "
+                                    "github.com/cbeuw/Cloak/releases", e=e))
             # OpenVPN: winget install (у приложения права администратора)
             if not os.path.isfile(app.data["openvpn_exe"]):
                 winget = find_winget()
@@ -628,7 +732,8 @@ class SetupDialog(tk.Toplevel):
                                        stdin=subprocess.DEVNULL, timeout=600,
                                        creationflags=NO_WINDOW)
                     if r.returncode != 0:
-                        self._say(f"winget вернул код {r.returncode} — установите OpenVPN вручную.")
+                        self._say(app.t("winget вернул код {rc} — установите OpenVPN вручную.",
+                                        rc=r.returncode))
                     found = find_openvpn()
                     if found:
                         app.data["openvpn_exe"] = found
@@ -640,7 +745,7 @@ class SetupDialog(tk.Toplevel):
             for key, title in (("openvpn_exe", "OpenVPN"), ("ck_client", "Cloak")):
                 path = app.data[key]
                 if os.path.isfile(path) and not exe_runs(path):
-                    self._say(f"{title} есть, но не запускается: {path}")
+                    self._say(app.t("{title} есть, но не запускается: {path}", title=title, path=path))
             self._say("готово")
         finally:
             self.working = False
@@ -664,7 +769,7 @@ class ProfileDialog(tk.Toplevel):
         ("port", "Локальный порт Cloak (-l)", None),
         ("server", "Сервер Cloak (-s), если не в конфиге", None),
         ("server_port", "Порт сервера Cloak (-p)", None),
-        ("bypass_ip", "IP сервера Cloak: исключить (пусто = из ck-конфига)", None),
+        ("bypass_ip", "IP обхода туннеля (пусто = из ck-конфига)", None),
     ]
 
     def __init__(self, parent, profile=None):
@@ -717,11 +822,15 @@ class ProfileDialog(tk.Toplevel):
                         variable=self.udp).grid(row=n, column=1, sticky="w", pady=4)
         ttk.Checkbutton(self.advf, text=t("Весь трафик через VPN (redirect-gateway local def1)"),
                         variable=self.full).grid(row=n + 1, column=1, sticky="w")
-        ttk.Label(self.advf, foreground="gray",
-                  text=t("Порт — локальный порт Cloak (-l); remote в .ovpn подставляется автоматически.\n"
-                         "IP-обход добавит маршрут через основной шлюз, чтобы трафик Cloak\n"
-                         "не заворачивался в сам VPN. Файлы профиля копируются в папку\n"
-                         "программы — исходные после этого можно удалить.")
+        ttk.Label(self.advf, foreground="gray", justify="left",
+                  text=t("Порт — куда ck-client принимает OpenVPN (-l); в .ovpn remote\n"
+                         "перезаписывается на 127.0.0.1:порт. Сервер (-s) и его порт (-p)\n"
+                         "переопределяют RemoteHost/RemotePort из ck-конфига. IP обхода —\n"
+                         "маршрут до сервера через основной шлюз, чтобы трафик Cloak не\n"
+                         "заворачивался в сам VPN; пусто = RemoteHost из ck-конфига.\n"
+                         "UDP — транспорт Cloak по UDP (-u); включается и по \"UDP\":true\n"
+                         "в ck-конфиге. Файлы профиля копируются в папку программы —\n"
+                         "исходные после этого можно удалить.")
                   ).grid(row=n + 2, column=0, columnspan=3, padx=8, sticky="w")
         r += 1
         btns = ttk.Frame(self)
@@ -966,6 +1075,9 @@ class App(tk.Tk):
             self.data["language"] = code
             save_data(self.data)
             self._apply_lang()
+            messagebox.showinfo(APP_NAME, self.t(
+                "Язык интерфейса переключён. Уже выведенные в лог записи "
+                "останутся на прежнем языке — переводятся только новые."))
 
     def _apply_lang(self):
         """Перетекстировать все виджеты и меню трея на выбранном языке."""
@@ -1067,14 +1179,14 @@ class App(tk.Tk):
             except (OSError, ValueError):
                 pass
 
-    def say(self, msg):
-        line = f"[{time.strftime('%H:%M:%S')}] {self.t(msg)}\n"
+    def say(self, msg, **kw):
+        line = f"[{time.strftime('%H:%M:%S')}] {self.t(msg, **kw)}\n"
         self._log_file(line)
         self.ui(lambda: self._append(line))
 
     def _report_exc(self, exc, val, tb):
         import traceback
-        self.say("ВНУТРЕННЯЯ ОШИБКА:\n" + "".join(traceback.format_exception(exc, val, tb)))
+        self.say("ВНУТРЕННЯЯ ОШИБКА:\n{tb}", tb="".join(traceback.format_exception(exc, val, tb)))
 
     def report_callback_exception(self, exc, val, tb):  # исключения внутри Tk-колбэков
         self._report_exc(exc, val, tb)
@@ -1121,7 +1233,7 @@ class App(tk.Tk):
             self.tray.run_detached()
         except Exception as e:  # noqa: BLE001
             self.tray = None
-            self.say(f"Не удалось создать иконку в трее: {e!r}")
+            self.say("Не удалось создать иконку в трее: {e}", e=repr(e))
 
     def _tray_items(self):
         MI = pystray.MenuItem
@@ -1246,8 +1358,8 @@ class App(tk.Tk):
         d = ProfileDialog(self)
         self.wait_window(d)
         if d.result:
-            for w in import_profile_files(d.result):
-                self.say(f"Профиль: {w}")
+            for w in import_profile_files(d.result, self.t):
+                self.say("Профиль: {w}", w=w)
             self.data["profiles"].append(d.result)
             save_data(self.data)
             self._refresh_combo(d.result["name"])
@@ -1265,8 +1377,8 @@ class App(tk.Tk):
         if d.result:
             old = p["name"]
             p.update(d.result)
-            for w in import_profile_files(p):
-                self.say(f"Профиль: {w}")
+            for w in import_profile_files(p, self.t):
+                self.say("Профиль: {w}", w=w)
             new_dir = os.path.dirname(os.path.abspath(p.get("ovpn", "")))
             if old_dir and old_dir != new_dir:  # профиль переименован — старые копии не нужны
                 shutil.rmtree(old_dir, ignore_errors=True)
@@ -1318,10 +1430,10 @@ class App(tk.Tk):
             try:
                 fn()
             except Exception as e:  # noqa: BLE001
-                self.say(f"Ошибка: {e}")
+                self.say("Ошибка: {e}", e=e)
                 self._stop_all()
                 self._check_loopback()
-                self.set_status(f"Ошибка: {e}", "red")
+                self.set_status("Ошибка: {e}", "red", e=e)
                 self.ui(self._show_adv)   # открыть панель с логом, чтобы была видна причина
             finally:
                 self.ui(self._finish)
@@ -1372,10 +1484,10 @@ class App(tk.Tk):
         try:
             ip = socket.gethostbyname(host)
         except OSError:
-            self.say(f"Не удалось резолвить RemoteHost «{host}» — обход не добавлен.")
+            self.say("Не удалось резолвить RemoteHost «{h}» — обход не добавлен.", h=host)
             return None
         if ip != host:
-            self.say(f"Обходной маршрут до сервера: {host} → {ip}")
+            self.say("Обходной маршрут до сервера: {h} → {ip}", h=host, ip=ip)
         return ip
 
     def _connect(self, p):
@@ -1397,12 +1509,16 @@ class App(tk.Tk):
         self.last_state = None
         self.route_failed = False
 
+        ip_before = external_ip()
+        self.say("Внешний IP до подключения: {ip}", ip=ip_before or self.t("не определён"))
+
         # 0. Предполётные проверки: остатки прошлых запусков
         if repair_loopback():
             self.say("Системный маршрут 127.0.0.1 отсутствовал — восстановлен.")
         if not loopback_ok():
-            raise RuntimeError("Локальный адрес 127.0.0.1 не отвечает — сломана таблица маршрутов "
-                               "(обычно после аварийного завершения OpenVPN). Перезагрузите ПК.")
+            raise RuntimeError(self.t(
+                "Локальный адрес 127.0.0.1 не отвечает — сломана таблица маршрутов "
+                "(обычно после аварийного завершения OpenVPN). Перезагрузите ПК."))
         # добить свои процессы, оставшиеся от аварийного прошлого запуска (по сохранённым PID)
         saved = load_pids()
         killed = []
@@ -1413,7 +1529,7 @@ class App(tk.Tk):
                 killed.append(f"{os.path.basename(exe)} (PID {pid})")
         save_pids({})
         if killed:
-            self.say("Завершил оставшиеся от прошлого запуска: " + ", ".join(killed))
+            self.say("Завершил оставшиеся от прошлого запуска: {lst}", lst=", ".join(killed))
             time.sleep(1)  # дать портам освободиться
         # чужие процессы с такими же именами — как раньше, предупреждение.
         # ck-client в режиме admin-API (флаг -a) локальный порт не занимает —
@@ -1425,10 +1541,10 @@ class App(tk.Tk):
                 pids = [p for p in pids
                         if not re.search(r"(?:^|\s)-a(?:\s|$)", cls.get(p, ""))]
             if pids:
-                raise RuntimeError(f"Уже запущен {os.path.basename(exe)} (PID {', '.join(pids)}). "
-                                   "Завершите процесс и повторите.")
+                raise RuntimeError(self.t("Уже запущен {exe} (PID {pids}). Завершите процесс и повторите.",
+                                          exe=os.path.basename(exe), pids=", ".join(pids)))
         if not p.get("udp") and port_open("127.0.0.1", p["port"]):
-            raise RuntimeError(f"Порт {p['port']} уже занят другим процессом.")
+            raise RuntimeError(self.t("Порт {port} уже занят другим процессом.", port=p["port"]))
 
         # 1. Cloak
         self.set_status("Запуск Cloak…", "orange")
@@ -1439,7 +1555,7 @@ class App(tk.Tk):
             args += ["-p", p["server_port"]]
         if p.get("udp"):
             args.append("-u")
-        self.say("Запуск: " + " ".join(args))
+        self.say("Запуск: {a}", a=" ".join(args))
         self.ck = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, text=True, errors="replace",
                                    creationflags=NO_WINDOW)
@@ -1454,12 +1570,12 @@ class App(tk.Tk):
                 if err is None:
                     break
                 if self.ck.poll() is not None:
-                    raise RuntimeError(f"Cloak завершился с кодом {self.ck.returncode}")
+                    raise RuntimeError(self.t("Cloak завершился с кодом {rc}", rc=self.ck.returncode))
                 if time.time() > deadline:
-                    raise TimeoutError(f"Cloak не поднял порт за 15 с (ошибка: {err})")
+                    raise TimeoutError(self.t("Cloak не поднял порт за 15 с (ошибка: {err})", err=err))
                 time.sleep(0.5)
         if self.ck.poll() is not None:
-            raise RuntimeError(f"Cloak завершился с кодом {self.ck.returncode}")
+            raise RuntimeError(self.t("Cloak завершился с кодом {rc}", rc=self.ck.returncode))
         self.say("Cloak готов.")
 
         # 2. OpenVPN (консольный) — без GUI, статус через management
@@ -1482,7 +1598,7 @@ class App(tk.Tk):
             ov_args += ["--redirect-gateway", "local", "def1"]
         if self.verb:
             ov_args += ["--verb", "4"]
-        self.say("Запуск: " + " ".join(ov_args))
+        self.say("Запуск: {a}", a=" ".join(ov_args))
         self.vpn = subprocess.Popen(ov_args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, text=True, errors="replace",
                                     creationflags=NO_WINDOW)
@@ -1494,17 +1610,19 @@ class App(tk.Tk):
         next_beat = t0 + 5
         while not self.up.wait(0.5):
             if self.vpn.poll() is not None:
-                raise RuntimeError(f"OpenVPN завершился с кодом {self.vpn.returncode}")
+                raise RuntimeError(self.t("OpenVPN завершился с кодом {rc}", rc=self.vpn.returncode))
             if self.ck.poll() is not None:
-                raise RuntimeError(f"Cloak завершился с кодом {self.ck.returncode}")
+                raise RuntimeError(self.t("Cloak завершился с кодом {rc}", rc=self.ck.returncode))
             now = time.time()
             if now > t0 + 60:
-                raise TimeoutError("OpenVPN не вышел в CONNECTED за 60 с "
-                                   f"(последнее состояние: {self.last_state or 'нет данных'})")
+                raise TimeoutError(self.t("OpenVPN не вышел в CONNECTED за 60 с (последнее состояние: {st})",
+                                          st=self.last_state or self.t("нет данных")))
             if now >= next_beat:
                 next_beat += 5
-                self.say(f"…жду OpenVPN {int(now - t0)} с; management: "
-                         f"{'подключён' if self.mgmt else 'нет'}; состояние: {self.last_state or 'нет'}")
+                self.say("…жду OpenVPN {s} с; management: {m}; состояние: {st}",
+                         s=int(now - t0),
+                         m=self.t("подключён") if self.mgmt else self.t("нет"),
+                         st=self.last_state or self.t("нет данных"))
 
         self.active = p
         if self.data.get("last_profile") != p["name"]:
@@ -1518,6 +1636,10 @@ class App(tk.Tk):
             self.set_status("Маршруты не добавлены — нужны права администратора", "red")
         else:
             self.say("Подключено.")
+        ip_after = external_ip()
+        self.say("Внешний IP через VPN: {ip} (до подключения: {prev})",
+                 ip=ip_after or self.t("не определён"),
+                 prev=ip_before or self.t("не определён"))
 
     def _mgmt_loop(self, port, proc, p):
         sock = None
@@ -1531,7 +1653,7 @@ class App(tk.Tk):
                 time.sleep(0.2)
         if sock is None:
             self.say("Не удалось подключиться к management-интерфейсу OpenVPN.")
-            return
+            return  # туннель сам упадёт по таймауту CONNECTED
         sock.settimeout(None)
         self.mgmt = sock
         self.say("management подключён.")
@@ -1545,18 +1667,18 @@ class App(tk.Tk):
                 if m:
                     self._on_state(m.group(1), p)
                 elif line.startswith(">PASSWORD:"):
-                    self.say("OpenVPN запрашивает логин/пароль — это пока не поддерживается: " + line)
+                    self.say("OpenVPN запрашивает логин/пароль — это пока не поддерживается: {line}", line=line)
                 elif line.startswith(">FATAL:"):
-                    self.say("OpenVPN: " + line)
+                    self.say("OpenVPN: {line}", line=line)
                 elif line:
-                    self.say("mgmt: " + line)
+                    self.say("mgmt: {line}", line=line)
         except (OSError, ValueError) as e:
-            self.say(f"management: ошибка чтения {e!r}")
+            self.say("management: ошибка чтения {e}", e=repr(e))
         self.say("management-соединение закрыто.")
 
     def _on_state(self, state, p):
         self.last_state = state
-        self.say(f"Состояние OpenVPN: {state}")
+        self.say("Состояние OpenVPN: {st}", st=state)
         text, color = STATES.get(state, (state, "orange"))
         self.set_status(text, color, name=p["name"])
         if state == "CONNECTED":
@@ -1572,11 +1694,11 @@ class App(tk.Tk):
         while not stop.wait(2):
             if self.ck and self.ck.poll() is not None and "ck" not in warned:
                 warned.add("ck")
-                self.say(f"Cloak остановился (код {self.ck.returncode}) — VPN не работает.")
+                self.say("Cloak остановился (код {rc}) — VPN не работает.", rc=self.ck.returncode)
                 self.set_status("Cloak остановлен — VPN не работает", "red")
             if self.vpn and self.vpn.poll() is not None and "vpn" not in warned:
                 warned.add("vpn")
-                self.say(f"OpenVPN завершился (код {self.vpn.returncode}).")
+                self.say("OpenVPN завершился (код {rc}).", rc=self.vpn.returncode)
                 self.set_status("OpenVPN завершился", "red")
 
     # ---------- отключение ----------
@@ -1653,7 +1775,7 @@ def single_instance_ok():
             None, False, "Local\\DGCloakVPNSingleton")
         if ctypes.windll.kernel32.GetLastError() == 183:  # ALREADY_EXISTS
             ctypes.windll.user32.MessageBoxW(
-                0, "DGCloak VPN уже запущен.", APP_NAME, 0x40)
+                0, "DGCloak VPN уже запущен / is already running.", APP_NAME, 0x40)
             return False
     except Exception:
         pass  # не Windows или нет ctypes — не блокируем
