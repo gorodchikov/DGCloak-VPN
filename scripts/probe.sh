@@ -1,7 +1,7 @@
 #!/bin/bash
 # Read-only аудит статуса шагов деплоя. Формат вывода:
 #   ===STEP_<key>===
-#   <ok|warn|fail>|<комментарий>
+#   <ok|warn|fail>|<токен[:параметры] — локализуется клиентом>
 # Запуск: sudo bash probe.sh
 set -u
 emit() { echo "===STEP_$1==="; echo "$2|$3"; }
@@ -14,9 +14,9 @@ emit ssh "ok" "U=$AUTH_USER H=$(hostname)"
 AHOME="$(getent passwd "$AUTH_USER" | cut -d: -f6)"
 AK="$AHOME/.ssh/authorized_keys"
 if [ -s "$AK" ]; then
-    emit key "ok" "ключей в authorized_keys: $(grep -c . "$AK")"
+    emit key "ok" "ak_count:$(grep -c . "$AK")"
 else
-    emit key "fail" "authorized_keys пуст/отсутствует"
+    emit key "fail" "ak_missing"
 fi
 
 # --- audit ---
@@ -46,24 +46,24 @@ elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 
     PORTS=$(firewall-cmd --list-ports 2>/dev/null | tr ' ' '\n' | cut -d/ -f1 | sort -un | tr '\n' ',' | sed 's/,$//')
 fi
 if [ "$FW" = "none" ]; then
-    emit fw "fail" "фаервола нет"
+    emit fw "fail" "fw_none"
 else
-    emit fw "ok" "$FW; открыто: ${PORTS:-?}"
+    emit fw "ok" "fw_ok:$FW:${PORTS:-?}"
 fi
 
 # --- sysupd ---
 # «ok» только если реально нечего ставить: на свежем снапшоте флага
 # reboot-required нет просто потому, что апгрейд ещё не делали
 if [ -f /var/run/reboot-required ]; then
-    emit sysupd "warn" "нужна перезагрузка"
+    emit sysupd "warn" "reboot_required"
 elif ! ls /var/lib/apt/lists/*Packages >/dev/null 2>&1; then
-    emit sysupd "warn" "apt update не выполнялся"
+    emit sysupd "warn" "apt_stale"
 else
     PEND=$(apt-get -s dist-upgrade 2>/dev/null | grep -c '^Inst ' || true)
     if [ "${PEND:-0}" -gt 0 ]; then
-        emit sysupd "warn" "не установлено обновлений: $PEND"
+        emit sysupd "warn" "pending:$PEND"
     else
-        emit sysupd "ok" "система обновлена, ребут не требуется"
+        emit sysupd "ok" "clean"
     fi
 fi
 
@@ -73,18 +73,18 @@ for p in openvpn easy-rsa nftables curl python3 ca-certificates; do
     dpkg -s "$p" >/dev/null 2>&1 || MISS="$MISS $p"
 done
 if [ -n "$MISS" ]; then
-    emit pkgs "warn" "не хватает:$MISS"
+    emit pkgs "warn" "pkgs_missing:$MISS"
 else
-    emit pkgs "ok" "все пакеты есть"
+    emit pkgs "ok" "pkgs_ok"
 fi
 
 # --- ovpn ---
 if systemctl is-active --quiet openvpn-server@server 2>/dev/null; then
     PROTO=$(awk '/^proto /{print $2}' /etc/openvpn/server/server.conf 2>/dev/null)
     MGMT=$(awk '/^management /{print $3}' /etc/openvpn/server/server.conf 2>/dev/null)
-    emit ovpn "ok" "proto=${PROTO:-?} mgmt:${MGMT:-?}"
+    emit ovpn "ok" "ovpn_ok:${PROTO:-?}:${MGMT:-?}"
 else
-    emit ovpn "fail" "openvpn-server@server не активен"
+    emit ovpn "fail" "ovpn_down"
 fi
 
 # --- nat ---
@@ -93,11 +93,11 @@ NATOK=""
 nft list chain inet dgcloak postrouting 2>/dev/null | grep -q masquerade && NATOK=1
 iptables -t nat -S POSTROUTING 2>/dev/null | grep -q MASQUERADE && NATOK=1
 if [ "$FWD" = "1" ] && [ -n "$NATOK" ]; then
-    emit nat "ok" "forward+masquerade на месте"
+    emit nat "ok" "nat_ok"
 elif [ "$FWD" = "1" ]; then
-    emit nat "warn" "forward=1, masquerade не найден"
+    emit nat "warn" "nat_no_masq"
 else
-    emit nat "fail" "ip_forward=0"
+    emit nat "fail" "no_forward"
 fi
 
 # --- cloak ---
@@ -105,11 +105,11 @@ if systemctl is-active --quiet ck-server 2>/dev/null; then
     LIS=$(ss -tln 2>/dev/null | grep -c ":$CKPORT ")
     if [ -f /etc/ck-server/ckserver.json ] && [ "$LIS" -gt 0 ]; then
         MASK=$(grep -o '"RedirAddr": *"[^"]*"' /etc/ck-server/ckserver.json | cut -d'"' -f4)
-        emit cloak "ok" "active, tcp/$CKPORT слушает, маскировка ${MASK:-?}"
+        emit cloak "ok" "cloak_ok:$CKPORT:${MASK:-?}"
     else
-        emit cloak "warn" "active, но порт $CKPORT не слушает/нет конфига"
+        emit cloak "warn" "cloak_no_listen:$CKPORT"
     fi
 else
-    emit cloak "fail" "ck-server не активен"
+    emit cloak "fail" "cloak_down"
 fi
 echo "=== DONE ==="

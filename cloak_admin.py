@@ -52,20 +52,28 @@ if not os.path.isdir(SCRIPTS_DIR) and getattr(sys, "_MEIPASS", None):
 
 CK_VERSION = "2.12.0"
 INT64_MAX = 9223372036854775807
+# Cloak хранит «безлимит» как MaxInt64 и уменьшает credit по мере расхода
+# трафика — точное сравнение с INT64_MAX срабатывает только у нетронутого
+# юзера. Порог 2**62 (~4.6 ЭБ): реальная квота туда не дотянется никогда.
+UNLIMITED = 1 << 62
+
+
+def _is_unlim(v):
+    return v is None or v >= UNLIMITED
 FAR_FUTURE = 2000000000  # ~2033 — «бессрочный» юзер Cloak
 
 
 def _fmt_rate(bps):
-    """байт/с → Мбит/с компактно; отсутствие/INT64_MAX = безлимит (∞)."""
-    if bps is None or bps >= INT64_MAX:
+    """байт/с → Мбит/с компактно; отсутствие/UNLIMITED = безлимит (∞)."""
+    if _is_unlim(bps):
         return "∞"
     mb = bps * 8 / 1e6
     return T("%gМ") % round(mb, 1) if mb >= 1 else T("%dк") % round(bps * 8 / 1e3)
 
 
 def _fmt_bytes(v):
-    """байт → объём (МБ/ГБ); отсутствие/INT64_MAX = безлимит (∞)."""
-    if v is None or v >= INT64_MAX:
+    """байт → объём (МБ/ГБ); отсутствие/UNLIMITED = безлимит (∞)."""
+    if _is_unlim(v):
         return "∞"
     return ("%gG" % round(v / 1073741824, 1)) if v >= 1073741824 \
         else "%dM" % round(v / 1048576)
@@ -455,6 +463,25 @@ STRINGS_EN = {
     # --- формат-юниты ---
     "%dк": "%dk",
     "%gМ": "%gM",
+    # --- заметки probe.sh (токены → текст) ---
+    "ключей в authorized_keys: %s": "keys in authorized_keys: %s",
+    "authorized_keys пуст/отсутствует": "authorized_keys is empty/missing",
+    "фаервола нет": "no firewall",
+    "%s; открыто: %s": "%s; open: %s",
+    "нужна перезагрузка": "reboot required",
+    "apt update не выполнялся": "apt update never ran",
+    "не установлено обновлений: %s": "pending updates: %s",
+    "система обновлена, ребут не требуется": "system up to date, no reboot needed",
+    "не хватает: %s": "missing: %s",
+    "все пакеты есть": "all packages present",
+    "proto=%s mgmt:%s": "proto=%s mgmt:%s",
+    "openvpn-server@server не активен": "openvpn-server@server is not active",
+    "forward+masquerade на месте": "forward+masquerade in place",
+    "forward=1, masquerade не найден": "forward=1, masquerade not found",
+    "ip_forward=0": "ip_forward=0",
+    "active, tcp/%s слушает, маскировка %s": "active, tcp/%s listening, mask %s",
+    "active, но порт %s не слушает/нет конфига": "active, but port %s not listening/no config",
+    "ck-server не активен": "ck-server is not active",
 }
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -1377,16 +1404,16 @@ class UserDialog(simpledialog.Dialog):
                    str(rec.get("sessions") or 16)),
                   ("up_mbits", self.t("Лимит скорости ↑, Мбит/с (0 = безлимит)"),
                    "%g" % (rec["up_rate"] * 8 / 1e6)
-                   if rec.get("up_rate") and rec["up_rate"] < INT64_MAX else "0"),
+                   if rec.get("up_rate") and not _is_unlim(rec["up_rate"]) else "0"),
                   ("down_mbits", self.t("Лимит скорости ↓, Мбит/с (0 = безлимит)"),
                    "%g" % (rec["down_rate"] * 8 / 1e6)
-                   if rec.get("down_rate") and rec["down_rate"] < INT64_MAX else "0"),
+                   if rec.get("down_rate") and not _is_unlim(rec["down_rate"]) else "0"),
                   ("up_mb", self.t("Квота трафика ↑, МБ (0 = безлимит)"),
                    str(rec["up_credit"] // 1048576)
-                   if rec.get("up_credit") and rec["up_credit"] < INT64_MAX else "0"),
+                   if rec.get("up_credit") and not _is_unlim(rec["up_credit"]) else "0"),
                   ("down_mb", self.t("Квота трафика ↓, МБ (0 = безлимит)"),
                    str(rec["down_credit"] // 1048576)
-                   if rec.get("down_credit") and rec["down_credit"] < INT64_MAX else "0"),
+                   if rec.get("down_credit") and not _is_unlim(rec["down_credit"]) else "0"),
                   ("mask", self.t("Домен для маскировки"),
                    rec.get("mask") or self.srv_mask)]
         self.vars = {}
@@ -2344,22 +2371,66 @@ class App(tk.Tk):
                 self.ui(self._refresh_servers)
         self._worker(work)
 
+    # Токены probe.sh → RU-шаблоны (переводятся через self.t при разборе).
+    # Заметки без токена («U=... H=...», «ubuntu 24.04 / x86_64») — данные,
+    # выводятся как есть.
+    PROBE_NOTES = {
+        "ak_count":        "ключей в authorized_keys: %s",
+        "ak_missing":      "authorized_keys пуст/отсутствует",
+        "fw_none":         "фаервола нет",
+        "fw_ok":           "%s; открыто: %s",
+        "reboot_required": "нужна перезагрузка",
+        "apt_stale":       "apt update не выполнялся",
+        "pending":         "не установлено обновлений: %s",
+        "clean":           "система обновлена, ребут не требуется",
+        "pkgs_missing":    "не хватает: %s",
+        "pkgs_ok":         "все пакеты есть",
+        "ovpn_ok":         "proto=%s mgmt:%s",
+        "ovpn_down":       "openvpn-server@server не активен",
+        "nat_ok":          "forward+masquerade на месте",
+        "nat_no_masq":     "forward=1, masquerade не найден",
+        "no_forward":      "ip_forward=0",
+        "cloak_ok":        "active, tcp/%s слушает, маскировка %s",
+        "cloak_no_listen": "active, но порт %s не слушает/нет конфига",
+        "cloak_down":      "ck-server не активен",
+    }
+
+    def _probe_note(self, raw):
+        """Сырой note из probe.sh → локализованная строка.
+        Неизвестные токены/данные возвращаем как есть."""
+        tok, _, rest = raw.partition(":")
+        tmpl = self.PROBE_NOTES.get(tok)
+        if tmpl is None:
+            return raw
+        if not rest:
+            return self.t(tmpl)
+        args = [a.strip() for a in rest.split(":")]
+        if len(args) != tmpl.count("%s"):
+            return self.t(tmpl)  # безопаснее, чем TypeError при лишних ':'
+        return self.t(tmpl) % tuple(args)
+
     def _apply_probe(self, s, out):
         """Разобрать вывод probe.sh → steps/deployed/reboot_required.
         Возвращает False, если probe не выдал ни одного шага."""
         known = dict(self.STEPS)
         st = {}
+        reboot = False
         for m in re.finditer(r"===STEP_(\w+)===\s*\n(\w+)\|([^\n]*)", out):
-            key, stt, note = m.group(1), m.group(2), m.group(3).strip()
+            key, stt, raw = m.group(1), m.group(2), m.group(3).strip()
             if key in known:
+                if raw.split(":", 1)[0] == "reboot_required":
+                    reboot = True
+                note = self._probe_note(raw)
                 st[key] = {"st": stt, "note": note}
                 self.say("  %s → %s: %s" % (key, stt, note))
         if not st:
             self.say(self.t("!! probe.sh не вернул данных"))
             return False
         s["steps"] = st
+        # Флаг reboot_required: по токену probe, плюс бэкофф на старые
+        # записи с текстовой заметкой
         note_su = st.get("sysupd", {}).get("note", "")
-        if "reboot" in note_su or "перезагруз" in note_su:
+        if reboot or "reboot" in note_su or "перезагруз" in note_su:
             s["reboot_required"] = True
         else:
             s.pop("reboot_required", None)
