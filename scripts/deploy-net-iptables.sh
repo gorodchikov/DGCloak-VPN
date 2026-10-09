@@ -72,11 +72,13 @@ systemctl enable netfilter-persistent >/dev/null 2>&1 || true
 echo '--- filter INPUT ---'; iptables -S INPUT | head -10
 echo '--- nat POSTROUTING ---'; iptables -t nat -S POSTROUTING | tail -3
 
-# Контроль результата: masquerade именно 10.8.0.0/24 + forward tun0
-iptables -t nat -S POSTROUTING | grep -q '10\.8\.0\.0/24 .*MASQUERADE' \
+# Контроль результата: masquerade именно 10.8.0.0/24 + forward tun0.
+# NB: без -q — ранний выход grep'а даёт SIGPIPE производителю,
+# pipefail возвращает 141 (флаки «правила есть, проверка упала»).
+iptables -t nat -S POSTROUTING | grep '10\.8\.0\.0/24 .*MASQUERADE' >/dev/null \
     || { _ "!! masq для 10.8.0.0/24 не появился в POSTROUTING" \
             "!! no masq for 10.8.0.0/24 in POSTROUTING"; exit 1; }
-iptables -S FORWARD | grep -q tun0 \
+iptables -S FORWARD | grep tun0 >/dev/null \
     || { _ "!! нет forward-правил для tun0" "!! no forward rules for tun0"; exit 1; }
 
 echo "=== OK deploy-net-iptables ==="

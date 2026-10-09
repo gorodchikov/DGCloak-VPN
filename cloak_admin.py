@@ -3496,16 +3496,17 @@ class App(tk.Tk):
         # реально стоят. Иначе «успешный» деплой без интернета —
         # чужие docker/amnezia masq давали ложное ok (живой кейс AWS).
         if fw != "firewalld":
+            # NB: один sudo на всю команду — в pw-режиме пароль читается
+            # из stdin один раз, второй sudo в цепочке получает EOF.
             chk = ssh.run(
-                "M=$(%siptables -t nat -S POSTROUTING 2>/dev/null "
-                "| grep -cE '10\\.8\\.0\\.0/24 .*MASQUERADE');"
-                "N=$(%snft list chain inet dgcloak postrouting 2>/dev/null "
-                "| grep -c '10\\.8\\.0\\.0/24.*masquerade');"
-                "F=$(%siptables -S 2>/dev/null | grep -c tun0);"
-                "G=$(%snft list chain inet dgcloak forward 2>/dev/null "
+                "%sbash -c 'M=$(iptables -t nat -S POSTROUTING 2>/dev/null "
+                "| grep -cE \"10\\.8\\.0\\.0/24 .*MASQUERADE\");"
+                "N=$(nft list chain inet dgcloak postrouting 2>/dev/null "
+                "| grep -c \"10\\.8\\.0\\.0/24.*masquerade\");"
+                "F=$(iptables -S 2>/dev/null | grep -c tun0);"
+                "G=$(nft list chain inet dgcloak forward 2>/dev/null "
                 "| grep -c tun0);"
-                "echo V:NAT=$((M+N)):FWD=$((F+G))"
-                % (ssh.sudo, ssh.sudo, ssh.sudo, ssh.sudo), timeout=30)
+                "echo V:NAT=$((M+N)):FWD=$((F+G))'" % ssh.sudo, timeout=30)
             mv = re.search(r"V:NAT=(\d+):FWD=(\d+)", chk)
             nat_n = int(mv.group(1)) if mv else 0
             fwd_n = int(mv.group(2)) if mv else 0
@@ -3568,9 +3569,9 @@ class App(tk.Tk):
                         "Загасить его? (остановка + отключение автозапуска,\n"
                         "контейнер НЕ удаляется)") % (ck, who)):
                     self.say(self.t("  гашу контейнер «%s»…") % who)
-                    ssh.run("%sdocker stop %s && "
-                            "%sdocker update --restart=no %s"
-                            % (ssh.sudo, who, ssh.sudo, who), timeout=120)
+                    ssh.run("%sbash -c 'docker stop %s && "
+                            "docker update --restart=no %s'"
+                            % (ssh.sudo, who, who), timeout=120)
                     self.say(self.t("  контейнер «%s» загашен "
                              "(stop + restart=no)") % who)
                     # заодно у остальных amnezia-* снять автозапуск

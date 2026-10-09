@@ -58,10 +58,10 @@ iptables -S ufw-before-input >/dev/null 2>&1 || { _ "!! ufw цепочки не 
 # Контроль результата: masquerade НАШЕЙ подсети + forward-правила tun0.
 # Без них VPN подключается, но интернета нет (живой кейс: чужие
 # docker/amnezia masq-правила давали ложное «всё на месте»).
-iptables -t nat -S POSTROUTING | grep -q '10\.8\.0\.0/24 .*MASQUERADE' \
+iptables -t nat -S POSTROUTING | grep '10\.8\.0\.0/24 .*MASQUERADE' >/dev/null \
     || { _ "!! masq для 10.8.0.0/24 не появился в POSTROUTING" \
             "!! no masq for 10.8.0.0/24 in POSTROUTING"; exit 1; }
-iptables -S | grep -q tun0 \
+iptables -S | grep tun0 >/dev/null \
     || { _ "!! нет forward-правил для tun0" "!! no forward rules for tun0"; exit 1; }
 grep -q 'OPENVPN-NAT' "$F" \
     || { _ "!! нет персиста masq в $F — после ребута сломается" \
