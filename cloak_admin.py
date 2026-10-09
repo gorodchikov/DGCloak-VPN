@@ -165,14 +165,23 @@ def cleanup_stale_procs(log=print):
 
 def vpn_active_host():
     """Хост сервера активного подключения VPN-клиента (DGCloakVPN) или None:
-    читает %APPDATA%\\DGCloak\\VPN — pids.json (жив ли клиент) и
-    data.json/ck-конфиг профиля (куда он подключён)."""
+    читает pids.json (жив ли клиент) и data.json/ck-конфиг профиля (куда
+    подключён). Смотрим и новую папку %APPDATA%\\DGCloak\\VPN, и старую
+    %APPDATA%\\DGCloakVPN — старые сборки клиента пишут туда."""
+    for d in (VPN_DIR, OLD_VPN_DIR):
+        host = _vpn_active_host_in(d)
+        if host:
+            return host
+    return None
+
+
+def _vpn_active_host_in(vdir):
     try:
-        with open(os.path.join(VPN_DIR, "pids.json"), encoding="utf-8") as f:
+        with open(os.path.join(vdir, "pids.json"), encoding="utf-8") as f:
             pids = json.load(f)
         if not any(_pid_exists(p) for p in pids.values() if p):
             return None
-        with open(os.path.join(VPN_DIR, "data.json"), encoding="utf-8") as f:
+        with open(os.path.join(vdir, "data.json"), encoding="utf-8") as f:
             vdata = json.load(f)
         prof = next((p for p in vdata.get("profiles", [])
                      if p.get("name") == vdata.get("last_profile")), None)
