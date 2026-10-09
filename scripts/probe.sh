@@ -110,6 +110,17 @@ if systemctl is-active --quiet ck-server 2>/dev/null; then
         emit cloak "warn" "cloak_no_listen:$CKPORT"
     fi
 else
-    emit cloak "fail" "cloak_down"
+    # ck-server не активен — кто тогда держит его порт, если держит?
+    L=$(ss -tlnpH "sport = :$CKPORT" 2>/dev/null | head -1)
+    if [ -z "$L" ]; then
+        emit cloak "fail" "cloak_down"
+    elif echo "$L" | grep -q docker-proxy; then
+        NM=$(docker ps --filter "publish=$CKPORT" \
+             --format '{{.Names}}' 2>/dev/null | head -1)
+        emit cloak "fail" "cloak_busy:$CKPORT:docker:${NM:-container}"
+    else
+        PN=$(echo "$L" | grep -oE '"[^"]+"' | tr -d '"' | head -1)
+        emit cloak "fail" "cloak_busy:$CKPORT:proc:${PN:-?}"
+    fi
 fi
 echo "=== DONE ==="

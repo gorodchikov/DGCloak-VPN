@@ -507,6 +507,8 @@ STRINGS_EN = {
     "active, tcp/%s слушает, маскировка %s": "active, tcp/%s listening, mask %s",
     "active, но порт %s не слушает/нет конфига": "active, but port %s not listening/no config",
     "ck-server не активен": "ck-server is not active",
+    "ck-server не активен, tcp/%s занят %s:%s":
+        "ck-server is not active, tcp/%s held by %s:%s",
     "Язык интерфейса: %s": "Interface language: %s",
     "Имя": "Name",
     "SSH": "SSH",
@@ -2546,6 +2548,7 @@ class App(tk.Tk):
         "cloak_ok":        "active, tcp/%s слушает, маскировка %s",
         "cloak_no_listen": "active, но порт %s не слушает/нет конфига",
         "cloak_down":      "ck-server не активен",
+        "cloak_busy":      "ck-server не активен, tcp/%s занят %s:%s",
     }
 
     def _probe_note(self, raw):
