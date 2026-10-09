@@ -123,6 +123,10 @@ def save_ico(path="app.ico", admin=False):
 
 
 if __name__ == "__main__":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     out = sys.argv[1] if len(sys.argv) > 1 else "app.ico"
     save_ico(out, admin="--admin" in sys.argv)
     print("Создано:", out)
