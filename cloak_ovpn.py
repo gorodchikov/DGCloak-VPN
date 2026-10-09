@@ -1292,12 +1292,14 @@ class App(tk.Tk):
         self.log.see("end")
         self.log.config(state="disabled")
 
-    def set_status(self, text, color, **kw):
-        """text — русский шаблон; kw подставляются после перевода ({name} и т.п.)."""
+    def set_status(self, text, color, _tray=None, **kw):
+        """text — русский шаблон; kw подставляются после перевода ({name} и т.п.).
+        _tray — готовый текст для тултипа (если отличается от text: например без
+        моноширинной набивки — в тултипе шрифт пропорциональный, набивка съезжает)."""
         self._status_msg = (text, color, kw)
         def apply():
             self.status.config(text=self.t(text, **kw), foreground=color)
-            self._tray_update(self.t(text, **kw), color)
+            self._tray_update(_tray if _tray is not None else self.t(text, **kw), color)
             self.update_idletasks()
             h = self.winfo_reqheight()  # многострочный статус → подогнать высоту окна
             if abs(h - self.winfo_height()) > 4:
@@ -1809,15 +1811,16 @@ class App(tk.Tk):
         labels = (self.t("Подключено:"), "VPN IP:",
                   self.t("Подключено в течение:"), self.t("Скорость:"))
         w = max(len(x) for x in labels) + 1
-        lines = ["{:<{w}}{}".format(labels[0], p["name"], w=w),
-                 "{:<{w}}{}".format(labels[1], self.ext_ip or "—", w=w),
-                 "{:<{w}}{}".format(labels[2], up, w=w),
-                 "{:<{w}}{}".format(labels[3], rate, w=w)]
+        vals = (p["name"], self.ext_ip or "—", up, rate)
+        lines = ["{:<{w}}{}".format(lbl, v, w=w) for lbl, v in zip(labels, vals)]
+        tray = [lbl + " " + str(v) for lbl, v in zip(labels, vals)]  # тултип — без набивки
         color = "green"
         if self.bypass_missing:
             color = "orange"
-            lines.append(self.t("НЕТ ОБХОДА — риск петли"))
-        self.set_status("\n".join(lines), color)
+            warn = self.t("НЕТ ОБХОДА — риск петли")
+            lines.append(warn)
+            tray.append(warn)
+        self.set_status("\n".join(lines), color, _tray="\n".join(tray))
 
     def _monitor(self, stop):
         warned = set()
