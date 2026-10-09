@@ -50,6 +50,16 @@ ufw reload
 # Контроль: цепочки реально загружены (иначе outbound мёртв)
 iptables -S ufw-before-input >/dev/null 2>&1 || { echo "!! ufw цепочки не загружены"; exit 1; }
 
+# Контроль результата: masquerade НАШЕЙ подсети + forward-правила tun0.
+# Без них VPN подключается, но интернета нет (живой кейс: чужие
+# docker/amnezia masq-правила давали ложное «всё на месте»).
+iptables -t nat -S POSTROUTING | grep -q '10\.8\.0\.0/24 .*MASQUERADE' \
+    || { echo "!! masq для 10.8.0.0/24 не появился в POSTROUTING"; exit 1; }
+iptables -S | grep -q tun0 \
+    || { echo "!! нет forward-правил для tun0"; exit 1; }
+grep -q 'OPENVPN-NAT' "$F" \
+    || { echo "!! нет персиста masq в $F — после ребута сломается"; exit 1; }
+
 echo '--- nat POSTROUTING ---'; iptables -t nat -S POSTROUTING | tail -3
 echo '--- ufw status ---'; ufw status | head -8
 echo '--- forward ---'; sysctl -n net.ipv4.ip_forward

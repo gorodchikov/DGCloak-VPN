@@ -502,8 +502,13 @@ STRINGS_EN = {
     "proto=%s mgmt:%s": "proto=%s mgmt:%s",
     "openvpn-server@server не активен": "openvpn-server@server is not active",
     "forward+masquerade на месте": "forward+masquerade in place",
-    "forward=1, masquerade не найден": "forward=1, masquerade not found",
+    "forward=1, masquerade 10.8.0.0/24 не найден":
+        "forward=1, no masquerade for 10.8.0.0/24",
+    "masquerade есть, нет forward-правил tun0":
+        "masquerade present, but no tun0 forwarding rules",
     "ip_forward=0": "ip_forward=0",
+    "NAT/форвардинг не подтвердился (masq=%s, fwd_rules=%s)":
+        "NAT/forwarding not confirmed (masq=%s, fwd_rules=%s)",
     "active, tcp/%s слушает, маскировка %s": "active, tcp/%s listening, mask %s",
     "active, но порт %s не слушает/нет конфига": "active, but port %s not listening/no config",
     "ck-server не активен": "ck-server is not active",
@@ -2543,7 +2548,8 @@ class App(tk.Tk):
         "ovpn_ok":         "proto=%s mgmt:%s",
         "ovpn_down":       "openvpn-server@server не активен",
         "nat_ok":          "forward+masquerade на месте",
-        "nat_no_masq":     "forward=1, masquerade не найден",
+        "nat_no_masq":     "forward=1, masquerade 10.8.0.0/24 не найден",
+        "nat_no_fwd":      "masquerade есть, нет forward-правил tun0",
         "no_forward":      "ip_forward=0",
         "cloak_ok":        "active, tcp/%s слушает, маскировка %s",
         "cloak_no_listen": "active, но порт %s не слушает/нет конфига",
@@ -3041,9 +3047,13 @@ class App(tk.Tk):
             s["fw_backend"] = fw
         ck = str(s.get("ck_port") or self.v_ckport.get().strip() or "443")
         if fw == "ufw":
-            ssh.run_script("deploy-net-ufw.sh", timeout=300)
+            out = ssh.run_script("deploy-net-ufw.sh", timeout=300)
+            for ln in out.splitlines():
+                self.say("  " + ln)
         elif fw in ("nftables-dg", "nftables"):
-            ssh.run_script("nat-enable.sh", timeout=120)
+            out = ssh.run_script("nat-enable.sh", timeout=120)
+            for ln in out.splitlines():
+                self.say("  " + ln)
         elif fw == "firewalld":
             ssh.run("%sbash -c 'firewall-cmd --permanent --add-masquerade "
                     "--zone=public && firewall-cmd --reload && "
@@ -3062,6 +3072,32 @@ class App(tk.Tk):
             return "fail", self.t("фаервола нет — сначала выполни шаг «Фаервол»")
         else:
             return "fail", self.t("неизвестный фаервол: %s") % fw
+        # Запоминаем реальный внешний интерфейс — для аудита/диагностики
+        ext = ssh.run("ip route show default | awk '{print $5; exit}'",
+                      timeout=15).strip()
+        if ext:
+            s["ext_if"] = ext
+        # Пост-проверка: masq именно 10.8.0.0/24 и forward-правила tun0
+        # реально стоят. Иначе «успешный» деплой без интернета —
+        # чужие docker/amnezia masq давали ложное ok (живой кейс AWS).
+        if fw != "firewalld":
+            chk = ssh.run(
+                "M=$(%siptables -t nat -S POSTROUTING 2>/dev/null "
+                "| grep -cE '10\\.8\\.0\\.0/24 .*MASQUERADE');"
+                "N=$(%snft list chain inet dgcloak postrouting 2>/dev/null "
+                "| grep -c '10\\.8\\.0\\.0/24.*masquerade');"
+                "F=$(%siptables -S 2>/dev/null | grep -c tun0);"
+                "G=$(%snft list chain inet dgcloak forward 2>/dev/null "
+                "| grep -c tun0);"
+                "echo V:NAT=$((M+N)):FWD=$((F+G))"
+                % (ssh.sudo, ssh.sudo, ssh.sudo, ssh.sudo), timeout=30)
+            mv = re.search(r"V:NAT=(\d+):FWD=(\d+)", chk)
+            nat_n = int(mv.group(1)) if mv else 0
+            fwd_n = int(mv.group(2)) if mv else 0
+            if not nat_n or not fwd_n:
+                return "fail", self.t(
+                    "NAT/форвардинг не подтвердился (masq=%s, fwd_rules=%s)"
+                    % (nat_n, fwd_n))
         # порт Cloak должен быть открыт снаружи на любом бэкенде
         try:
             ssh.run_script("fw-manage.sh", "allow tcp %s" % ck, timeout=60)

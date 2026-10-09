@@ -67,4 +67,11 @@ systemctl enable netfilter-persistent >/dev/null 2>&1 || true
 
 echo '--- filter INPUT ---'; iptables -S INPUT | head -10
 echo '--- nat POSTROUTING ---'; iptables -t nat -S POSTROUTING | tail -3
+
+# Контроль результата: masquerade именно 10.8.0.0/24 + forward tun0
+iptables -t nat -S POSTROUTING | grep -q '10\.8\.0\.0/24 .*MASQUERADE' \
+    || { echo "!! masq для 10.8.0.0/24 не появился в POSTROUTING"; exit 1; }
+iptables -S FORWARD | grep -q tun0 \
+    || { echo "!! нет forward-правил для tun0"; exit 1; }
+
 echo "=== OK deploy-net-iptables ==="

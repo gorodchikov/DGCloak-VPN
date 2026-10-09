@@ -40,4 +40,11 @@ systemctl enable nftables >/dev/null 2>&1 || true
 
 echo '--- postrouting ---'; nft list chain inet dgcloak postrouting
 echo '--- forward ---'; nft list chain inet dgcloak forward
+
+# Контроль результата: masquerade именно 10.8.0.0/24 + forward tun0
+nft list chain inet dgcloak postrouting | grep -q '10\.8\.0\.0/24.*masquerade' \
+    || { echo "!! masq для 10.8.0.0/24 не появился"; exit 1; }
+nft list chain inet dgcloak forward | grep -q 'iifname "tun0"' \
+    || { echo "!! нет forward-правил tun0"; exit 1; }
+
 echo "=== OK nat-enable ==="

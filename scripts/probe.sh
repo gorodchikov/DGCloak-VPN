@@ -89,15 +89,26 @@ fi
 
 # --- nat ---
 FWD=$(sysctl -n net.ipv4.ip_forward 2>/dev/null)
+# NAT засчитываем только для НАШЕЙ подсети 10.8.0.0/24 — чужие
+# docker/amnezia masquerade-правила не в счёт (была ложная «ok»)
 NATOK=""
-nft list chain inet dgcloak postrouting 2>/dev/null | grep -q masquerade && NATOK=1
-iptables -t nat -S POSTROUTING 2>/dev/null | grep -q MASQUERADE && NATOK=1
-if [ "$FWD" = "1" ] && [ -n "$NATOK" ]; then
-    emit nat "ok" "nat_ok"
-elif [ "$FWD" = "1" ]; then
-    emit nat "warn" "nat_no_masq"
-else
+nft list chain inet dgcloak postrouting 2>/dev/null \
+    | grep -q '10\.8\.0\.0/24.*masquerade' && NATOK=1
+iptables -t nat -S POSTROUTING 2>/dev/null \
+    | grep -qE '10\.8\.0\.0/24 .*-j MASQUERADE' && NATOK=1
+# форвардинг туннеля: правило с tun0 в ufw-user-forward / FORWARD /
+# inet dgcloak forward — у любого бэкенда в строке есть tun0
+FWRULE=""
+nft list chain inet dgcloak forward 2>/dev/null | grep -q tun0 && FWRULE=1
+iptables -S 2>/dev/null | grep -q tun0 && FWRULE=1
+if [ "$FWD" != "1" ]; then
     emit nat "fail" "no_forward"
+elif [ -z "$NATOK" ]; then
+    emit nat "warn" "nat_no_masq"
+elif [ -z "$FWRULE" ]; then
+    emit nat "warn" "nat_no_fwd"
+else
+    emit nat "ok" "nat_ok"
 fi
 
 # --- cloak ---
