@@ -147,11 +147,28 @@ def t_profile_dlg(app):
     check("T4.2 ADV по умолчанию свёрнут", not d._adv_open)
     d.vars["name"].set("u1")
     d.vars["dgcloak"].set(dgc)
+    # «Проверить» до сохранения (после _ok диалог уничтожается)
+    ck_json = os.path.join(TMP, "check-ck.json")
+    with open(ck_json, "w", encoding="utf-8") as f:
+        json.dump({"RemoteHost": "localhost"}, f)
+    d.vars["ck_config"].set(ck_json)
+    d._check()
+    t_end = time.time() + 5
+    while "проверяю" in d._check_lbl["text"] and time.time() < t_end:
+        try:
+            app.update()
+        except Exception:
+            pass
+        time.sleep(0.1)
+    txt = d._check_lbl["text"]
+    check("T4.6 «Проверить»: порт + резолв сервера",
+          "порт 1984" in txt and "127.0.0.1" in txt, txt)
     d._ok()
     r = d.result
     ok = r and r["ck_config"].startswith(CO.PROFILES_DIR) and os.path.isfile(r["ovpn"])
     check("T4.3 .dgcloak материализован в profiles\\", bool(ok), r)
     check("T4.4 UDP поднят из cloak.UDP", r and r["udp"] is True)
+    check("T4.5 reconnect=True по умолчанию", r and r.get("reconnect") is True)
 
     MSGBOX.clear()
     d2 = CO.ProfileDialog(app)
@@ -337,6 +354,17 @@ def t_connect(app):
         app._connect(dict(p, udp=False, full_tunnel=False, bypass_ip="8.8.8.8"))
         check("T11.8 split tunnel → нет redirect-gateway, bypass есть",
               "--redirect-gateway" not in CALLS[1] and "8.8.8.8" in CALLS[1])
+
+        # статус активного соединения: имя · IP · аптайм · трафик
+        app.ext_ip = "2.2.2.2"
+        app.traffic = (1500, 2500000)
+        app._conn_status()
+        st = app._status_msg[0]
+        check("T11.9 _conn_status: шаблон с IP/аптаймом",
+              "Подключено: {name} · {ip} · {up}{extra}" == st)
+        check("T11.10 _fmt_bytes",
+              CO._fmt_bytes(500) == "500 B" and CO._fmt_bytes(2500000) == "2.4 MB",
+              CO._fmt_bytes(2500000))
         app._stop_all()
     finally:
         for k, v in saved.items():

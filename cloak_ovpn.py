@@ -258,6 +258,19 @@ STRINGS_EN = {
     "ВНУТРЕННЯЯ ОШИБКА:\n{tb}": "INTERNAL ERROR:\n{tb}",
     "не удалось создать папку {d}: {e}": "cannot create folder {d}: {e}",
     "{k}: {e}": "{k}: {e}",
+    "Подключено: {name} · {ip} · {up}{extra}": "Connected: {name} · {ip} · {up}{extra}",
+    "НЕТ ОБХОДА — риск петли": "NO BYPASS — loop risk",
+    "Соединение оборвалось — переподключение ({n}/3)…":
+        "Connection dropped — reconnecting ({n}/3)…",
+    "Автопереподключение при обрыве (до 3 попыток)": "Auto-reconnect on drop (up to 3 tries)",
+    "Проверить": "Check",
+    "проверяю…": "checking…",
+    "порт {p} ЗАНЯТ": "port {p} BUSY",
+    "порт {p} свободен": "port {p} free",
+    "нет сервера (поле -s или RemoteHost в ck-конфиге)":
+        "no server (-s field or RemoteHost in ck config)",
+    "сервер {h} → {ip}": "server {h} → {ip}",
+    "не резолвится: {h}": "cannot resolve: {h}",
     "Внимание: нет прав администратора. OpenVPN не сможет создать адаптер — "
     "запустите программу от имени администратора.":
         "Warning: no administrator rights. OpenVPN cannot create the adapter — "
@@ -553,6 +566,15 @@ def cloak_latest_url():
     raise RuntimeError("В последнем релизе Cloak не найден ck-client-windows-amd64*.exe")
 
 
+def _fmt_bytes(n):
+    """«3.4 MB» — для счётчика трафика в статусе."""
+    v = float(n)
+    for u in ("B", "KB", "MB", "GB", "TB"):
+        if v < 1024 or u == "TB":
+            return ("%.1f %s" % (v, u)).replace(".0 ", " ")
+        v /= 1024
+
+
 def external_ip(timeout=4):
     """Внешний IP по api.ipify.org (для лога до/после подключения). None при ошибке."""
     try:
@@ -774,6 +796,7 @@ class ProfileDialog(tk.Toplevel):
 
     def __init__(self, parent, profile=None):
         super().__init__(parent)
+        self.app = parent
         self.t = parent.t
         t = self.t
         self.title(t("Профиль"))
@@ -817,11 +840,20 @@ class ProfileDialog(tk.Toplevel):
             ttk.Entry(self.advf, textvariable=v, width=48).grid(row=i, column=1, padx=4)
         self.udp = tk.BooleanVar(value=p.get("udp", False))
         self.full = tk.BooleanVar(value=p.get("full_tunnel", True))
+        self.recon = tk.BooleanVar(value=p.get("reconnect", True))
         n = len(self.ADV_FIELDS)
         ttk.Checkbutton(self.advf, text=t("UDP-режим (-u, для OpenVPN по UDP)"),
                         variable=self.udp).grid(row=n, column=1, sticky="w", pady=4)
         ttk.Checkbutton(self.advf, text=t("Весь трафик через VPN (redirect-gateway local def1)"),
                         variable=self.full).grid(row=n + 1, column=1, sticky="w")
+        ttk.Checkbutton(self.advf, text=t("Автопереподключение при обрыве (до 3 попыток)"),
+                        variable=self.recon).grid(row=n + 2, column=1, sticky="w")
+        row = ttk.Frame(self.advf)
+        row.grid(row=n + 3, column=0, columnspan=3, sticky="w", padx=8)
+        ttk.Button(row, text=t("Проверить"), width=10,
+                   command=self._check).pack(side="left")
+        self._check_lbl = ttk.Label(row, text="", foreground="gray")
+        self._check_lbl.pack(side="left", padx=8)
         ttk.Label(self.advf, foreground="gray", justify="left",
                   text=t("Порт — куда ck-client принимает OpenVPN (-l); в .ovpn remote\n"
                          "перезаписывается на 127.0.0.1:порт. Сервер (-s) и его порт (-p)\n"
@@ -831,7 +863,7 @@ class ProfileDialog(tk.Toplevel):
                          "UDP — транспорт Cloak по UDP (-u); включается и по \"UDP\":true\n"
                          "в ck-конфиге. Файлы профиля копируются в папку программы —\n"
                          "исходные после этого можно удалить.")
-                  ).grid(row=n + 2, column=0, columnspan=3, padx=8, sticky="w")
+                  ).grid(row=n + 4, column=0, columnspan=3, padx=8, sticky="w")
         r += 1
         btns = ttk.Frame(self)
         btns.grid(row=r, column=0, columnspan=3, pady=8)
@@ -866,6 +898,47 @@ class ProfileDialog(tk.Toplevel):
             if var in (self.vars["ck_config"], self.vars.get("dgcloak")) \
                     and not self.vars["name"].get():
                 self.vars["name"].set(os.path.splitext(os.path.basename(path))[0])
+
+    def _check(self):
+        """Проверка профиля до сохранения: порт числом и свободен,
+        сервер (поле -s или RemoteHost из ck-конфига) резолвится."""
+        t = self.t
+        self._check_lbl.config(text=t("проверяю…"), foreground="gray")
+        r = {k: v.get().strip() for k, v in self.vars.items()}
+
+        def work():
+            ok, msgs = True, []
+            try:
+                port = int(r["port"] or 1984)
+                if port_open("127.0.0.1", port):
+                    ok = False
+                    msgs.append(t("порт {p} ЗАНЯТ", p=port))
+                else:
+                    msgs.append(t("порт {p} свободен", p=port))
+            except ValueError:
+                ok = False
+                msgs.append(t("Порт должен быть числом."))
+            host = r.get("server") or ""
+            if not host and os.path.isfile(r.get("ck_config") or ""):
+                try:
+                    with open(r["ck_config"], encoding="utf-8") as f:
+                        host = json.load(f).get("RemoteHost", "")
+                except Exception:
+                    pass
+            if not host:
+                ok = False
+                msgs.append(t("нет сервера (поле -s или RemoteHost в ck-конфиге)"))
+            else:
+                try:
+                    msgs.append(t("сервер {h} → {ip}", h=host,
+                                  ip=socket.gethostbyname(host)))
+                except OSError:
+                    ok = False
+                    msgs.append(t("не резолвится: {h}", h=host))
+            self.app.ui(lambda: self._check_lbl.config(
+                text=" · ".join(msgs), foreground="#060" if ok else "#b00"))
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _from_dgcloak(self, r):
         """Разобрать .dgcloak → ck-конфиг + .ovpn материализуются в
@@ -915,6 +988,7 @@ class ProfileDialog(tk.Toplevel):
             return
         r["udp"] = self.udp.get()
         r["full_tunnel"] = self.full.get()
+        r["reconnect"] = self.recon.get()
         self.result = r
         self.destroy()
 
@@ -939,10 +1013,15 @@ class App(tk.Tk):
         self.last_state = None
         self.route_failed = False
         self.verb = False
+        self.ext_ip = None
+        self.up_since = None
+        self.bypass_missing = False
+        self.traffic = None
         self.tray = None
         self.cur_name = ""
         self._icons = {}
         self._last_tray_text = None
+        self._last_tray_color = None
         self.verbose = tk.BooleanVar(value=False)
         self.adv_open = False
         self._hint_shown = False
@@ -1298,10 +1377,12 @@ class App(tk.Tk):
             self.tray.icon = self._icons.get(color, self._icons["gray"])
             self.tray.title = f"{APP_NAME}: {text}"[:120]
             self.tray.update_menu()
-            changed = text != self._last_tray_text
-            self._last_tray_text = text
-            if changed and color in ("green", "red") and self.state() == "withdrawn":
+            # уведомление — только при смене цвета (иначе аптайм спамит каждые 2 с)
+            if color != self._last_tray_color and color in ("green", "red") \
+                    and self.state() == "withdrawn":
                 self.tray.notify(text, APP_NAME)
+            self._last_tray_color = color
+            self._last_tray_text = text
         except Exception as e:  # noqa: BLE001
             self._log_file(f"[tray] {e!r}\n")
 
@@ -1422,9 +1503,12 @@ class App(tk.Tk):
 
     def _run(self, fn):
         self.busy = True
-        self._refresh_tray_menu()
-        self.btn.config(state="disabled")
-        self._set_locked(True)
+        # tk-виджеты трогаем только в главном потоке — _run зовётся и из монитора
+        def prep():
+            self._refresh_tray_menu()
+            self.btn.config(state="disabled")
+            self._set_locked(True)
+        self.ui(prep)
 
         def wrapper():
             try:
@@ -1586,6 +1670,7 @@ class App(tk.Tk):
                    "--management", "127.0.0.1", str(mport),
                    "--disable-dco"]  # DCO плохо дружит с локальным прокси
         bypass = self._bypass_ip(p)
+        self.bypass_missing = p.get("full_tunnel", True) and not bypass
         if bypass:
             ov_args += ["--route", bypass, "255.255.255.255", "net_gateway"]
         elif p.get("full_tunnel", True):
@@ -1625,6 +1710,7 @@ class App(tk.Tk):
                          st=self.last_state or self.t("нет данных"))
 
         self.active = p
+        self.up_since = time.time()
         if self.data.get("last_profile") != p["name"]:
             self.data["last_profile"] = p["name"]
             save_data(self.data)
@@ -1637,6 +1723,7 @@ class App(tk.Tk):
         else:
             self.say("Подключено.")
         ip_after = external_ip()
+        self.ext_ip = ip_after
         self.say("Внешний IP через VPN: {ip} (до подключения: {prev})",
                  ip=ip_after or self.t("не определён"),
                  prev=ip_before or self.t("не определён"))
@@ -1668,6 +1755,10 @@ class App(tk.Tk):
                     self._on_state(m.group(1), p)
                 elif line.startswith(">PASSWORD:"):
                     self.say("OpenVPN запрашивает логин/пароль — это пока не поддерживается: {line}", line=line)
+                elif "bytesin=" in line:
+                    m = re.search(r"bytesin=(\d+),bytesout=(\d+)", line)
+                    if m:
+                        self.traffic = (int(m.group(1)), int(m.group(2)))
                 elif line.startswith(">FATAL:"):
                     self.say("OpenVPN: {line}", line=line)
                 elif line:
@@ -1689,14 +1780,49 @@ class App(tk.Tk):
         self._mon_stop = stop
         threading.Thread(target=self._monitor, args=(stop,), daemon=True).start()
 
+    def _conn_status(self):
+        """Статус живого соединения: имя · внешний IP · аптайм · трафик · «нет обхода»."""
+        p = self.active
+        if not p:
+            return
+        up = time.strftime("%H:%M:%S", time.gmtime(max(0, time.time() - (self.up_since or time.time()))))
+        extra = ""
+        if self.traffic:
+            extra = " · ↑{0} ↓{1}".format(_fmt_bytes(self.traffic[0]), _fmt_bytes(self.traffic[1]))
+        color = "green"
+        if self.bypass_missing:
+            color = "orange"
+            extra += " · " + self.t("НЕТ ОБХОДА — риск петли")
+        self.set_status("Подключено: {name} · {ip} · {up}{extra}", color,
+                        name=p["name"], ip=self.ext_ip or "?", up=up, extra=extra)
+
     def _monitor(self, stop):
         warned = set()
+        retries = 0
         while not stop.wait(2):
-            if self.ck and self.ck.poll() is not None and "ck" not in warned:
+            if self.active and self.up_since:
+                self._conn_status()
+                try:
+                    if self.mgmt:
+                        self.mgmt.sendall(b"load-stats\n")
+                except OSError:
+                    pass
+            ck_dead = self.ck and self.ck.poll() is not None
+            vpn_dead = self.vpn and self.vpn.poll() is not None
+            if not (ck_dead or vpn_dead):
+                continue
+            p = self.active
+            if p and p.get("reconnect", True) and retries < 3 and not self.busy:
+                retries += 1
+                self.say("Соединение оборвалось — переподключение ({n}/3)…", n=retries)
+                self._stop_all()
+                self._run(lambda: self._connect(p))
+                return
+            if ck_dead and "ck" not in warned:
                 warned.add("ck")
                 self.say("Cloak остановился (код {rc}) — VPN не работает.", rc=self.ck.returncode)
                 self.set_status("Cloak остановлен — VPN не работает", "red")
-            if self.vpn and self.vpn.poll() is not None and "vpn" not in warned:
+            if vpn_dead and "vpn" not in warned:
                 warned.add("vpn")
                 self.say("OpenVPN завершился (код {rc}).", rc=self.vpn.returncode)
                 self.set_status("OpenVPN завершился", "red")
@@ -1723,6 +1849,10 @@ class App(tk.Tk):
         self._stop_ck()
         save_pids({})
         self.active = None
+        self.up_since = None
+        self.ext_ip = None
+        self.bypass_missing = False
+        self.traffic = None
 
     def _stop_vpn(self):
         vpn = self.vpn
