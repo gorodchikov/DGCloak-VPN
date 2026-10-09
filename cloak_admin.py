@@ -3126,6 +3126,7 @@ class App(tk.Tk):
                                 "note": self.t("обновлено, перезагружен")}
             save_data(self.data)
             self.ui(self._fill_steps)
+            self.ui(self._refresh_servers)  # снять ⚠ у имени в списке
             self.say(self.t("  сервер поднялся после перезагрузки"))
         else:
             self.say(self.t("  !! сервер не перезагрузился за 3 минуты "
