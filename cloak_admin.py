@@ -2277,7 +2277,9 @@ class App(tk.Tk):
         self._apply_opt_lock()
 
     # ---- онлайн-индикаторы: TCP-коннект на порты, без логина ----
-    # ssh → ssh_port сервера; cloak → ck_port (есть только после деплоя).
+    # ssh → ssh_port сервера. cloak → ck_port, но только у развёрнутого
+    # сервера: у чужого/незадеплоенного хоста на 443 может отвечать что
+    # угодно (TCP-проба не отличит наш ck-server от постороннего TLS).
     def _online_loop(self):
         while True:
             for s in list(self.data.get("servers", [])):
@@ -2288,13 +2290,15 @@ class App(tk.Tk):
                           int(s.get("ssh_port") or 22)),
                     daemon=True).start()
                 ck = s.get("ck_port")
-                if ck:
+                if s.get("deployed") and ck:
                     threading.Thread(
                         target=self._probe_srv,
                         args=(s.get("name"), "cloak", host, int(ck)),
                         daemon=True).start()
-                else:
+                elif self._online.get((s.get("name"), "cloak")) is not None:
                     self._online[(s.get("name"), "cloak")] = None
+                    self.ui(lambda n=s.get("name"): self._srv_online_set(
+                            n, "cloak"))
             time.sleep(15)
 
     def _probe_srv(self, name, which, host, port):
