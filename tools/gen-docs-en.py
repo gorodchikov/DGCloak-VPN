@@ -210,6 +210,8 @@ CEN = {
  "5556c6a": "client: checkbox order in Advanced — startup options first, debug log last",
  "0cd8012": "client: log action buttons moved next to the log frame in Advanced",
  "8c31553": "docs: commit translations (Advanced checkbox order)",
+ "bfae016": "docs: commit translation (buttons next to log frame)",
+ "7cdff67": "client: OpenVPN debug log checkbox now persists across runs",
  "3a7d9d2": "docs: reports for tray menu and journals + guide tagline",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
