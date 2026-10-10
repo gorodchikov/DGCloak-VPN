@@ -518,6 +518,11 @@ CL = {
 "T29.1 «Запускаться вместе с Windows» → значение в Run": "T29.1 Start with Windows checkbox → value in Run key",
 "T29.2 значение — команда запуска (exe/скрипт)": "T29.2 value is a launch command (exe/script)",
 "T29.3 снятая галочка → значения нет": "T29.3 unchecked → value removed",
+"T30.1 строка «Реальный IP:» под «VPN IP:»": "T30.1 Real IP line below VPN IP",
+"T30.2 _copy_rows = {1: vpn, 2: isp}": "T30.2 _copy_rows = {1: vpn, 2: isp}",
+"T30.3 клик по строке VPN IP → буфер = 5.6.7.8": "T30.3 click VPN IP line → clipboard = 5.6.7.8",
+"T30.4 клик по «Подключено:» → буфер не менялся": "T30.4 click non-IP line → clipboard unchanged",
+"T30.5 isp_ip=None → строки «Реальный IP» нет": "T30.5 isp_ip=None → no Real IP line",
 }
 
 AD = {

@@ -19,6 +19,7 @@ import sys
 import threading
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 import urllib.request
 import webbrowser
 import winreg
@@ -164,6 +165,11 @@ STRINGS_EN = {
     "Сворачивать в трей при запуске": "Start minimized to tray",
     "Запускаться вместе с Windows": "Start with Windows",
     "Не удалось изменить автозапуск: {e}": "Failed to change autorun: {e}",
+    "Реальный IP:": "Real IP:",
+    "Клик по строке с IP скопирует его в буфер обмена":
+        "Click an IP line to copy it to the clipboard",
+    "{ip} скопирован в буфер обмена": "{ip} copied to clipboard",
+    "Скопировано": "Copied",
     "Автоподключение «{name}»…": "Auto-connecting «{name}»…",
     # мастер установки
     "Настройка программ": "Program setup",
@@ -1186,7 +1192,9 @@ class App(tk.Tk):
         self.last_state = None
         self.route_failed = False
         self.verb = False
-        self.ext_ip = None
+        self.ext_ip = None      # внешний IP через VPN (резолвится после CONNECTED)
+        self.isp_ip = None      # внешний IP провайдера (замерен до подключения)
+        self._copy_rows = {}    # строка статуса → IP (клик копирует в буфер)
         self.up_since = None
         self.bypass_missing = False
         self.traffic = None
@@ -1310,6 +1318,12 @@ class App(tk.Tk):
         self.status = ttk.Label(box, text=t("Отключено"), foreground="gray",
                                 justify="left", anchor="nw", font=("Consolas", 9))
         self.status.grid(row=2, column=0, columnspan=2, sticky="w", padx=2, pady=(0, 4))
+        # клик по строке с IP копирует адрес; высоту строки берём из метрик шрифта
+        self._status_ls = tkfont.Font(font=self.status.cget("font")).metrics("linespace")
+        self.status.bind("<Button-1>", self._status_click)
+        self.status.bind("<Motion>", self._status_hover)
+        self._status_tip = Tooltip(
+            self.status, t("Клик по строке с IP скопирует его в буфер обмена"))
 
         self.b_adv = ttk.Button(box, text=t("Дополнительно ▾"), width=BTN_W, command=self._toggle_adv)
         self.b_adv.grid(row=3, column=0, sticky="w")
@@ -1395,6 +1409,8 @@ class App(tk.Tk):
         for tp in getattr(self, "_lang_tips", ()):
             tp.text = t("Уже выведенные в лог записи останутся на прежнем языке — "
                         "переводятся только новые.")
+        if getattr(self, "_status_tip", None):
+            self._status_tip.text = t("Клик по строке с IP скопирует его в буфер обмена")
         if self._status_msg:
             text, color, kw = self._status_msg
             self.set_status(text, color, **kw)
@@ -1596,6 +1612,31 @@ class App(tk.Tk):
         if self._log_view:
             self._log_write(self._log_view, line.rstrip("\n"))
         self._append(line)
+
+    def _status_hover(self, e):
+        """Курсор-рука над строкой с IP — сигнал, что по ней можно кликнуть."""
+        row = int(e.y // self._status_ls) if e.y >= 0 else -1
+        self.status.config(cursor="hand2" if row in self._copy_rows else "")
+
+    def _status_click(self, e):
+        row = int(e.y // self._status_ls) if e.y >= 0 else -1
+        ip = self._copy_rows.get(row)
+        if not ip:
+            return
+        self.clipboard_clear()
+        self.clipboard_append(ip)
+        self.say("{ip} скопирован в буфер обмена", ip=ip)
+        self._copied_tip(e)
+
+    def _copied_tip(self, e):
+        """Маленький тост «Скопировано» у курсора — виден и при закрытой панели."""
+        tw = tk.Toplevel(self)
+        tw.overrideredirect(True)
+        tw.attributes("-topmost", True)
+        tk.Label(tw, text=self.t("Скопировано"), bg="#ffffd8", fg="#222",
+                 relief="solid", bd=1, padx=6, pady=2, font=("", 9)).pack()
+        tw.geometry("+%d+%d" % (e.x_root + 12, e.y_root - 26))
+        self.after(900, tw.destroy)
 
     def _copy_log(self):
         self.clipboard_clear()
@@ -2056,6 +2097,7 @@ class App(tk.Tk):
         self.ext_ip = None
 
         ip_before = external_ip()
+        self.isp_ip = ip_before
         self.say("Внешний IP до подключения: {ip}", ip=ip_before or self.t("не определён"))
 
         # 0. Предполётные проверки: остатки прошлых запусков
@@ -2278,11 +2320,18 @@ class App(tk.Tk):
         # метки добиваются пробелами до одной ширины → значения строго друг под другом
         labels = [self.t("Подключено:")]
         vals = [p["name"]]
+        copy_rows = {}          # номер строки → IP (клик по ней копирует адрес)
         if self.ext_ip:  # IP не удалось определить → строку не показываем
+            copy_rows[len(labels)] = self.ext_ip
             labels.append("VPN IP:")
             vals.append(self.ext_ip)
+            if self.isp_ip:
+                copy_rows[len(labels)] = self.isp_ip
+                labels.append(self.t("Реальный IP:"))
+                vals.append(self.isp_ip)
         labels += [self.t("Подключено в течение:"), self.t("Скорость:")]
         vals += [up, rate]
+        self._copy_rows = copy_rows
         w = max(len(x) for x in labels) + 1
         lines = ["{:<{w}}{}".format(lbl, v, w=w) for lbl, v in zip(labels, vals)]
         tray = [lbl + " " + str(v) for lbl, v in zip(labels, vals)]  # тултип — без набивки
@@ -2350,6 +2399,8 @@ class App(tk.Tk):
         self.active = None
         self.up_since = None
         self.ext_ip = None
+        self.isp_ip = None
+        self._copy_rows = {}
         self.bypass_missing = False
         self.traffic = None
         self._stats_prev = None

@@ -1002,6 +1002,39 @@ def t_verbose_persist(app):
           json.load(open(CO.DATA_FILE, encoding="utf-8"))["verbose"] is False)
 
 
+def t_real_ip_copy(app):
+    """T30: «Реальный IP» в статусе + клик по строке с IP копирует адрес."""
+    app.active = {"name": "u1"}
+    app.up_since = time.time() - 60
+    app._rate = None
+    app.bypass_missing = False
+    app.ext_ip = "5.6.7.8"
+    app.isp_ip = "1.2.3.4"
+    app._conn_status()
+    lines = app._status_msg[0].splitlines()
+    check("T30.1 строка «Реальный IP:» под «VPN IP:»",
+          len(lines) == 5 and "Реальный IP:" in lines[2]
+          and "1.2.3.4" in lines[2], lines)
+    check("T30.2 _copy_rows = {1: vpn, 2: isp}",
+          app._copy_rows == {1: "5.6.7.8", 2: "1.2.3.4"}, app._copy_rows)
+    ls = app._status_ls
+    ev = type("E", (), {"y": int(1.5 * ls), "x_root": 0, "y_root": 0})
+    app._status_click(ev)
+    check("T30.3 клик по строке VPN IP → буфер = 5.6.7.8",
+          app.clipboard_get() == "5.6.7.8", app.clipboard_get())
+    ev2 = type("E", (), {"y": int(0.5 * ls), "x_root": 0, "y_root": 0})
+    app._status_click(ev2)
+    check("T30.4 клик по «Подключено:» → буфер не менялся",
+          app.clipboard_get() == "5.6.7.8")
+    app.isp_ip = None
+    app._conn_status()
+    check("T30.5 isp_ip=None → строки «Реальный IP» нет",
+          "Реальный IP" not in app._status_msg[0])
+    app.active = None
+    app.up_since = None
+    app.ext_ip = None
+
+
 def t_autorun(app):
     """T29: «Запускаться вместе с Windows» — галочка↔HKCU\\...\\Run."""
     try:                                   # снять и вернуть старое значение
@@ -1071,6 +1104,7 @@ def main():
     t_autoconnect(app)
     t_start_minimized(app)
     t_verbose_persist(app)
+    t_real_ip_copy(app)
     t_autorun(app)
     t_migrate()
     try:
