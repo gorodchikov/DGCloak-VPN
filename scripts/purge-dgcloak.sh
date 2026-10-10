@@ -149,11 +149,21 @@ if [ -s "$PDC" ]; then
             _ "docker: автозапуск «$c» восстановлен ($v)" \
               "docker: \"$c\" autostart restored ($v)" || true
     done
+    # «systemctl stop nftables» выше флашит ВЕСЬ ruleset — включая
+    # iptables-nft цепочки докера; без restart dockerd контейнер с -p не
+    # стартует («driver failed programming external connectivity»)
+    if [ -n "$(pdget DOCKER_START)" ] && \
+       systemctl is-active --quiet docker 2>/dev/null; then
+        systemctl restart docker >/dev/null 2>&1 || true
+        sleep 1
+    fi
     pdall DOCKER_START | while read -r c; do
         [ -n "$c" ] || continue
         docker start "$c" >/dev/null 2>&1 && \
             _ "контейнер «$c» запущен обратно" \
-              "container \"$c\" started back" || true
+              "container \"$c\" started back" || \
+            _ "  !! контейнер «$c» не стартовал — проверь вручную" \
+              "  !! container \"$c\" failed to start — check manually"
     done
 fi
 

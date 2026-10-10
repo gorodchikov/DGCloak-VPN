@@ -1058,6 +1058,20 @@ class SSH:
     # а цикл ожидания процесса в _run_proc убивает запущенный plink/ssh.
     op_cancel = threading.Event()
 
+    # host:port, для которых сервер в этом процессе уже отверг сохранённый
+    # ключ (VM откачена/пересоздана). Каждый шаг создаёт новый SSH-объект —
+    # без метки каждый заново тычет мёртвым ключом; на OpenSSH ≥9.8
+    # (PerSourcePenalties) серия authfail роняет следующие соединения
+    # с нашего IP — plink получает «Connection reset by peer» посреди деплоя.
+    _auth_pw_hosts = set()
+
+    def _hp(self):
+        return "%s:%s" % (self.srv.get("host"), self.srv.get("ssh_port") or 22)
+
+    def _pw_forced(self):
+        """Сервер уже отверг ключ — сразу парольный бэкенд."""
+        return self._hp() in SSH._auth_pw_hosts
+
     def __init__(self, srv, log):
         self.t = T
         self.srv = srv
@@ -1104,7 +1118,7 @@ class SSH:
 
     def _argv(self, cmd):
         if (self.backend == "openssh" and not self._auth_pw
-                and self.srv.get("key")):
+                and self.srv.get("key") and not self._pw_forced()):
             # -n (stdin=/dev/null) ломает sudo -S: пароль не доедет.
             # Отключаем, когда есть пароль юзера (потенциально нужен sudo -S).
             no_stdin = [] if self.srv.get("password") else ["-n"]
@@ -1128,7 +1142,7 @@ class SSH:
 
     def _argv_upload(self, local_path, remote_path):
         if (self.backend == "openssh" and not self._auth_pw
-                and self.srv.get("key")):
+                and self.srv.get("key") and not self._pw_forced()):
             return [self.scp_exe, "-B", "-o", "StrictHostKeyChecking=accept-new",
                     "-o", "ServerAliveInterval=15",
                     "-o", "ServerAliveCountMax=2",
@@ -1225,8 +1239,11 @@ class SSH:
                     self.log(self.t("  ключ отвергнут, пароль тоже не подошёл"))
                     return rc2, out2
                 # подключились: ключ мёртв → весь объект дальше по паролю.
-                # rc2 != 0 здесь — ошибка КОМАНДЫ на сервере, её и возвращаем
+                # rc2 != 0 здесь — ошибка КОМАНДЫ на сервере, её и возвращаем.
+                # Метка на host:port — чтобы следующие SSH-объекты (другие
+                # шаги) не тыкали мёртвый ключ (PerSourcePenalties).
                 self._auth_pw = True
+                SSH._auth_pw_hosts.add(self._hp())
                 self.log(self.t("  ключ отвергнут сервером — работаю по паролю"))
                 return rc2, out2
         return rc, out
@@ -3282,6 +3299,10 @@ class App(tk.Tk):
         pub = open(kp + ".pub", encoding="ascii").read().strip()
         self.say(self.t("  ставлю публичный ключ на сервер…"))
         ssh.install_pubkey(pub)
+        # метка «ключ отвергнут» больше не верна — сбрасываем, чтобы
+        # проверка ниже действительно ходила новым ключом, а не паролем
+        SSH._auth_pw_hosts.discard(
+            "%s:%s" % (s.get("host"), s.get("ssh_port") or 22))
         # проверка: вход по ключу отдельным подключением
         s2 = dict(s)
         s2["key"] = kp

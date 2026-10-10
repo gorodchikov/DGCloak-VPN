@@ -204,6 +204,22 @@ def u4_argv():
     a = _fake_ssh(spk)._argv("id")
     check("U4.7 putty с ppk → -i k.ppk", "-i" in a and "k.ppk" in a)
 
+    # PerSourcePenalties-защита: host:port помечен «ключ отвергнут» →
+    # openssh-ветка с -i пропускается, сразу plink -pw (и для upload тоже)
+    skd = {"user": "u", "host": "deadhost", "ssh_port": 22,
+           "key": "k", "password": "pw"}
+    sshd_ = _fake_ssh(skd)
+    CA.SSH._auth_pw_hosts.add("deadhost:22")
+    try:
+        a = sshd_._argv("id")
+        check("U4.8 ключ отвергнут → argv через plink -pw, без -i",
+              a[0] == "plink-x" and "-pw" in a and "-i" not in a)
+        a2 = sshd_._argv_upload("l", "r")
+        check("U4.9 upload тоже → pscp -pw", a2[0] == "plink-x"
+              and "-pw" in a2 and "-i" not in a2)
+    finally:
+        CA.SSH._auth_pw_hosts.discard("deadhost:22")
+
 def u5_run_script():
     s = {"user": "labadmin", "host": "h", "sudo_mode": "pw", "password": "pw"}
     ssh = _fake_ssh(s)
@@ -454,6 +470,12 @@ def u9_revert():
           "_predeploy_docker_pols" in src and '"DOCKER_START="' in src)
     check("U9.18 кнопка переименована в «Вернуть сервер»",
           '"Вернуть сервер"' in src and '"Сбросить сервер"' not in src)
+    # dockerd надо рестартануть перед docker start: stop nftables флашит
+    # его iptables-nft цепочки → start контейнера с -p падает (живой кейс)
+    check("U9.19 purge: restart dockerd перед docker start + варн при сбое",
+          "systemctl restart docker" in pg and "не стартовал" in pg)
+    check("U9.20 ключ-фолбэк помечает host:port (PerSourcePenalties)",
+          "_auth_pw_hosts" in src and "_pw_forced" in src)
 
 
 # ======================================================================
