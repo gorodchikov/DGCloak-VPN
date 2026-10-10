@@ -220,6 +220,8 @@ CEN = {
  "e3ba988": "client: network info strip at the bottom of Advanced (LAN + tun client/server)",
  "7896206": "docs: commit translations (network info strip)",
  "209df56": "client: VPN pause — signal SUSPEND/RESUME, direct traffic without disconnect",
+ "aaa16a5": "docs: commit translations (VPN pause)",
+ "a74eb6e": "client: pause via route delete/add of def1 instead of signal SUSPEND (Android-only)",
  "3a7d9d2": "docs: reports for tray menu and journals + guide tagline",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
