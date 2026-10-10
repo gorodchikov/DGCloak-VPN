@@ -8,7 +8,7 @@
 
 Запуск: python tests\\clienttest.py   (выход 0 — всё зелёное)
 """
-import sys, os, io, re, ast, json, time, tempfile, threading
+import sys, os, io, re, ast, json, time, tempfile, threading, shutil
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -26,6 +26,7 @@ CO.APP_DIR = os.path.join(TMP, "VPN")
 CO.DATA_FILE = os.path.join(CO.APP_DIR, "data.json")
 CO.PROFILES_DIR = os.path.join(CO.APP_DIR, "profiles")
 CO.PIDS_FILE = os.path.join(CO.APP_DIR, "pids.json")
+CO.INBOX_DIR = os.path.join(CO.APP_DIR, "inbox")
 CO.BIN_DIR = os.path.join(TMP, "bin")
 CO.OLD_APP_DIR = os.path.join(TMP, "DGCloakVPN")
 CO.HAS_TRAY = False                    # трей не поднимаем
@@ -705,6 +706,43 @@ def t_data():
 
 # ---------- T12. миграция старой папки ------------------------------------
 
+# ---------- T21. inbox: профили от админки --------------------------------
+
+def t_inbox(app):
+    os.makedirs(CO.INBOX_DIR, exist_ok=True)
+    dgc = os.path.join(TMP, "adm.dgcloak")
+    cloak = {"UID": "u", "RemoteHost": "h", "RemotePort": "443",
+             "UDP": True}
+    json.dump({"name": "u1", "cloak": cloak,
+               "ovpn": "client\nproto udp\n"},
+              open(dgc, "w", encoding="utf-8"))
+    mark = os.path.join(CO.INBOX_DIR, "u1@srvA.dgcloak")
+    shutil.copyfile(dgc, mark)
+    app._process_inbox()
+    names = [p["name"] for p in app.data["profiles"]]
+    check("T21.1 inbox .dgcloak → профиль «u1@srvA» добавлен",
+          "u1@srvA" in names and not os.path.exists(mark), names)
+    p = next(q for q in app.data["profiles"] if q["name"] == "u1@srvA")
+    check("T21.2 материализовано в profiles\\, udp=True из cloak",
+          p["ovpn"].startswith(CO.PROFILES_DIR)
+          and p["ck_config"].startswith(CO.PROFILES_DIR)
+          and p["udp"] is True)
+    json.dump({"name": "u1", "cloak": dict(cloak, UDP=False),
+               "ovpn": "client\nproto tcp\n"},
+              open(dgc, "w", encoding="utf-8"))
+    shutil.copyfile(dgc, mark)
+    app._process_inbox()
+    names2 = [q["name"] for q in app.data["profiles"]]
+    p2 = next(q for q in app.data["profiles"] if q["name"] == "u1@srvA")
+    check("T21.3 повторный inbox → upsert без дубля",
+          names2.count("u1@srvA") == 1 and p2["udp"] is False)
+    with open(os.path.join(CO.INBOX_DIR, "u1@srvA.del"), "w") as f:
+        f.write("u1@srvA")
+    app._process_inbox()
+    check("T21.4 inbox .del → профиль удалён",
+          "u1@srvA" not in [q["name"] for q in app.data["profiles"]])
+
+
 def t_migrate():
     ok = os.path.isfile(os.path.join(CO.BIN_DIR, "ck-client.exe")) \
         and not os.path.isdir(CO.OLD_APP_DIR) and os.path.isfile(CO.DATA_FILE)
@@ -734,6 +772,7 @@ def main():
     t_status_warn(app)
     t_check_dlg(app)
     t_data()
+    t_inbox(app)
     t_migrate()
     try:
         app.destroy()

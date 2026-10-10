@@ -229,6 +229,13 @@ Remembered per server.</td></tr>
 <p>A user that isn't in the tool's registry (foreign UID) can't have its
 certificate revoked — the tool offers only to delete the UID from Cloak
 (new connections get blocked; the current session is untouched).</p>
+<div class="box"><b>Auto-provisioning to the client.</b> If the DGCloakVPN
+client is present on this PC (the <code>%APPDATA%\DGCloak\VPN</code> folder
+exists), creating a user or reissuing a config drops a
+<code>user@server</code> profile straight into the client's list, and
+revoking removes it. It shows up within seconds or on the next client
+start. Without a client the config stays in <code>user_bundles\</code>
+as before.</div>
 
 <figure><img src="img/admin-users.png" alt="Users tab">
 <figcaption>The Users tab: registry, action buttons, journal.</figcaption></figure>

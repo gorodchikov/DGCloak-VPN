@@ -606,6 +606,9 @@ STRINGS_EN = {
     "  реестр юзеров синхронизирован на сервер": "  user registry synced to server",
     "  !! реестр на сервер не записался: %s": "  !! registry write to server failed: %s",
     "  конфиг «%s» → user_bundles\\%s": "  config \"%s\" → user_bundles\\%s",
+    "  конфиг передан клиенту: «%s»": "  config handed to client: \"%s\"",
+    "  профиль «%s» удалён и у клиента":
+        "  profile \"%s\" removed from client too",
     "  !! конфиг «%s» не пересобран: %s": "  !! config \"%s\" not rebuilt: %s",
     "  сертификат отозван": "  certificate revoked",
     "  сертификат уже отозван": "  certificate already revoked",
@@ -1657,6 +1660,41 @@ def write_user_bundle(s, name, uid, mats, dst, mask=None):
               encoding="utf-8") as f:
         json.dump(make_dgcloak(s, name, uid, mats, mask), f,
                   ensure_ascii=False, indent=2)
+
+
+def provision_client(srv_name, cn, dgcloak_path=None, delete=False):
+    """Если на этом ПК стоит клиент DGCloakVPN — передать профиль через
+    его inbox\\<cn>@<сервер>.dgcloak / .del. Клиент определяем по data-dir
+    %APPDATA%\\DGCloak\\VPN — exe может лежать где угодно, папка одна.
+    Маркеры подхватывает сам клиент (свой data.json пишет только он —
+    гонок нет, мьютекс не нужен). Атомарно через tmp+os.replace.
+    True = клиент найден и файл брошен."""
+    vdir = os.path.join(os.environ.get("APPDATA", ""), "DGCloak", "VPN")
+    if not os.path.isdir(vdir):
+        return False
+    inbox = os.path.join(vdir, "inbox")
+    pname = "%s@%s" % (cn, srv_name)
+    try:
+        os.makedirs(inbox, exist_ok=True)
+        if delete:
+            mark = os.path.join(inbox, pname + ".del")
+            tmp = mark + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(pname)
+            os.replace(tmp, mark)
+            dg = os.path.join(inbox, pname + ".dgcloak")
+            if os.path.isfile(dg):
+                os.remove(dg)
+        else:
+            tmp = os.path.join(inbox, pname + ".tmp")
+            shutil.copyfile(dgcloak_path, tmp)
+            os.replace(tmp, os.path.join(inbox, pname + ".dgcloak"))
+            dl = os.path.join(inbox, pname + ".del")
+            if os.path.isfile(dl):
+                os.remove(dl)
+        return True
+    except OSError:
+        return False
 
 
 def parse_cert_bundle(out):
@@ -4009,6 +4047,10 @@ class App(tk.Tk):
         # 3. конфиг (флажно: user_bundles\<сервер>\<юзер>.dgcloak)
         bundle = os.path.join(BUNDLES_DIR, s["name"])
         write_user_bundle(s, name, uid, mats, bundle, mask)
+        if provision_client(s["name"], name,
+                            os.path.join(bundle, "%s.dgcloak" % name)):
+            self.say(self.t("  конфиг передан клиенту: «%s»")
+                     % ("%s@%s" % (name, s["name"])))
         # 4. запись в реестр
         users = s.setdefault("users", [])
         users[:] = [u for u in users if u["cn"] != name]
@@ -4097,6 +4139,10 @@ class App(tk.Tk):
                 mats = parse_cert_bundle(out)
                 bundle = os.path.join(BUNDLES_DIR, s["name"])
                 write_user_bundle(s, cn, uid, mats, bundle, r["mask"])
+                if provision_client(s["name"], cn,
+                                    os.path.join(bundle, "%s.dgcloak" % cn)):
+                    self.say(self.t("  конфиг передан клиенту: «%s»")
+                             % ("%s@%s" % (cn, s["name"])))
                 self.say(self.t("Юзер «%s» обновлён, конфиг перевыпущен, "
                          "выдай его юзеру: %s")
                          % (cn, os.path.join(bundle, "%s.dgcloak" % cn)))
@@ -4212,6 +4258,9 @@ class App(tk.Tk):
                                        "%s.dgcloak" % cn))
             except OSError:
                 pass
+            if provision_client(s["name"], cn, delete=True):
+                self.say(self.t("  профиль «%s» удалён и у клиента")
+                         % ("%s@%s" % (cn, s["name"])))
             self.say(self.t("Юзер «%s» отозван и удалён.") % cn)
             self.ui(self._users_refresh)
         self._worker(work)

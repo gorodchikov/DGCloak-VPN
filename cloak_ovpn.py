@@ -38,6 +38,7 @@ BIN_DIR = os.path.join(DGCLOAK_DIR, "bin")  # общие зависимости:
 DATA_FILE = os.path.join(APP_DIR, "data.json")
 PROFILES_DIR = os.path.join(APP_DIR, "profiles")  # сюда копируются файлы профилей при добавлении
 PIDS_FILE = os.path.join(APP_DIR, "pids.json")    # PID наших ck-client/openvpn (для добивания зависших)
+INBOX_DIR = os.path.join(APP_DIR, "inbox")  # профили, подкинутые админкой (*.dgcloak — upsert, *.del — удалить)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 DEFAULT_DATA = {
@@ -170,6 +171,8 @@ STRINGS_EN = {
     "отключено": "offline",
     "Лог скопирован в буфер обмена.": "Log copied to clipboard.",
     "Лог очищен.": "Log cleared.",
+    "Профиль «{n}» получен из админки.": "Profile «{n}» received from admin.",
+    "Профиль «{n}» удалён админкой.": "Profile «{n}» removed by admin.",
     "Подключено.": "Connected.",
     "Отключено.": "Disconnected.",
     "Отключаюсь…": "Disconnecting…",
@@ -621,6 +624,33 @@ def _under_profiles_dir(path):
     return os.path.abspath(path).startswith(os.path.abspath(PROFILES_DIR) + os.sep)
 
 
+def materialize_dgcloak(path, name=None):
+    """Разобрать .dgcloak → ck-конфиг + .ovpn материализуются в
+    PROFILES_DIR/<безопасное имя>/. Возвращает dict полей профиля
+    {name, ck_config, ovpn, udp} — name из параметра, data["name"]
+    или имени файла (в таком порядке)."""
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    cloak, ovpn = data.get("cloak"), data.get("ovpn")
+    if not isinstance(cloak, dict) or not isinstance(ovpn, str) \
+            or not ovpn.strip():
+        raise ValueError("dgcloak")
+    name = name or data.get("name") \
+        or os.path.splitext(os.path.basename(path))[0]
+    safe = re.sub(r"[^\w\-]+", "_", name).strip("_") or "profile"
+    dest = os.path.join(PROFILES_DIR, safe)
+    os.makedirs(dest, exist_ok=True)
+    ck = os.path.join(dest, "ckclient-%s.json" % safe)
+    ov = os.path.join(dest, "%s.ovpn" % safe)
+    with open(ck, "w", encoding="utf-8") as f:
+        json.dump(cloak, f, indent=2)
+    with open(ov, "w", encoding="utf-8") as f:
+        f.write(ovpn)
+    return {"name": name, "ck_config": ck, "ovpn": ov,
+            "udp": bool(cloak["UDP"]) if isinstance(cloak.get("UDP"), bool)
+            else None}
+
+
 def import_profile_files(r, tr=None):
     """Скопировать файлы профиля (конфиг Cloak, .ovpn и его внешние ключи) в
     PROFILES_DIR/<имя>/ и подставить новые пути в r — исходники можно удалить.
@@ -952,28 +982,15 @@ class ProfileDialog(tk.Toplevel):
     def _from_dgcloak(self, r):
         """Разобрать .dgcloak → ck-конфиг + .ovpn материализуются в
         PROFILES_DIR/<имя>/, в r подставляются их пути."""
-        path = r["dgcloak"]
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-        cloak, ovpn = data.get("cloak"), data.get("ovpn")
-        if not isinstance(cloak, dict) or not isinstance(ovpn, str) \
-                or not ovpn.strip():
+        try:
+            prof = materialize_dgcloak(r["dgcloak"], r["name"] or None)
+        except Exception:
             raise ValueError(self.t("Файл не похож на DGCloak-профиль "
                                     "(нет секций cloak/ovpn)."))
-        name = r["name"] or data.get("name") \
-            or os.path.splitext(os.path.basename(path))[0]
-        safe = re.sub(r"[^\w\-]+", "_", name).strip("_") or "profile"
-        dest = os.path.join(PROFILES_DIR, safe)
-        os.makedirs(dest, exist_ok=True)
-        ck = os.path.join(dest, "ckclient-%s.json" % safe)
-        ov = os.path.join(dest, "%s.ovpn" % safe)
-        with open(ck, "w", encoding="utf-8") as f:
-            json.dump(cloak, f, indent=2)
-        with open(ov, "w", encoding="utf-8") as f:
-            f.write(ovpn)
-        r["name"], r["ck_config"], r["ovpn"] = name, ck, ov
-        if isinstance(cloak.get("UDP"), bool):
-            self.udp.set(cloak["UDP"])
+        if prof["udp"] is not None:
+            self.udp.set(prof["udp"])
+        r["name"], r["ck_config"], r["ovpn"] = \
+            prof["name"], prof["ck_config"], prof["ovpn"]
         return r
 
     def _ok(self):
@@ -1482,6 +1499,14 @@ class App(tk.Tk):
         except queue.Empty:
             pass
         finally:
+            # раз в ~3 с смотрим inbox — админка может подкинуть профили
+            self._inbox_n = getattr(self, "_inbox_n", 0) + 1
+            if self._inbox_n >= 30:
+                self._inbox_n = 0
+                try:
+                    self._process_inbox()
+                except Exception as e:  # noqa: BLE001
+                    self._log_file(f"[inbox error] {e!r}\n")
             self.after(100, self._drain)
 
     def _set_locked(self, locked):
@@ -1491,6 +1516,71 @@ class App(tk.Tk):
         self.combo.config(state="disabled" if locked else "readonly")
 
     # ---------- профили ----------
+    def _process_inbox(self):
+        """Профили от админки: inbox\\<имя>.dgcloak — добавить/обновить,
+        inbox\\<имя>.del — удалить. Маркер обрабатывается один раз и
+        стирается. data.json пишет только клиент — гонок нет."""
+        try:
+            items = sorted(os.listdir(INBOX_DIR))
+        except OSError:
+            return
+        changed = False
+        for fn in items:
+            path = os.path.join(INBOX_DIR, fn)
+            if not os.path.isfile(path):
+                continue
+            if fn.endswith(".dgcloak"):
+                prof = None
+                try:
+                    prof = materialize_dgcloak(path, fn[:-8])
+                except Exception as e:  # noqa: BLE001
+                    self.say("Inbox «{f}»: {e}", f=fn, e=e)
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+                if prof is None:
+                    continue
+                old = next((p for p in self.data["profiles"]
+                            if p["name"] == prof["name"]), None)
+                if old:
+                    old.update(prof)
+                else:
+                    prof.update({"port": 1984, "server": "",
+                                 "server_port": "", "bypass_ip": "",
+                                 "full_tunnel": True,
+                                 "reconnect": True})
+                    if prof["udp"] is None:
+                        prof["udp"] = False
+                    self.data["profiles"].append(prof)
+                self.say("Профиль «{n}» получен из админки.",
+                         n=prof["name"])
+                changed = True
+            elif fn.endswith(".del"):
+                name = fn[:-4]
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+                old = next((p for p in self.data["profiles"]
+                            if p["name"] == name), None)
+                if old:
+                    self.data["profiles"].remove(old)
+                    if old.get("ovpn") \
+                            and _under_profiles_dir(old["ovpn"]):
+                        shutil.rmtree(os.path.dirname(
+                            os.path.abspath(old["ovpn"])),
+                                      ignore_errors=True)
+                    if self.data.get("last_profile") == name:
+                        self.data["last_profile"] = ""
+                    self.say("Профиль «{n}» удалён админкой.", n=name)
+                    changed = True
+        if changed:
+            save_data(self.data)
+            self._refresh_combo()
+            self._refresh_tray_menu()
+
+
     def _add(self):
         d = ProfileDialog(self)
         self.wait_window(d)

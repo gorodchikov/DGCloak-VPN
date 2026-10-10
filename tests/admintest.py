@@ -522,6 +522,44 @@ def u10_srv_mark():
 
 
 # ======================================================================
+# U11. provision_client: профиль в клиентский inbox
+# ======================================================================
+
+def u11_provision():
+    old_ap = os.environ.get("APPDATA", "")
+    tmp = tempfile.mkdtemp(prefix="dgprov-")
+    os.environ["APPDATA"] = tmp
+    try:
+        dgc = os.path.join(tmp, "u1.dgcloak")
+        with open(dgc, "w") as f:
+            f.write("{}")
+        check("U11.1 нет VPN\\ → клиент не найден",
+              CA.provision_client("srvA", "u1", dgc) is False)
+        vdir = os.path.join(tmp, "DGCloak", "VPN")
+        os.makedirs(vdir)
+        inbox = os.path.join(vdir, "inbox")
+        ok = CA.provision_client("srvA", "u1", dgc)
+        check("U11.2 provision: inbox .dgcloak атомарно",
+              ok and os.path.isfile(os.path.join(inbox, "u1@srvA.dgcloak"))
+              and not os.path.exists(os.path.join(inbox, "u1@srvA.tmp")))
+        CA.provision_client("srvA", "u1", delete=True)
+        check("U11.3 delete → .del маркер, .dgcloak снят",
+              os.path.isfile(os.path.join(inbox, "u1@srvA.del"))
+              and not os.path.exists(
+                  os.path.join(inbox, "u1@srvA.dgcloak")))
+        # отзыв после отзыва/создание после удаления — маркеры друг друга
+        # затирают, залипших пар .dgcloak+.del не бывает
+        CA.provision_client("srvA", "u1", dgc)
+        CA.provision_client("srvA", "u1", delete=True)
+        CA.provision_client("srvA", "u1", dgc)
+        check("U11.4 серия маркеров → остался только .dgcloak",
+              os.path.isfile(os.path.join(inbox, "u1@srvA.dgcloak"))
+              and not os.path.exists(os.path.join(inbox, "u1@srvA.del")))
+    finally:
+        os.environ["APPDATA"] = old_ap
+
+
+# ======================================================================
 
 u1_localization()
 u2_regressions()
@@ -536,5 +574,6 @@ u7_dialogs()
 u8_matrix()
 u9_revert()
 u10_srv_mark()
+u11_provision()
 
 finish(app)
