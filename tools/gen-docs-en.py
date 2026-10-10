@@ -216,6 +216,8 @@ CEN = {
  "22494c2": "client: Start with Windows checkbox (HKCU Run key autorun, path self-heal)",
  "ef280f3": "docs: commit translations (Windows autorun)",
  "68cea55": "client: Real IP line in status + click an IP line to copy it",
+ "99b4496": "docs: commit translations (Real IP + click-to-copy)",
+ "e3ba988": "client: network info strip at the bottom of Advanced (LAN + tun client/server)",
  "3a7d9d2": "docs: reports for tray menu and journals + guide tagline",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
