@@ -992,6 +992,16 @@ def t_start_minimized(app):
     app._refresh_combo()
 
 
+def t_verbose_persist(app):
+    """T28: «Отладочный лог OpenVPN» — флаг→data.json."""
+    app.verbose.set(True); app._on_verbose()
+    check("T28.1 «Отладочный лог OpenVPN» → data.json",
+          json.load(open(CO.DATA_FILE, encoding="utf-8"))["verbose"] is True)
+    app.verbose.set(False); app._on_verbose()
+    check("T28.2 снятая галочка → False",
+          json.load(open(CO.DATA_FILE, encoding="utf-8"))["verbose"] is False)
+
+
 def t_migrate():
     ok = os.path.isfile(os.path.join(CO.BIN_DIR, "ck-client.exe")) \
         and not os.path.isdir(CO.OLD_APP_DIR) and os.path.isfile(CO.DATA_FILE)
@@ -1028,6 +1038,7 @@ def main():
     t_tray_menu(app)
     t_autoconnect(app)
     t_start_minimized(app)
+    t_verbose_persist(app)
     t_migrate()
     try:
         app.destroy()

@@ -54,6 +54,7 @@ DEFAULT_DATA = {
     "language": "ru",
     "autoconnect": False,   # подключать выбранный профиль автоматически при запуске
     "start_minimized": False,  # стартовать свёрнутым в трей (только если трей есть)
+    "verbose": False,          # отладочный лог OpenVPN (--verb 4)
 }
 
 LANG_NAMES = {"ru": "Русский", "en": "English"}
@@ -1159,7 +1160,7 @@ class App(tk.Tk):
         self._icons = {}
         self._last_tray_text = None
         self._last_tray_color = None
-        self.verbose = tk.BooleanVar(value=False)
+        self.verbose = tk.BooleanVar(value=bool(self.data.get("verbose")))
         self.autoconnect = tk.BooleanVar(value=bool(self.data.get("autoconnect")))
         self.start_minimized = tk.BooleanVar(value=bool(self.data.get("start_minimized")))
         self.adv_open = False
@@ -1300,7 +1301,7 @@ class App(tk.Tk):
         self.chk_min.pack(anchor="w", pady=(4, 0))
         self.chk_verbose = ttk.Checkbutton(
             self.adv, text=t("Отладочный лог OpenVPN (применится при следующем подключении)"),
-            variable=self.verbose)
+            variable=self.verbose, command=self._on_verbose)
         self.chk_verbose.pack(anchor="w", pady=(4, 0))
         bar = ttk.Frame(self.adv)
         bar.pack(fill="x", pady=(6, 0))
@@ -1874,6 +1875,10 @@ class App(tk.Tk):
 
     def _on_start_minimized(self):
         self.data["start_minimized"] = bool(self.start_minimized.get())
+        save_data(self.data)
+
+    def _on_verbose(self):
+        self.data["verbose"] = bool(self.verbose.get())
         save_data(self.data)
 
     def _paths(self):

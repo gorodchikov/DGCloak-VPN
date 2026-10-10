@@ -509,6 +509,8 @@ CL = {
 "T27.3 флаг+трей → _first_run сворачивает в трей": "T27.3 flag+tray → _first_run minimizes to tray",
 "T27.4 без трея → не сворачивает": "T27.4 no tray → does not minimize",
 "T27.5 флаг off → не сворачивает": "T27.5 flag off → does not minimize",
+"T28.1 «Отладочный лог OpenVPN» → data.json": "T28.1 OpenVPN debug log checkbox → data.json",
+"T28.2 снятая галочка → False": "T28.2 unchecked → False",
 }
 
 AD = {
