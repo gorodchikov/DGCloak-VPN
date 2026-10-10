@@ -378,6 +378,278 @@ def t_connect(app):
         CO.App._start_monitor = saved_mon
 
 
+# ---------- T13. import_profile_files --------------------------------------
+
+def t_import_files():
+    d = os.path.join(TMP, "src-prof")
+    os.makedirs(d, exist_ok=True)
+    ovpn = os.path.join(d, "p.ovpn")
+    ca = os.path.join(d, "ca.crt")
+    key = os.path.join(d, "cl.key")
+    for pth, body in ((ovpn, "client\nremote x 1194\nca ca.crt\nkey cl.key\n"),
+                      (ca, "CA"), (key, "KEY")):
+        open(pth, "w").write(body)
+    r = {"name": "imp1", "ovpn": ovpn}
+    warns = CO.import_profile_files(r)
+    dest = os.path.join(CO.PROFILES_DIR, "imp1")
+    check("T13.1 .ovpn и внешние ключи скопированы в profiles\\imp1",
+          os.path.isfile(os.path.join(dest, "p.ovpn"))
+          and os.path.isfile(os.path.join(dest, "ca.crt"))
+          and os.path.isfile(os.path.join(dest, "cl.key")), warns)
+    check("T13.2 пути в r переписаны на копии",
+          r["ovpn"].startswith(CO.PROFILES_DIR))
+    # ссылка на несуществующий файл → пропуск без падения (isfile-guard)
+    open(ovpn, "a").write("cert missing.crt\n")
+    r2 = {"name": "imp2", "ovpn": ovpn}
+    warns = CO.import_profile_files(r2)
+    check("T13.3 несуществующий файл-ключ → пропущен, не упало",
+          r2["ovpn"].startswith(CO.PROFILES_DIR) and not warns, warns)
+
+
+# ---------- T14. _mgmt_loop на живом localhost-сокете ----------------------
+
+def t_mgmt_loop(app):
+    import socket as _s
+    ls = _s.socket()
+    ls.bind(("127.0.0.1", 0))
+    ls.listen(1)
+    port = ls.getsockname()[1]
+
+    def serve():
+        c, _ = ls.accept()
+        f = c.makefile("rw", encoding="utf-8", newline="\n")
+        f.readline()                       # "state on all"
+        f.write("1700000000,CONNECTED,SUCCESS,10.8.0.2,\n")
+        f.write("SUCCESS: bytesin=1000,bytesout=2000\n")
+        f.flush()
+        time.sleep(1.0)
+        f.write("SUCCESS: bytesin=4000,bytesout=8000\n")
+        f.flush()
+        time.sleep(0.4)
+        try:
+            f.close(); c.close()
+        except OSError:
+            pass
+        ls.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    app.up.clear()
+    app._stats_prev = None
+    proc = FakeProc(["x"])
+    th = threading.Thread(target=app._mgmt_loop,
+                          args=(port, proc, {"name": "u1"}), daemon=True)
+    th.start()
+    th.join(6)
+    check("T14.1 mgmt CONNECTED → up.is_set", app.up.is_set())
+    check("T14.2 load-stats → traffic (4000,8000)",
+          app.traffic == (4000, 8000), app.traffic)
+    check("T14.3 rate посчитан (≈3 KB/s ↓, ≈6 KB/s ↑)",
+          app._rate and app._rate[0] > 1500 and app._rate[1] > 4000,
+          app._rate)
+    check("T14.4 management-сокет сохранён", app.mgmt is not None)
+    app.mgmt = None
+    app.up.clear()
+
+
+# ---------- T15. _stop_vpn: SIGTERM через mgmt ------------------------------
+
+def t_stop_vpn(app):
+    sent = []
+
+    class FakeMgmt:
+        def sendall(self, b):
+            sent.append(b)
+
+        def close(self):
+            pass
+
+    class Alive:
+        def poll(self):
+            return None
+
+        def wait(self, t=None):
+            return 0
+
+        def terminate(self):
+            pass
+
+        def kill(self):
+            pass
+
+    app.mgmt = FakeMgmt()
+    app.vpn = Alive()
+    app._stop_vpn()
+    check("T15.1 _stop_vpn шлёт 'signal SIGTERM' в mgmt",
+          sent == [b"signal SIGTERM\n"], sent)
+    check("T15.2 _stop_vpn обнуляет self.vpn", app.vpn is None)
+
+
+# ---------- T16. _monitor: автореконнект ------------------------------------
+
+def t_monitor(app):
+    class Dead:
+        returncode = 1
+
+        def poll(self):
+            return 1
+
+        def wait(self, t=None):
+            return 1
+
+        def terminate(self):
+            pass
+
+        def kill(self):
+            pass
+
+    class Alive:
+        def poll(self):
+            return None
+
+        def wait(self, t=None):
+            return 0
+
+        def terminate(self):
+            pass
+
+        def kill(self):
+            pass
+
+    called = []
+    orig_run, orig_conn = app._run, app._connect
+    app._run = lambda fn: called.append(fn)   # перехват, не исполняем
+    try:
+        # reconnect=True → _connect(p) уходит в _run
+        app.active = {"name": "u1", "reconnect": True}
+        app.up_since = time.time()
+        app._rate = None
+        app.ext_ip = None
+        app.bypass_missing = False
+        app.ck = Dead()
+        app.vpn = Alive()
+        app.mgmt = None
+        app.busy = False
+        stop = threading.Event()
+        th = threading.Thread(target=app._monitor, args=(stop,), daemon=True)
+        th.start()
+        t_end = time.time() + 5
+        while not called and time.time() < t_end:
+            pump(app, 0.2)
+        stop.set(); th.join(3)
+        check("T16.1 обрыв + reconnect → _connect перезапущен",
+              len(called) == 1, called)
+        check("T16.2 в логе «переподключение (1/3)»",
+              "переподключение (1/3)" in logfile())
+
+        # reconnect=False → красный статус, без _connect
+        called.clear()
+        app.active = {"name": "u1", "reconnect": False}
+        app.up_since = time.time()
+        app.ck = Dead()
+        app.vpn = Alive()
+        app.mgmt = None
+        stop = threading.Event()
+        th = threading.Thread(target=app._monitor, args=(stop,), daemon=True)
+        th.start()
+        time.sleep(3.0)
+        pump(app, 0.3)
+        stop.set(); th.join(3)
+        check("T16.3 reconnect=False → без перезапуска", not called)
+        check("T16.4 статус красный 'Cloak остановлен'",
+              app._status_msg[1] == "red"
+              and "Cloak" in app._status_msg[0], app._status_msg[:2])
+    finally:
+        app._run = orig_run
+        app._connect = orig_conn
+        app.active = None
+        app.up_since = None
+
+
+# ---------- T17. port_open/probe на живом сокете ----------------------------
+
+def t_ports():
+    ls = CO.socket.socket()
+    ls.bind(("127.0.0.1", 0))
+    ls.listen(8)
+    p = ls.getsockname()[1]
+    stop = threading.Event()
+
+    def accepter():  # иначе backlog кончается после первого коннекта
+        ls.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                c, _ = ls.accept()
+                c.close()
+            except OSError:
+                pass
+
+    threading.Thread(target=accepter, daemon=True).start()
+    check("T17.1 port_open: открытый порт → True", CO.port_open("127.0.0.1", p))
+    check("T17.2 probe: открытый порт → None",
+          CO.probe("127.0.0.1", p) is None)
+    stop.set()
+    ls.close()
+    check("T17.3 port_open: закрытый порт → False",
+          not CO.port_open("127.0.0.1", p))
+    check("T17.4 probe: закрытый порт → текст ошибки",
+          isinstance(CO.probe("127.0.0.1", p, 1), str))
+
+
+# ---------- T18. _conn_status: нет обхода → оранжевый + warning -------------
+
+def t_status_warn(app):
+    app.active = {"name": "u1"}
+    app.up_since = time.time() - 30
+    app._rate = None
+    app.ext_ip = "9.9.9.9"
+    app.bypass_missing = True
+    app._conn_status()
+    text, color, _ = app._status_msg
+    lines = text.splitlines()
+    check("T18.1 bypass_missing → 5-я строка «НЕТ ОБХОДА»",
+          len(lines) == 5 and "НЕТ ОБХОДА" in lines[4], lines[-1])
+    check("T18.2 bypass_missing → оранжевый статус", color == "orange")
+    app.bypass_missing = False
+    app.active = None
+
+
+# ---------- T19. «Проверить»: занятый порт и битый хост ---------------------
+
+def t_check_dlg(app):
+    ls = CO.socket.socket()
+    ls.bind(("127.0.0.1", 0))
+    ls.listen(1)
+    busy_port = ls.getsockname()[1]
+    d = CO.ProfileDialog(app)
+    try:
+        d.vars["port"].set(str(busy_port))
+        d.vars["server"].set("nonexistent-host-xyz.invalid")
+        d._check()
+        t_end = time.time() + 6
+        while "проверяю" in d._check_lbl["text"] and time.time() < t_end:
+            pump(app, 0.15)
+        txt = d._check_lbl["text"]
+        check("T19.1 занятый порт → ЗАНЯТ", "ЗАНЯТ" in txt, txt)
+        check("T19.2 неразрешимый хост → «не резолвится»",
+              "не резолвится" in txt, txt)
+    finally:
+        ls.close()
+        d.destroy()
+
+
+# ---------- T20. data.json + free_port --------------------------------------
+
+def t_data():
+    # недеструктивный roundtrip: сейвим то же, что прочитали (файл читает T12)
+    d0 = CO.load_data()
+    CO.save_data(d0)
+    d = CO.load_data()
+    check("T20.1 save/load roundtrip", d == d0)
+    p = CO.free_port()
+    check("T20.2 free_port → свободный порт 1024-65535",
+          1024 <= p <= 65535 and not CO.port_open("127.0.0.1", p), p)
+
+
 # ---------- T12. миграция старой папки ------------------------------------
 
 def t_migrate():
@@ -401,6 +673,14 @@ def main():
     t_bypass(app)
     t_pids_ip_log(app)
     t_connect(app)
+    t_import_files()
+    t_mgmt_loop(app)
+    t_stop_vpn(app)
+    t_monitor(app)
+    t_ports()
+    t_status_warn(app)
+    t_check_dlg(app)
+    t_data()
     t_migrate()
     try:
         app.destroy()
