@@ -577,16 +577,23 @@ def _fmt_bytes(n):
         v /= 1024
 
 
+_IP_SERVICES = ("https://api.ipify.org",
+                "https://ifconfig.me/ip",
+                "https://icanhazip.com")
+
+
 def external_ip(timeout=4):
-    """Внешний IP по api.ipify.org (для лога до/после подключения). None при ошибке."""
-    try:
-        req = urllib.request.Request("https://api.ipify.org",
-                                     headers={"User-Agent": "DGCloakVPN"})
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            ip = r.read().decode("ascii", "replace").strip()
-        return ip if re.fullmatch(r"[0-9a-fA-F:.]{3,45}", ip) else None
-    except Exception:  # noqa: BLE001 — нет сети/таймаут: это только информация для лога
-        return None
+    """Внешний IP: сервисы по очереди (для лога до/после подключения). None при ошибке."""
+    for url in _IP_SERVICES:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "DGCloakVPN"})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                ip = r.read().decode("ascii", "replace").strip()
+            if re.fullmatch(r"[0-9a-fA-F:.]{3,45}", ip):
+                return ip
+        except Exception:  # noqa: BLE001 — сервис недоступен: пробуем следующий
+            continue
+    return None
 
 
 def download(url, dst, on_progress):
@@ -1854,7 +1861,8 @@ class App(tk.Tk):
         threading.Thread(target=self._monitor, args=(stop,), daemon=True).start()
 
     def _conn_status(self):
-        """Статус живого соединения: имя / VPN IP / аптайм / скорость / «нет обхода»."""
+        """Статус живого соединения: имя / VPN IP (если определён) / аптайм /
+        скорость / «нет обхода»."""
         p = self.active
         if not p:
             return
@@ -1863,10 +1871,14 @@ class App(tk.Tk):
         rate = ("↓{}/s ↑{}/s".format(_fmt_bytes(self._rate[0]), _fmt_bytes(self._rate[1]))
                 if self._rate else "—")
         # метки добиваются пробелами до одной ширины → значения строго друг под другом
-        labels = (self.t("Подключено:"), "VPN IP:",
-                  self.t("Подключено в течение:"), self.t("Скорость:"))
+        labels = [self.t("Подключено:")]
+        vals = [p["name"]]
+        if self.ext_ip:  # IP не удалось определить → строку не показываем
+            labels.append("VPN IP:")
+            vals.append(self.ext_ip)
+        labels += [self.t("Подключено в течение:"), self.t("Скорость:")]
+        vals += [up, rate]
         w = max(len(x) for x in labels) + 1
-        vals = (p["name"], self.ext_ip or "—", up, rate)
         lines = ["{:<{w}}{}".format(lbl, v, w=w) for lbl, v in zip(labels, vals)]
         tray = [lbl + " " + str(v) for lbl, v in zip(labels, vals)]  # тултип — без набивки
         color = "green"

@@ -288,6 +288,15 @@ def t_pids_ip_log(app):
 
     CO.urllib.request.urlopen = boom
     check("T9.3 нет сети → None (не падает)", CO.external_ip() is None)
+
+    def flaky(req, timeout=0):
+        if "ipify" in req.full_url:
+            raise OSError("ipify down")
+        return R(b"8.8.4.4")
+
+    CO.urllib.request.urlopen = flaky
+    check("T9.4 фолбэк на второй сервис (ipify упал → ifconfig.me)",
+          CO.external_ip() == "8.8.4.4")
     CO.urllib.request.urlopen = real
 
     app.say("тестовая-строка-xyz")
@@ -648,6 +657,11 @@ def t_status_warn(app):
     check("T18.1 bypass_missing → 5-я строка «НЕТ ОБХОДА»",
           len(lines) == 5 and "НЕТ ОБХОДА" in lines[4], lines[-1])
     check("T18.2 bypass_missing → оранжевый статус", color == "orange")
+    app.ext_ip = None
+    app._conn_status()
+    text2 = app._status_msg[0]
+    check("T18.3 ext_ip=None → строки «VPN IP» нет",
+          "VPN IP" not in text2, text2)
     app.bypass_missing = False
     app.active = None
 
