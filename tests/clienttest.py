@@ -772,6 +772,54 @@ def t_shortcut():
                 os.environ[k] = v
 
 
+def t_rename(app):
+    """T23: переименование профиля — файлы переезжают, дубли имён отклонены."""
+    d_old = os.path.join(CO.PROFILES_DIR, "oldn")
+    os.makedirs(d_old, exist_ok=True)
+    ov = os.path.join(d_old, "oldn.ovpn")
+    ck = os.path.join(d_old, "ck.json")
+    open(ov, "w").write("client\nremote x 1194\nca ca.crt\n")
+    open(os.path.join(d_old, "ca.crt"), "w").write("CA")
+    open(ck, "w").write("{}")
+    prof = {"name": "newn", "ovpn": ov, "ck_config": ck}
+    CO.import_profile_files(prof)
+    d_new = os.path.join(CO.PROFILES_DIR, "newn")
+    check("T23.1 переименование: файлы и ключи переехали в profiles/<new>",
+          os.path.dirname(prof["ovpn"]) == d_new
+          and os.path.dirname(prof["ck_config"]) == d_new
+          and os.path.isfile(os.path.join(d_new, "ca.crt")))
+    # дубль и safe-коллизия имён — диалог отклоняет
+    f1 = os.path.join(TMP, "c.json"); open(f1, "w").write("{}")
+    f2 = os.path.join(TMP, "c.ovpn"); open(f2, "w").write("client\nremote x 1\n")
+    old_prof = app.data["profiles"]
+    app.data["profiles"] = [{"name": "e x"}]
+    MSGBOX.clear()
+    dd = CO.ProfileDialog(app)
+    dd.vars["name"].set("e_x")
+    dd.vars["ck_config"].set(f1)
+    dd.vars["ovpn"].set(f2)
+    dd._ok()
+    check("T23.2 safe-коллизия («e x» vs «e_x») → отказ",
+          dd.result is None and MSGBOX and MSGBOX[-1][0] == "error")
+    dd.destroy()
+    # своё же имя при правке — не коллизия (orig исключён по identity)
+    dself = CO.ProfileDialog(app, app.data["profiles"][0])
+    dself.vars["ck_config"].set(f1)
+    dself.vars["ovpn"].set(f2)
+    dself._ok()
+    check("T23.3 правка без смены имени → ок",
+          dself.result is not None)
+    dself.destroy()
+    # managed-профиль (от админки): имя в диалоге readonly
+    dm = CO.ProfileDialog(app, {"name": "u1@srvA", "managed": True})
+    w = dm.grid_slaves(row=0, column=1)[0]
+    check("T23.4 managed: поле имени readonly",
+          str(w.cget("state")) == "readonly",
+          "%s state=%s" % (w.winfo_class(), w.cget("state")))
+    dm.destroy()
+    app.data["profiles"] = old_prof
+
+
 def t_migrate():
     ok = os.path.isfile(os.path.join(CO.BIN_DIR, "ck-client.exe")) \
         and not os.path.isdir(CO.OLD_APP_DIR) and os.path.isfile(CO.DATA_FILE)
@@ -803,6 +851,7 @@ def main():
     t_data()
     t_inbox(app)
     t_shortcut()
+    t_rename(app)
     t_migrate()
     try:
         app.destroy()

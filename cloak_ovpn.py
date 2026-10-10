@@ -103,6 +103,7 @@ STRINGS_EN = {
     "DGCloak конфиг (.dgcloak)": "DGCloak config (.dgcloak)",
     "— ИЛИ —": "— OR —",
     "Порт должен быть числом.": "Port must be a number.",
+    "Имя занято профилем «{n}».": "Name is taken by profile \"{n}\".",
     "Удалить": "Delete",
     "Удалить профиль «{name}»?": "Delete profile «{name}»?",
     "Нет профиля": "No profile",
@@ -702,10 +703,13 @@ def import_profile_files(r, tr=None):
         if not src or not os.path.isfile(src):
             continue
         src_abs = os.path.abspath(src)
-        if _under_profiles_dir(src_abs):
+        if _under_profiles_dir(src_abs) \
+                and os.path.dirname(src_abs) == dest:
             if key == "ovpn":
                 ovpn_src_dir = os.path.dirname(src_abs)
-            continue  # уже наша копия
+            continue  # уже наша копия в нужной папке
+        # файл наш, но в папке старого имени (переименование) —
+        # копируем в новую; старую уберёт _edit
         dst = os.path.join(dest, os.path.basename(src_abs))
         try:
             shutil.copy2(src_abs, dst)
@@ -731,7 +735,8 @@ def import_profile_files(r, tr=None):
                         # tls-auth <файл> 1 — второй аргумент (направление ключа) не файл
                         ref = ref.rsplit(None, 1)[0]
                         cand = ref if os.path.isabs(ref) else os.path.join(ovpn_src_dir, ref)
-                    if os.path.isfile(cand) and not _under_profiles_dir(cand):
+                    if os.path.isfile(cand) and os.path.dirname(
+                            os.path.abspath(cand)) != dest:
                         shutil.copy2(cand, os.path.join(dest, os.path.basename(cand)))
         except OSError as e:
             warnings.append(tr("{k}: {e}", k="ovpn", e=e))
@@ -880,6 +885,7 @@ class ProfileDialog(tk.Toplevel):
         self.title(t("Профиль"))
         self.resizable(False, False)
         self.result = None
+        self.orig = profile   # редактируемый профиль — его имя не считаем
         p = profile or {}
         self.vars = {}
         r = 0
@@ -887,7 +893,12 @@ class ProfileDialog(tk.Toplevel):
             ttk.Label(self, text=t(label)).grid(row=r, column=0, sticky="w", padx=8, pady=4)
             v = tk.StringVar(value=str(p.get(key, "")))
             self.vars[key] = v
-            ttk.Entry(self, textvariable=v, width=48).grid(row=r, column=1, padx=4)
+            e = ttk.Entry(self, textvariable=v, width=48)
+            e.grid(row=r, column=1, padx=4)
+            if key == "name" and p.get("managed"):
+                # имя задаёт админка (<cn>@<srv>) — переименование рассинхронит
+                # .del/.dgcloak-маркеры и оставит сироту
+                e.config(state="readonly")
             if ftypes:
                 ttk.Button(self, text="…", width=3,
                            command=lambda v=v, t=ftypes: self._browse(v, t)).grid(row=r, column=2, padx=4)
@@ -1044,6 +1055,20 @@ class ProfileDialog(tk.Toplevel):
             messagebox.showerror(self.t("Ошибка"),
                                  self.t("Заполните .dgcloak ИЛИ название, "
                                         "конфиг Cloak и профиль OpenVPN."),
+                                 parent=self)
+            return
+        # имя — ключ профиля и имя его папки в profiles\: дубли и
+        # safe-коллизии («u 1» и «u_1» → одна папка) не даём
+        def _sn(n):
+            return re.sub(r"[^\w\-]+", "_", n).strip("_") or "profile"
+        coll = [q["name"] for q in self.app.data["profiles"]
+                if q is not self.orig
+                and (q["name"] == r["name"]
+                     or _sn(q["name"]) == _sn(r["name"]))]
+        if coll:
+            messagebox.showerror(self.t("Ошибка"),
+                                 self.t("Имя занято профилем «{n}».",
+                                        n=coll[0]),
                                  parent=self)
             return
         try:
@@ -1584,6 +1609,9 @@ class App(tk.Tk):
                     prof = materialize_dgcloak(path, fn[:-8])
                 except Exception as e:  # noqa: BLE001
                     self.say("Inbox «{f}»: {e}", f=fn, e=e)
+                else:
+                    if prof is not None:
+                        prof["managed"] = True  # имя задаёт админка
                 try:
                     os.remove(path)
                 except OSError:

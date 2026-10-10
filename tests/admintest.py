@@ -25,6 +25,8 @@ import lib
 from lib import check, info, finish, pump, make_app, labs, supported_os
 import cloak_admin as CA
 
+_real_save_data = CA.save_data   # u6 глушит CA.save_data — u15 нужна настоящая
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 app = make_app()
 
@@ -801,6 +803,34 @@ def u14_key_stash():
 
 
 # ======================================================================
+# U15. Секреты в data.json — DPAPI, на диске только *_dp-блобы
+# ======================================================================
+
+def u15_secrets():
+    srv = {"name": "u15 s", "password": "p@ss word", "admin_uid": "uid123"}
+    app.data["servers"] = [srv]
+    _real_save_data(app.data)
+    raw = open(CA.DATA_FILE, encoding="utf-8").read()
+    check("U15.1 в файле нет открытых password/admin_uid",
+          "p@ss word" not in raw and "uid123" not in raw
+          and "password_dp" in raw and "admin_uid_dp" in raw)
+    check("U15.2 в памяти секреты остались открытыми",
+          srv["password"] == "p@ss word" and srv["admin_uid"] == "uid123")
+    d2 = CA.load_data()
+    check("U15.3 load_data → расшифровано обратно",
+          d2["servers"][0]["password"] == "p@ss word"
+          and d2["servers"][0]["admin_uid"] == "uid123"
+          and "password_dp" not in d2["servers"][0])
+    # пустой пароль — блоб не пишется вовсе
+    srv["password"] = ""
+    _real_save_data(app.data)
+    raw2 = open(CA.DATA_FILE, encoding="utf-8").read()
+    check("U15.4 пустой секрет → без *_dp и без поля",
+          "password" not in raw2)
+    app.data["servers"] = []
+
+
+# ======================================================================
 
 u1_localization()
 u2_regressions()
@@ -819,5 +849,6 @@ u11_provision()
 u12_journal_files()
 u13_rename()
 u14_key_stash()
+u15_secrets()
 
 finish(app)

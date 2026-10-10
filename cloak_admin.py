@@ -17,6 +17,8 @@ SSH-слой — внешние plink/pscp (ppk нативно). Юзеры Cloa
 
 import atexit
 import base64
+import copy
+import ctypes
 import io
 import json
 import os
@@ -911,21 +913,70 @@ def stash_keys(s):
     return changed
 
 
+# Секретные поля сервера — на диске только как DPAPI-блобы <k>_dp.
+# DPAPI = Windows CryptProtectData: шифрование под учётку юзера этого ПК,
+# мастер-пароль не нужен; blob не читается ни на другом ПК, ни под другим
+# юзером. В памяти поля остаются открытыми — SSH-слой не меняется.
+SECRET_KEYS = ("password", "admin_uid")
+
+
+class _DATA_BLOB(ctypes.Structure):
+    _fields_ = [("cbData", ctypes.c_ulong),
+                ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+
+def _dpapi(data, unprotect=False):
+    buf = ctypes.create_string_buffer(data, len(data))
+    src = _DATA_BLOB(len(data),
+                     ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
+    dst = _DATA_BLOB()
+    fn = (ctypes.windll.crypt32.CryptUnprotectData if unprotect
+          else ctypes.windll.crypt32.CryptProtectData)
+    if not fn(ctypes.byref(src), None, None, None, None, 0,
+              ctypes.byref(dst)):
+        raise OSError("DPAPI call failed")
+    try:
+        return ctypes.string_at(dst.pbData, dst.cbData)
+    finally:
+        ctypes.windll.kernel32.LocalFree(dst.pbData)
+
+
 def load_data():
     try:
         with open(DATA_FILE, encoding="utf-8") as f:
             d = json.load(f)
             d.setdefault("servers", [])
-            return d
+        for s in d["servers"]:
+            for k in SECRET_KEYS:
+                v = s.pop(k + "_dp", None)
+                if not v:
+                    continue
+                try:
+                    s[k] = _dpapi(base64.b64decode(v),
+                                  unprotect=True).decode("utf-8")
+                except Exception:
+                    # чужой blob (другой ПК/учётка) — не теряем его
+                    s[k + "_dp"] = v
+        return d
     except Exception:
         return {"servers": []}
 
 
 def save_data(data):
     os.makedirs(APP_DIR, exist_ok=True)
+    out = copy.deepcopy(data)          # в памяти секреты остаются открытыми
+    for s in out.get("servers", []):
+        for k in SECRET_KEYS:
+            v = s.pop(k, None)
+            if v:
+                try:
+                    s[k + "_dp"] = base64.b64encode(
+                        _dpapi(str(v).encode("utf-8"))).decode("ascii")
+                except Exception:
+                    s[k] = v           # не Windows — пишем как было
     tmp = DATA_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        json.dump(out, f, ensure_ascii=False, indent=2)
     os.replace(tmp, DATA_FILE)
 
 
@@ -2083,6 +2134,10 @@ class App(tk.Tk):
             pass
         migrate_dirs()
         self.data = load_data()
+        # миграция секретов: открытый password/admin_uid в файле →
+        # пересохранить сразу, чтобы лежали только *_dp-блобы
+        if any(s.get(k) for s in self.data["servers"] for k in SECRET_KEYS):
+            save_data(self.data)
         # язык: из настроек, при первом запуске — по локали Windows
         self.lang = self.data.get("language") or detect_lang()
         global _LANG
