@@ -224,6 +224,8 @@ CEN = {
  "a74eb6e": "client: pause via route delete/add of def1 instead of signal SUSPEND (Android-only)",
  "f17458b": "docs: bug #59 (SUSPEND is Android-only), translations, route-based pause in guides",
  "9b13922": "client: UX batch — pause icon/menu/tooltip, combobox width, stable window height",
+ "2cea111": "client: fix invisible combobox and window width jump on Advanced",
+ "99c99e1": "docs: translations (pause UX batch)",
  "3a7d9d2": "docs: reports for tray menu and journals + guide tagline",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
