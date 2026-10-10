@@ -1579,7 +1579,7 @@ class App(tk.Tk):
             v.pack(side="left", padx=(2, 10))
             v.bind("<Button-1>", self._net_copy)
             self._net_vals[key] = v
-        Tooltip(netf, t("Клик по адресу копирует его в буфер обмена"))
+        self._net_tip = Tooltip(netf, t("Клик по адресу копирует его в буфер обмена"))
         # ширина окна сразу с запасом под панель «Дополнительно» (+padx 20) —
         # раскрытие/сворачивание меняет только высоту, ширина никогда не скачет
         self.update_idletasks()
@@ -1602,6 +1602,7 @@ class App(tk.Tk):
         self.b_del.config(text=t("Удал."))
         self.b_exit.config(text=t("Выход"))
         self.btn.config(text=t("Отключить" if self.active else "Подключить"))
+        self._pause_caption()
         self.b_adv.config(text=t("Дополнительно ▴" if self.adv_open else "Дополнительно ▾"))
         self.b_copy.config(text=t("Копировать лог"))
         self.b_clear.config(text=t("Очистить лог"))
@@ -1617,6 +1618,10 @@ class App(tk.Tk):
                         "переводятся только новые.")
         if getattr(self, "_status_tip", None):
             self._status_tip.text = t("Клик по строке с IP скопирует его в буфер обмена")
+        if getattr(self, "_guide_tip", None):
+            self._guide_tip.text = t("Руководство пользователя")
+        if getattr(self, "_net_tip", None):
+            self._net_tip.text = t("Клик по адресу копирует его в буфер обмена")
         for l, ru in getattr(self, "_net_lbls", {}).values():
             l.config(text=t(ru))
         if self._status_msg:
@@ -2272,14 +2277,18 @@ class App(tk.Tk):
                 self.say("Сброшено соединений через туннель: {n}", n=killed)
         self.ui(self._pause_ui)
 
-    def _pause_ui(self):
-        """Кнопка/меню/статус по флагу paused. При снятии паузы обычный статус
-        возвращаем сами — route-операции состояний от демона не порождают."""
+    def _pause_caption(self):
+        """Текст кнопки и её тултип по флагу paused (зовётся и из _apply_lang)."""
         self.b_pause.config(text=self.t("Возобновить" if self.paused else "Пауза"))
         self._pause_tip.text = self.t(
             "Возобновить VPN — трафик снова пойдёт через туннель." if self.paused
             else "Приостановить VPN — трафик пойдёт напрямую, мимо туннеля.\n"
                  "Для ресурсов, недоступных через VPN.")
+
+    def _pause_ui(self):
+        """Кнопка/меню/статус по флагу paused. При снятии паузы обычный статус
+        возвращаем сами — route-операции состояний от демона не порождают."""
+        self._pause_caption()
         self._refresh_tray_menu()
         if self.paused:
             self.set_status("Пауза — трафик идёт напрямую", "orange")

@@ -164,12 +164,26 @@ def t_lang(app):
           app._lang_tips[0].text if app._lang_tips else "no tips")
     check("T3.2 язык сохранён в data.json",
           json.load(open(CO.DATA_FILE, encoding="utf-8"))["language"] == "en")
+    check("T3.2b кнопка паузы и тултипы — на en",
+          app.b_pause["text"] == "Pause"
+          and "directly" in app._pause_tip.text
+          and "User guide" in app._guide_tip.text
+          and "copy it to" in app._net_tip.text,
+          (app.b_pause["text"], app._pause_tip.text,
+           app._guide_tip.text, app._net_tip.text))
     app.lang_combo.set("Русский")
     app._on_lang_pick(None)
     pump(app)
     check("T3.3 обратно на ru — тултип по-русски",
           "останутся на прежнем языке" in app._lang_tips[0].text,
           app._lang_tips[0].text)
+    check("T3.3b кнопка паузы и тултипы — на ru",
+          app.b_pause["text"] == "Пауза"
+          and "напрямую" in app._pause_tip.text
+          and "Руководство" in app._guide_tip.text
+          and "копирует его в буфер" in app._net_tip.text,
+          (app.b_pause["text"], app._pause_tip.text,
+           app._guide_tip.text, app._net_tip.text))
     check("T3.4 меню трея при active: «Отключить» вынесен, подменю — только профили",
           _tray_active_shape(app))
 
