@@ -18,6 +18,7 @@ import threading
 import time
 import tkinter as tk
 import urllib.request
+import webbrowser
 from tkinter import filedialog, messagebox, ttk
 
 try:
@@ -39,6 +40,8 @@ DATA_FILE = os.path.join(APP_DIR, "data.json")
 PROFILES_DIR = os.path.join(APP_DIR, "profiles")  # сюда копируются файлы профилей при добавлении
 PIDS_FILE = os.path.join(APP_DIR, "pids.json")    # PID наших ck-client/openvpn (для добивания зависших)
 INBOX_DIR = os.path.join(APP_DIR, "inbox")  # профили, подкинутые админкой (*.dgcloak — upsert, *.del — удалить)
+GUIDE_URL = ("https://gorodchikov.github.io/DGCloak-VPN-releases/"
+             "user-guide-%s.html")
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 DEFAULT_DATA = {
@@ -140,6 +143,7 @@ STRINGS_EN = {
         "Profile files copied to the program data folder.",
     # трей
     "Открыть": "Open",
+    "Руководство пользователя": "User guide",
     "Подключить «{name}»": "Connect «{name}»",
     "Отключить «{name}»": "Disconnect «{name}»",
     "Отключить «{name}» и подключить": "Disconnect «{name}» and connect",
@@ -1193,6 +1197,11 @@ class App(tk.Tk):
         tip = self.t("Уже выведенные в лог записи останутся на прежнем языке — "
                      "переводятся только новые.")
         self._lang_tips = [Tooltip(w, tip) for w in (self.lang_label, self.lang_combo)]
+        self.b_guide = ttk.Button(langf, text="?", width=2,
+                                  command=self._guide)
+        self.b_guide.pack(side="left", padx=(8, 0))
+        self._guide_tip = Tooltip(self.b_guide,
+                                  self.t("Руководство пользователя"))
 
         # Скрываемая панель: лог и редко нужные настройки
         self.adv = ttk.Frame(self)
@@ -1241,6 +1250,9 @@ class App(tk.Tk):
             text, color, kw = self._status_msg
             self.set_status(text, color, **kw)
         self._refresh_tray_menu()
+
+    def _guide(self):
+        webbrowser.open(GUIDE_URL % self.lang())
 
     def _exit_clicked(self):
         if self.active and not messagebox.askyesno(
@@ -1404,6 +1416,8 @@ class App(tk.Tk):
             # подменю: профили кроме выбранного (для него есть кнопка выше)
             if any(p["name"] != self.cur_name for p in self.data["profiles"]):
                 yield MI(self.t("Подключить"), pystray.Menu(self._tray_profile_items), enabled=idle)
+        yield MI(self.t("Руководство пользователя"),
+                 lambda i, it: self.ui(self._guide))
         yield pystray.Menu.SEPARATOR
         yield MI(self.t("Отключить VPN и выйти из программы"), lambda i, it: self.ui(self._exit_clicked))
 

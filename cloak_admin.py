@@ -32,6 +32,7 @@ import threading
 import time
 import urllib.request
 import urllib.error
+import webbrowser
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 
@@ -45,6 +46,8 @@ BUNDLES_DIR = os.path.join(APP_DIR, "user_bundles")  # <сервер>\<юзер>
 BIN_DIR = os.path.join(DGCLOAK_DIR, "bin")  # общие зависимости: plink/pscp/ck-client
 VPN_DIR = os.path.join(DGCLOAK_DIR, "VPN")  # данные соседнего VPN-клиента
 PIDS_FILE = os.path.join(APP_DIR, "pids.json")  # наши дочерние plink/pscp/ssh
+GUIDE_URL = ("https://gorodchikov.github.io/DGCloak-VPN-releases/"
+             "user-guide-%s.html")
 
 # Скрипты лежат рядом с исходником/exe (для onefile — внутри _MEIPASS)
 if getattr(sys, "frozen", False):
@@ -292,6 +295,7 @@ STRINGS_EN = {
     "Лог скопирован в буфер (%d символов)": "Log copied to clipboard (%d chars)",
     "Лог очищен.": "Log cleared.",
     "Язык:": "Language:",
+    "Руководство пользователя": "User guide",
     "Подробный вывод": "Verbose output",
     "Стоп операцию": "Abort operation",
     "с": "s",
@@ -2098,6 +2102,9 @@ class App(tk.Tk):
         nb.add(f, text=self.t(ru))
         self._nb_tabs.append((f, ru))
 
+    def _guide(self):
+        webbrowser.open(GUIDE_URL % self.lang)
+
     def _on_lang(self, _e=None):
         lang = "en" if self.v_lang.get() == "English" else "ru"
         if lang == self.lang:
@@ -2636,6 +2643,10 @@ class App(tk.Tk):
                 "– пропущен   … не выполнялся").pack(side="left")
         self.v_lang = tk.StringVar(
             value="English" if self.lang == "en" else "Русский")
+        btn_guide = ttk.Button(leg, text="?", width=2,
+                               command=self._guide)
+        btn_guide.pack(side="right", padx=(4, 0))
+        self._tip(btn_guide, "Руководство пользователя")
         self.cb_lang = ttk.Combobox(leg, textvariable=self.v_lang,
                                     state="readonly",
                                     values=["Русский", "English"], width=9)
