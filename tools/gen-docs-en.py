@@ -532,6 +532,14 @@ CL = {
 "T31.3 строки заполнены: lan/cli/srv": "T31.3 fields filled: lan/cli/srv",
 "T31.4 клик по tun-адресу → буфер": "T31.4 click tun address → clipboard",
 "T31.5 tun_ip=None → «—»": "T31.5 tun_ip=None → «—»",
+"T32.1 «Пауза» → signal SUSPEND в mgmt": "T32.1 Pause → signal SUSPEND to mgmt",
+"T32.2 ack → paused=True": "T32.2 ack → paused=True",
+"T32.3 статус «Пауза — трафик идёт напрямую»": "T32.3 status «Paused — traffic goes directly»",
+"T32.4 кнопка → «Возобновить»": "T32.4 button → «Resume»",
+"T32.5 пункт трея «Возобновить VPN»": "T32.5 tray item «Resume VPN»",
+"T32.6 «Возобновить» → signal RESUME": "T32.6 Resume → signal RESUME",
+"T32.7 без mgmt → нет команд": "T32.7 no mgmt → no commands",
+"T32.8 paused-иконка рисуется (64px)": "T32.8 paused icon renders (64px)",
 }
 
 AD = {

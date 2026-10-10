@@ -172,6 +172,19 @@ STRINGS_EN = {
         "Click an address to copy it to the clipboard",
     "tun клиент:": "tun client:",
     "tun сервер:": "tun server:",
+    "Пауза": "Pause",
+    "Возобновить": "Resume",
+    "Пауза VPN": "Pause VPN",
+    "Возобновить VPN": "Resume VPN",
+    "Пауза — трафик идёт напрямую": "Paused — traffic goes directly",
+    "Пауза — трафик идёт напрямую.": "Paused — traffic is going directly.",
+    "Возобновлено — трафик снова через VPN.": "Resumed — traffic goes through the VPN again.",
+    "management-канал закрыт — пауза недоступна":
+        "management channel closed — pause unavailable",
+    "Нет ответа на signal — пауза требует OpenVPN 2.5+":
+        "No reply to signal — pause requires OpenVPN 2.5+",
+    "OpenVPN отклонил команду signal (нужен 2.5+)":
+        "OpenVPN rejected the signal command (requires 2.5+)",
     "{ip} скопирован в буфер обмена": "{ip} copied to clipboard",
     "Скопировано": "Copied",
     "Автоподключение «{name}»…": "Auto-connecting «{name}»…",
@@ -343,6 +356,7 @@ STATES = {
     "CONNECTED": ("Подключено: {name}", "green"),
     "RECONNECTING": ("Переподключение…", "orange"),
     "EXITING": ("Отключение…", "orange"),
+    "SUSPENDED": ("Пауза — трафик идёт напрямую", "orange"),
 }
 
 
@@ -1224,6 +1238,9 @@ class App(tk.Tk):
         self.ext_ip = None      # внешний IP через VPN (резолвится после CONNECTED)
         self.isp_ip = None      # внешний IP провайдера (замерен до подключения)
         self.tun_ip = None      # клиентский адрес туннеля (из mgmt CONNECTED)
+        self.paused = False     # signal SUSPEND отправлен и принят — трафик напрямую
+        self._sig_event = threading.Event()  # ответ на signal из mgmt-цикла
+        self._sig_ok = None
         self._lan_ip = None     # кэш LAN IP (за сессию не меняется)
         self._copy_rows = {}    # строка статуса → IP (клик копирует в буфер)
         self.up_since = None
@@ -1342,8 +1359,13 @@ class App(tk.Tk):
         self.b_exit = ttk.Button(btns, text=t("Выход"), width=BTN_S, command=self._exit_clicked)
         self.b_exit.pack(side="left", padx=(2, 0))
 
-        self.btn = ttk.Button(box, text=t("Подключить"), width=BTN_W, command=self._toggle)
-        self.btn.grid(row=1, column=0, sticky="w", pady=(0, 4))
+        row1 = ttk.Frame(box)
+        row1.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 4))
+        self.btn = ttk.Button(row1, text=t("Подключить"), width=BTN_W, command=self._toggle)
+        self.btn.pack(side="left")
+        self.b_pause = ttk.Button(row1, text=t("Пауза"), width=BTN_W,
+                                  command=self._toggle_pause, state="disabled")
+        self.b_pause.pack(side="left", padx=(8, 0))
         # статус — отдельной строкой под кнопкой, столбиком; окно подгоняет высоту
         # моноширинный шрифт — значения статуса выравниваются столбцом
         self.status = ttk.Label(box, text=t("Отключено"), foreground="gray",
@@ -1753,6 +1775,9 @@ class App(tk.Tk):
             return
         try:
             self._icons = {k: cloak_icon.draw_tray_icon(v, 64) for k, v in cloak_icon.STATUS_COLORS.items()}
+            # пауза — зелёный плащ (сессия жива) + значок «две полоски»
+            self._icons["paused"] = cloak_icon.draw_tray_icon(
+                cloak_icon.STATUS_COLORS["green"], 64, paused=True)
             buf = io.BytesIO()
             cloak_icon.draw_icon(cloak_icon.BRAND, 64).save(buf, "PNG")
             self._win_icon = tk.PhotoImage(data=base64.b64encode(buf.getvalue()))
@@ -1772,6 +1797,8 @@ class App(tk.Tk):
         if self.active:
             yield MI(self.t("Отключить «{name}»", name=self.active["name"]),
                      lambda i, it: self.ui(self._toggle), enabled=idle)
+            yield MI(self.t("Возобновить VPN" if self.paused else "Пауза VPN"),
+                     lambda i, it: self.ui(self._toggle_pause), enabled=idle)
             if any(p["name"] != self.active["name"] for p in self.data["profiles"]):
                 yield MI(self.t("Отключить «{name}» и подключить",
                                 name=self.active["name"]),
@@ -1828,7 +1855,8 @@ class App(tk.Tk):
         if not self.tray:
             return
         try:
-            self.tray.icon = self._icons.get(color, self._icons["gray"])
+            self.tray.icon = (self._icons.get("paused") if self.paused and self.active
+                              else self._icons.get(color, self._icons["gray"]))
             self.tray.title = text[:127]  # тултип: пропорц. шрифт — без выравнивания
             self.tray.update_menu()
             # уведомление — только при смене цвета (иначе аптайм спамит каждые 2 с)
@@ -2068,12 +2096,50 @@ class App(tk.Tk):
             self.verb = self.verbose.get()
             self._run(lambda: self._connect(p))
 
+    def _toggle_pause(self):
+        """Пауза/возобновление туннеля (signal SUSPEND/RESUME в mgmt)."""
+        if self.busy or not self.active or not self.mgmt:
+            return
+        self._run(self._pause_op)
+
+    def _pause_op(self):
+        """signal SUSPEND → OpenVPN снимает tun и маршруты, сессия жива;
+        signal RESUME → туннель встаёт обратно без нового хэндшейка (OpenVPN 2.5+).
+        Ошибки — только в журнал: ронять VPN из-за неудачной паузы нельзя."""
+        cmd = b"signal RESUME\n" if self.paused else b"signal SUSPEND\n"
+        self._sig_event.clear()
+        self._sig_ok = None
+        try:
+            self.mgmt.sendall(cmd)
+        except (OSError, AttributeError):
+            self.say("management-канал закрыт — пауза недоступна")
+            return
+        if not self._sig_event.wait(4):
+            self.say("Нет ответа на signal — пауза требует OpenVPN 2.5+")
+            return
+        if not self._sig_ok:
+            self.say("OpenVPN отклонил команду signal (нужен 2.5+)")
+            return
+        self.paused = not self.paused
+        self.say("Пауза — трафик идёт напрямую." if self.paused
+                 else "Возобновлено — трафик снова через VPN.")
+        self.ui(self._pause_ui)
+
+    def _pause_ui(self):
+        """Кнопка/меню/статус по флагу paused. Статус «возобновлено» не ставим —
+        за RESUME демон сам пришлёт состояния (CONNECTING→…→CONNECTED)."""
+        self.b_pause.config(text=self.t("Возобновить" if self.paused else "Пауза"))
+        self._refresh_tray_menu()
+        if self.paused:
+            self.set_status("Пауза — трафик идёт напрямую", "orange")
+
     def _run(self, fn):
         self.busy = True
         # tk-виджеты трогаем только в главном потоке — _run зовётся и из монитора
         def prep():
             self._refresh_tray_menu()
             self.btn.config(state="disabled")
+            self.b_pause.config(state="disabled")
             self._set_locked(True)
         self.ui(prep)
 
@@ -2096,6 +2162,8 @@ class App(tk.Tk):
         self.busy = False
         self._refresh_tray_menu()
         self.btn.config(state="normal", text=self.t("Отключить" if self.active else "Подключить"))
+        self.b_pause.config(state="normal" if self.active else "disabled",
+                            text=self.t("Возобновить" if self.paused else "Пауза"))
         self._set_locked(bool(self.active))
 
     def _pump(self, proc, tag):
@@ -2361,6 +2429,11 @@ class App(tk.Tk):
                         self.traffic = (i, o)
                 elif line.startswith(">FATAL:"):
                     self.say("OpenVPN: {line}", line=line)
+                elif line.startswith(("SUCCESS:", "ERROR:")) and "signal" in line.lower():
+                    # ответ на signal SUSPEND/RESUME/SIGTERM — будим _pause_op
+                    self._sig_ok = line.startswith("SUCCESS")
+                    self._sig_event.set()
+                    self.say("mgmt: {line}", line=line)
                 elif line:
                     self.say("mgmt: {line}", line=line)
         except (OSError, ValueError) as e:
@@ -2370,10 +2443,18 @@ class App(tk.Tk):
     def _on_state(self, state, p):
         self.last_state = state
         self.say("Состояние OpenVPN: {st}", st=state)
-        text, color = STATES.get(state, (state, "orange"))
+        if state == "CONNECTED":
+            self.paused = False
+        elif state == "SUSPENDED":
+            self.paused = True
+        if self.paused:
+            text, color = "Пауза — трафик идёт напрямую", "orange"
+        else:
+            text, color = STATES.get(state, (state, "orange"))
         self.set_status(text, color, name=p["name"])
         if state == "CONNECTED":
             self.up.set()
+        self.ui(self._pause_ui)   # текст кнопки и меню трея — по факту состояния
 
     def _start_monitor(self):
         stop = threading.Event()
@@ -2385,6 +2466,9 @@ class App(tk.Tk):
         скорость / «нет обхода»."""
         p = self.active
         if not p:
+            return
+        if self.paused:
+            self.set_status("Пауза — трафик идёт напрямую", "orange")
             return
         up = time.strftime("%H:%M:%S",
                            time.gmtime(max(0, time.time() - (self.up_since or time.time()))))
@@ -2474,6 +2558,7 @@ class App(tk.Tk):
         self.ext_ip = None
         self.isp_ip = None
         self.tun_ip = None
+        self.paused = False
         self.ui(self._refresh_netinfo)
         self._copy_rows = {}
         self.bypass_missing = False

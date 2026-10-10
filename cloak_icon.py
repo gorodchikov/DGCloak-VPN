@@ -73,15 +73,26 @@ def draw_icon(color=BRAND, size=256, bg=True):
     return im.resize((size, size), Image.LANCZOS)
 
 
-def draw_tray_icon(color, size=64):
-    """Иконка для трея: без тёмной плашки и с обрезкой по фигуре — читается крупнее."""
-    from PIL import Image
+def draw_tray_icon(color, size=64, paused=False):
+    """Иконка для трея: без тёмной плашки и с обрезкой по фигуре — читается крупнее.
+    paused=True — поверх плаща две вертикальные полоски «пауза»."""
+    from PIL import Image, ImageDraw
 
     big = draw_icon(color, 512, bg=False)
     fig = big.crop((80, 56, 432, 456))          # границы фигуры плаща (в координатах 512)
     side = max(fig.size)
     canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
     canvas.paste(fig, ((side - fig.width) // 2, (side - fig.height) // 2), fig)
+    if paused:
+        d = ImageDraw.Draw(canvas)
+        bw, gap, h = side // 9, side // 8, side * 2 // 5     # полоски по центру плаща
+        x0, y0 = (side - 2 * bw - gap) // 2, (side - h) // 2 + side // 14
+        for i in range(2):
+            x = x0 + i * (bw + gap)
+            d.rounded_rectangle([x - 6, y0 - 6, x + bw + 6, y0 + h + 6],
+                                radius=(bw + 12) // 2, fill=(20, 27, 45, 255))
+            d.rounded_rectangle([x, y0, x + bw, y0 + h],
+                                radius=bw // 2, fill=(245, 245, 245, 255))
     return canvas.resize((size, size), Image.LANCZOS)
 
 

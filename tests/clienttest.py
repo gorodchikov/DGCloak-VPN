@@ -1059,6 +1059,67 @@ def t_netinfo(app):
           vals["cli"] == "—" and vals["srv"] == "—", vals)
 
 
+def t_pause(app):
+    """T32: пауза — SUSPEND/RESUME в mgmt, статус, кнопка, пункт трея."""
+    sent = []
+
+    class FakeMgmt:
+        def sendall(self, b):
+            sent.append(b)
+            app._sig_ok = True
+            app._sig_event.set()
+
+    def wait_busy():
+        for _ in range(100):
+            pump(app)
+            if not app.busy:
+                return True
+            time.sleep(0.05)
+        return False
+
+    old = (app.active, app.busy, app.mgmt, app.paused, list(app.data["profiles"]))
+    try:
+        app.data["profiles"] = [{"name": "u1"}]
+        app.active = {"name": "u1"}
+        app.busy = False
+        app.paused = False
+        app.mgmt = FakeMgmt()
+        app.up_since = time.time() - 60
+        app._rate = None
+
+        app._toggle_pause()
+        wait_busy()
+        check("T32.1 «Пауза» → signal SUSPEND в mgmt",
+              sent == [b"signal SUSPEND\n"], sent)
+        check("T32.2 ack → paused=True", app.paused)
+        app._conn_status()
+        check("T32.3 статус «Пауза — трафик идёт напрямую»",
+              "Пауза" in app._status_msg[0], app._status_msg[0])
+        pump(app)
+        check("T32.4 кнопка → «Возобновить»",
+              app.b_pause.cget("text") == "Возобновить", app.b_pause.cget("text"))
+        texts = [str(getattr(i, "text", i)) for i in app._tray_items()]
+        check("T32.5 пункт трея «Возобновить VPN»",
+              "Возобновить VPN" in texts, texts)
+
+        app._toggle_pause()
+        wait_busy()
+        check("T32.6 «Возобновить» → signal RESUME",
+              sent[-1] == b"signal RESUME\n" and not app.paused, sent)
+
+        app.paused = False
+        app.mgmt = None
+        app._toggle_pause()          # без mgmt — молча выходим, ничего не шлём
+        check("T32.7 без mgmt → нет команд", len(sent) == 2, sent)
+
+        img = CO.cloak_icon.draw_tray_icon("#00ee5c", 64, paused=True)
+        check("T32.8 paused-иконка рисуется (64px)", img.size == (64, 64))
+    finally:
+        app.active, app.busy, app.mgmt, app.paused, app.data["profiles"] = old
+        app.up_since = None
+        pump(app)
+
+
 def t_autorun(app):
     """T29: «Запускаться вместе с Windows» — галочка↔HKCU\\...\\Run."""
     try:                                   # снять и вернуть старое значение
@@ -1130,6 +1191,7 @@ def main():
     t_verbose_persist(app)
     t_real_ip_copy(app)
     t_netinfo(app)
+    t_pause(app)
     t_autorun(app)
     t_migrate()
     try:
