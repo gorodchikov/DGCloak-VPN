@@ -951,6 +951,47 @@ def t_autoconnect(app):
     app._refresh_combo()
 
 
+class _FakeTray:
+    icon = title = None
+    def update_menu(self): pass
+    def notify(self, *a, **k): pass
+
+
+def t_start_minimized(app):
+    """T27: «Сворачивать в трей при запуске» — флаг→data.json, _first_run прячет окно (только с треем)."""
+    old = (list(app.data["profiles"]), app.data["ck_client"],
+           app.data["openvpn_exe"], app.data.get("start_minimized"),
+           app.data.get("autoconnect"))
+    app.start_minimized.set(True); app._on_start_minimized()
+    check("T27.1 «Сворачивать в трей при запуске» → data.json",
+          json.load(open(CO.DATA_FILE, encoding="utf-8"))["start_minimized"] is True)
+    app.start_minimized.set(False); app._on_start_minimized()
+    check("T27.2 снятая галочка → False",
+          json.load(open(CO.DATA_FILE, encoding="utf-8"))["start_minimized"] is False)
+    hides = []
+    app._hide_to_tray = lambda: hides.append(1)
+    app.data["profiles"] = [{"name": "u1"}]   # профиль есть → _suggest_profile вернётся сразу
+    app.data["autoconnect"] = False
+    f = os.path.join(TMP, "fake.exe"); open(f, "w").write("x")
+    app.data["ck_client"] = app.data["openvpn_exe"] = f
+    app.data["start_minimized"] = True
+    app.tray = _FakeTray()
+    ORIG_FIRST_RUN(app)
+    check("T27.3 флаг+трей → _first_run сворачивает в трей", len(hides) == 1)
+    hides.clear(); app.tray = None            # без pystray прятать нельзя — окно недостижимо
+    ORIG_FIRST_RUN(app)
+    check("T27.4 без трея → не сворачивает", not hides)
+    app.tray = _FakeTray(); app.data["start_minimized"] = False
+    ORIG_FIRST_RUN(app)
+    check("T27.5 флаг off → не сворачивает", not hides)
+    app.tray = None
+    del app._hide_to_tray
+    (app.data["profiles"], app.data["ck_client"], app.data["openvpn_exe"],
+     app.data["start_minimized"], app.data["autoconnect"]) = old
+    CO.save_data(app.data)
+    app._refresh_combo()
+
+
 def t_migrate():
     ok = os.path.isfile(os.path.join(CO.BIN_DIR, "ck-client.exe")) \
         and not os.path.isdir(CO.OLD_APP_DIR) and os.path.isfile(CO.DATA_FILE)
@@ -986,6 +1027,7 @@ def main():
     t_profile_logs(app)
     t_tray_menu(app)
     t_autoconnect(app)
+    t_start_minimized(app)
     t_migrate()
     try:
         app.destroy()

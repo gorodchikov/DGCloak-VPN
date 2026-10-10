@@ -498,6 +498,11 @@ CL = {
 "T26.2 снятая галочка → False": "T26.2 unchecked → False",
 "T26.3 autoconnect+профиль → _first_run подключает выбранный": "T26.3 autoconnect+profile → _first_run connects the selected one",
 "T26.4 autoconnect без профилей → нет подключения": "T26.4 autoconnect w/o profiles → no connection",
+"T27.1 «Сворачивать в трей при запуске» → data.json": "T27.1 Start minimized to tray checkbox → data.json",
+"T27.2 снятая галочка → False": "T27.2 unchecked → False",
+"T27.3 флаг+трей → _first_run сворачивает в трей": "T27.3 flag+tray → _first_run minimizes to tray",
+"T27.4 без трея → не сворачивает": "T27.4 no tray → does not minimize",
+"T27.5 флаг off → не сворачивает": "T27.5 flag off → does not minimize",
 }
 
 AD = {
