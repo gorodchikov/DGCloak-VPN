@@ -582,6 +582,12 @@ def remove_desktop_shortcut(name):
         try:
             os.remove(p)
             removed.append(p)
+            # Explorer кэширует иконки десктопа — без уведомления ярлык
+            # визуально висит до F5. SHCNE_DELETE|SHCNF_PATHW|FLUSH.
+            try:
+                ctypes.windll.shell32.SHChangeNotify(0x4, 0x1005, p, None)
+            except Exception:
+                pass
         except OSError:
             pass
     return removed
