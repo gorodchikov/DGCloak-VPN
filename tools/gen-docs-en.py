@@ -230,6 +230,8 @@ CEN = {
  "bcb129e": "docs: bugs #60-61 (combobox, window width), translations",
  "af9c980": "client: pause button and tooltips skipped live language switch — now retranslated",
  "bfd17dc": "docs: translations and reports (pause responsiveness)",
+ "85139eb": "admin: «Abort operation» → «Stop operation», wider «Max sessions» column",
+ "d125e27": "docs: bug #62 (pause translation), translations, reports",
  "3a7d9d2": "docs: reports for tray menu and journals + guide tagline",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
