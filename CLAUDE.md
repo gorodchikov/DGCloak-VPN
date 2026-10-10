@@ -56,7 +56,8 @@ Windows-клиент для связки **OpenVPN поверх Cloak**: сна�
      "port": 1984, "server": "", "server_port": "", "bypass_ip": "",
      "udp": false, "full_tunnel": true}
   ],
-  "language": "ru"
+  "language": "ru",
+  "autoconnect": false
 }
 ```
   Поле `imported` в старых профилях — устаревшее, игнорируется. Последний успешно подключённый профиль сохраняется в `last_profile` и выбирается при старте.

@@ -52,6 +52,7 @@ DEFAULT_DATA = {
     "profiles": [],
     "last_profile": "",
     "language": "ru",
+    "autoconnect": False,   # подключать выбранный профиль автоматически при запуске
 }
 
 LANG_NAMES = {"ru": "Русский", "en": "English"}
@@ -151,9 +152,10 @@ STRINGS_EN = {
     "Отключить «{name}»": "Disconnect «{name}»",
     "Отключить «{name}» и подключить": "Disconnect «{name}» and connect",
     "Отключить VPN и выйти из программы": "Disconnect VPN and exit",
-    "Программа продолжает работать в трее. Выход: "
-    "правый клик по значку → «Отключить VPN и выйти из программы».":
-        "App keeps running in tray. Exit: right-click icon → «Disconnect VPN and exit».",
+    "Программа продолжает работать в трее. Выход: правый клик по значку → «%s».":
+        "App keeps running in tray. Exit: right-click icon → «%s».",
+    "Подключаться при запуске": "Connect on startup",
+    "Автоподключение «{name}»…": "Auto-connecting «{name}»…",
     # мастер установки
     "Настройка программ": "Program setup",
     "не найден": "not found",
@@ -1156,6 +1158,7 @@ class App(tk.Tk):
         self._last_tray_text = None
         self._last_tray_color = None
         self.verbose = tk.BooleanVar(value=False)
+        self.autoconnect = tk.BooleanVar(value=bool(self.data.get("autoconnect")))
         self.adv_open = False
         self._hint_shown = False
         self._log_lock = threading.Lock()
@@ -1202,6 +1205,9 @@ class App(tk.Tk):
         save_data(self.data)
         if not (os.path.isfile(self.data["ck_client"]) and os.path.isfile(self.data["openvpn_exe"])):
             SetupDialog(self)
+        elif self.data.get("autoconnect") and self._current():
+            self.say("Автоподключение «{name}»…", name=self._current()["name"])
+            self._toggle()
         else:
             self._suggest_profile()
 
@@ -1288,6 +1294,10 @@ class App(tk.Tk):
             self.adv, text=t("Отладочный лог OpenVPN (применится при следующем подключении)"),
             variable=self.verbose)
         self.chk_verbose.pack(anchor="w", pady=(6, 0))
+        self.chk_auto = ttk.Checkbutton(
+            self.adv, text=t("Подключаться при запуске"),
+            variable=self.autoconnect, command=self._on_autoconnect)
+        self.chk_auto.pack(anchor="w", pady=(4, 0))
         self.logf = ttk.LabelFrame(self.adv, text=t("Лог"))
         self.logf.pack(fill="both", expand=True, pady=(6, 0))
         self.log = tk.Text(self.logf, height=16, state="disabled", wrap="word",
@@ -1317,6 +1327,7 @@ class App(tk.Tk):
         self.b_clear.config(text=t("Очистить лог"))
         self.b_paths.config(text=t("Пути к Cloak и OpenVPN…"))
         self.chk_verbose.config(text=t("Отладочный лог OpenVPN (применится при следующем подключении)"))
+        self.chk_auto.config(text=t("Подключаться при запуске"))
         self.logf.config(text=self._log_title())
         self.lang_label.config(text=t("Язык:"))
         for tp in getattr(self, "_lang_tips", ()):
@@ -1329,6 +1340,12 @@ class App(tk.Tk):
 
     def _guide(self):
         webbrowser.open(GUIDE_URL % self.lang())
+
+    def _exit_label(self):
+        """Пункт выхода в трее: активен/идёт операция → выход с остановкой
+        VPN; в простое — просто выход."""
+        return self.t("Отключить VPN и выйти из программы") \
+            if self.active or self.busy else self.t("Выход")
 
     def _exit_clicked(self):
         if self.busy:
@@ -1599,10 +1616,7 @@ class App(tk.Tk):
         yield pystray.Menu.SEPARATOR
         yield MI(self.t("Руководство пользователя"),
                  lambda i, it: self.ui(self._guide))
-        # активен или идёт операция → выход с остановкой VPN; в простое — просто выход
-        label = self.t("Отключить VPN и выйти из программы") \
-            if self.active or self.busy else self.t("Выход")
-        yield MI(label, lambda i, it: self.ui(self._exit_clicked))
+        yield MI(self._exit_label(), lambda i, it: self.ui(self._exit_clicked))
 
     def _tray_profile_items(self):
         for p in list(self.data["profiles"]):
@@ -1667,7 +1681,7 @@ class App(tk.Tk):
             self._hint_shown = True
             try:
                 self.tray.notify(self.t("Программа продолжает работать в трее. Выход: "
-                                        "правый клик по значку → «Отключить VPN и выйти из программы»."),
+                                        "правый клик по значку → «%s».") % self._exit_label(),
                                  APP_NAME)
             except Exception:  # noqa: BLE001
                 pass
@@ -1840,6 +1854,10 @@ class App(tk.Tk):
             shutil.rmtree(self._log_dir(p["name"]), ignore_errors=True)  # и журнал
             save_data(self.data)
             self._refresh_combo()
+
+    def _on_autoconnect(self):
+        self.data["autoconnect"] = bool(self.autoconnect.get())
+        save_data(self.data)
 
     def _paths(self):
         for key, title in (("ck_client", "ck-client.exe"), ("openvpn_exe", "openvpn.exe")):

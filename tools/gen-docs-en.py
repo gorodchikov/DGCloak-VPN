@@ -491,6 +491,10 @@ CL = {
 "T25.3 busy (идёт операция) → «Отключить VPN и выйти…»": "T25.3 busy (op in progress) → «Disconnect VPN and exit…»",
 "T25.4 busy+exit → подтверждение «прервать операцию», выход": "T25.4 busy+exit → «abort operation» prompt, then exit",
 "T25.5 idle+exit → выход без вопроса": "T25.5 idle+exit → exits without prompt",
+"T26.1 «Подключаться при запуске» → data.json": "T26.1 Connect on startup checkbox → data.json",
+"T26.2 снятая галочка → False": "T26.2 unchecked → False",
+"T26.3 autoconnect+профиль → _first_run подключает выбранный": "T26.3 autoconnect+profile → _first_run connects the selected one",
+"T26.4 autoconnect без профилей → нет подключения": "T26.4 autoconnect w/o profiles → no connection",
 }
 
 AD = {

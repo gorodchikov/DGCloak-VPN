@@ -31,6 +31,7 @@ CO.BIN_DIR = os.path.join(TMP, "bin")
 CO.OLD_APP_DIR = os.path.join(TMP, "DGCloakVPN")
 CO.HAS_TRAY = False                    # трей не поднимаем
 CO.is_admin = lambda: True             # без предупреждения про права
+ORIG_FIRST_RUN = CO.App._first_run     # настоящий — для T26 (автоподключение)
 CO.App._first_run = lambda self: None  # без мастера установки/диалогов
 
 # фикстура миграции до создания App: старая папка %APPDATA%\DGCloakVPN
@@ -912,6 +913,44 @@ def t_tray_menu(app):
     app.busy, app.active, app.data["profiles"] = old[0], old[1], old[2]
 
 
+def t_autoconnect(app):
+    """T26: автоподключение — чекбокс→data.json, _first_run подключает выбранный."""
+    old = (app.busy, app.active, list(app.data["profiles"]),
+           app.data["ck_client"], app.data["openvpn_exe"],
+           app.data.get("autoconnect"))
+    app.autoconnect.set(True); app._on_autoconnect()
+    check("T26.1 «Подключаться при запуске» → data.json",
+          json.load(open(CO.DATA_FILE, encoding="utf-8"))["autoconnect"] is True)
+    app.autoconnect.set(False); app._on_autoconnect()
+    check("T26.2 снятая галочка → False",
+          json.load(open(CO.DATA_FILE, encoding="utf-8"))["autoconnect"] is False)
+    calls = []
+    app._toggle = lambda: calls.append(1)
+    app.data["autoconnect"] = True
+    app.data["profiles"] = [{"name": "u1"}]
+    app._refresh_combo("u1")
+    f = os.path.join(TMP, "fake.exe"); open(f, "w").write("x")
+    app.data["ck_client"] = app.data["openvpn_exe"] = f
+    ORIG_FIRST_RUN(app)   # вызвать настоящий _first_run мимо заглушки
+    check("T26.3 autoconnect+профиль → _first_run подключает выбранный",
+          len(calls) == 1)
+    calls.clear()
+    old_ask = CO.messagebox.askyesno
+    CO.messagebox.askyesno = lambda *a, **k: False
+    app.data["profiles"] = []
+    app._refresh_combo()
+    ORIG_FIRST_RUN(app)
+    check("T26.4 autoconnect без профилей → нет подключения",
+          not calls)
+    CO.messagebox.askyesno = old_ask
+    del app._toggle  # вернуть метод класса
+    (app.busy, app.active, app.data["profiles"],
+     app.data["ck_client"], app.data["openvpn_exe"],
+     app.data["autoconnect"]) = old
+    CO.save_data(app.data)   # _first_run пересохранил data.json — вернуть как было
+    app._refresh_combo()
+
+
 def t_migrate():
     ok = os.path.isfile(os.path.join(CO.BIN_DIR, "ck-client.exe")) \
         and not os.path.isdir(CO.OLD_APP_DIR) and os.path.isfile(CO.DATA_FILE)
@@ -946,6 +985,7 @@ def main():
     t_rename(app)
     t_profile_logs(app)
     t_tray_menu(app)
+    t_autoconnect(app)
     t_migrate()
     try:
         app.destroy()
