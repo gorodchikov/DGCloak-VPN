@@ -1290,18 +1290,10 @@ class App(tk.Tk):
 
         # Скрываемая панель: лог и редко нужные настройки
         self.adv = ttk.Frame(self)
-        bar = ttk.Frame(self.adv)
-        bar.pack(fill="x")
-        self.b_copy = ttk.Button(bar, text=t("Копировать лог"), width=BTN_W, command=self._copy_log)
-        self.b_copy.pack(side="left")
-        self.b_clear = ttk.Button(bar, text=t("Очистить лог"), width=BTN_W, command=self._clear_log)
-        self.b_clear.pack(side="left", padx=(4, 0))
-        self.b_paths = ttk.Button(bar, text=t("Пути к Cloak и OpenVPN…"), command=self._paths)
-        self.b_paths.pack(side="left", padx=(8, 0))
         self.chk_auto = ttk.Checkbutton(
             self.adv, text=t("Подключаться при запуске"),
             variable=self.autoconnect, command=self._on_autoconnect)
-        self.chk_auto.pack(anchor="w", pady=(6, 0))
+        self.chk_auto.pack(anchor="w", pady=(4, 0))
         self.chk_min = ttk.Checkbutton(
             self.adv, text=t("Сворачивать в трей при запуске"),
             variable=self.start_minimized, command=self._on_start_minimized)
@@ -1310,8 +1302,16 @@ class App(tk.Tk):
             self.adv, text=t("Отладочный лог OpenVPN (применится при следующем подключении)"),
             variable=self.verbose)
         self.chk_verbose.pack(anchor="w", pady=(4, 0))
+        bar = ttk.Frame(self.adv)
+        bar.pack(fill="x", pady=(6, 0))
+        self.b_copy = ttk.Button(bar, text=t("Копировать лог"), width=BTN_W, command=self._copy_log)
+        self.b_copy.pack(side="left")
+        self.b_clear = ttk.Button(bar, text=t("Очистить лог"), width=BTN_W, command=self._clear_log)
+        self.b_clear.pack(side="left", padx=(4, 0))
+        self.b_paths = ttk.Button(bar, text=t("Пути к Cloak и OpenVPN…"), command=self._paths)
+        self.b_paths.pack(side="left", padx=(8, 0))
         self.logf = ttk.LabelFrame(self.adv, text=t("Лог"))
-        self.logf.pack(fill="both", expand=True, pady=(6, 0))
+        self.logf.pack(fill="both", expand=True, pady=(4, 0))
         self.log = tk.Text(self.logf, height=16, state="disabled", wrap="word",
                            font=("Consolas", 9))
         sb = ttk.Scrollbar(self.logf, command=self.log.yview)
