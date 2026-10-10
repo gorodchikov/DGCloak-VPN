@@ -290,3 +290,10 @@ Windows (`detect_lang`: ru* → ru, иначе en), сохраняется в `d
    - **Управление юзерами Cloak — через admin-API, без SSH** (проверено по cbeuw/Cloak и cbeuw/Cloak-panel): на машине админа `ck-client -a <AdminUID>` поднимает локальный HTTP-эндпоинт; `GET/POST/DELETE /admin/users[/<uid-b64url>]` — список/создание (лимиты: SessionsCap, UpRate, DownRate, UpCredit, DownCredit, ExpiryTime)/удаление. UID — 16 байт base64. Юзеры с лимитами живут в `userinfo.db` (DatabasePath); `BypassUID` в ckserver.json — безлимитные (требует рестарта, основным механизмом не делать). SSH нужен для установки, PKI/CRL и статуса.
    - Перед реализацией сверяться с актуальной документацией Cloak и OpenVPN, а не с памятью.
 4. **Локализация:** клиент и админка переведены (см. разделы выше). Остаётся при желании — перевод вывода серверных скриптов `scripts/*.sh` (сейчас их строки идут в лог как есть).
+## Отчёты и документация (конвенция)
+
+- `tools/gen-docs.py` и `tools/gen-docs-en.py` генерируют `docs/changelog[-en].html` (из git log), `docs/fixed-bugs[-en].html` и `docs/tests[-en].html` (из check() в tests/). **После каждого изменения кода/тестов перегенерируй оба прогона одной командой** и закоммить docs вместе с изменением.
+- Новые коммиты требуют перевода в словаре `CEN` (gen-docs-en.py печатает `WARN no translation`). Новые `check("...")` в тестах — переводы в словарях `CL`/`AD`/`LG` того же файла (иначе в tests-en.html просочится кириллица — проверяй regex `[А-Яа-яЁё]`).
+- Новый зафиксированный баг → строка в `BUGS` обоих генераторов.
+- `docs/user-guide-{ru,en}.html` правятся вручную при изменениях UI (кнопки, панели, пути).
+- Публичная копия доков живёт в репо `DGCloak-VPN-releases` (`docs/`, GitHub Pages) — после правок гайдов копируй файлы туда и коммить.

@@ -194,10 +194,15 @@ probe-сверка с сервером, чтобы устаревшая запи
 <td><code>sudo reboot</code> с проверкой подъёма по uptime; нужно, если шаг
 «Обновление системы» помечен <code>⚠ нужна перезагрузка</code>.</td></tr>
 <tr><td>Копировать / Очистить лог</td>
-<td>Работают с каналом «деплой» текущего сервера.</td></tr>
+<td>Работают с каналом «деплой» текущего сервера. Журналы хранятся на диске —
+<code>Admin\logs\&lt;сервер&gt;\&lt;канал&gt;.log</code>, ротация в
+<code>.old</code> при 256 КБ — и не пропадают при перезапуске.</td></tr>
 <tr><td>Язык:</td>
 <td>RU/EN на лету. Уже написанное в логе и заметки шагов остаются на прежнем
 языке (тултип по наведению напоминает).</td></tr>
+<tr><td><b>?</b></td>
+<td>Справа вверху — открывает это руководство в браузере, на языке
+интерфейса.</td></tr>
 </table>
 <p>Легенда статусов: <code>✓</code> готово · <code>⚠</code> предупреждение ·
 <code>✗</code> ошибка · <code>–</code> пропущен · <code>…</code> не выполнялся.</p>
@@ -299,6 +304,9 @@ DGCloakVPN (есть папка <code>%APPDATA%\DGCloak\VPN</code>), созда�
 <tr><td>Язык:</td>
 <td>RU/EN. Подсказка по наведению: уже выведенные строки лога остаются
 на прежнем языке.</td></tr>
+<tr><td><b>?</b></td>
+<td>Рядом с выбором языка — это руководство в браузере. Также есть пункт
+«Руководство пользователя» в меню трея.</td></tr>
 </table>
 
 <figure><img src="img/client-main.png" alt="Главное окно клиента">
@@ -447,8 +455,11 @@ split-tunnel — идут только маршруты, что прописал
 <code>last.log</code>/<code>prev.log</code>, <code>runtime.ovpn</code>,
 <code>pids.json</code>, <code>profiles\&lt;имя&gt;\</code>.</td></tr>
 <tr><td><code>%APPDATA%\DGCloak\Admin\</code></td>
-<td>Реестр серверов и юзеров, журналы, ключи,
-<code>bundles\*.dgcloak</code> — готовые конфиги юзеров.</td></tr>
+<td>Реестр серверов и юзеров, ключи,
+<code>bundles\*.dgcloak</code> — готовые конфиги юзеров,
+<code>logs\&lt;сервер&gt;\</code> — журналы вкладок
+(<code>deploy.log</code>/<code>users.log</code> + ротация
+<code>.old</code>).</td></tr>
 </table>
 <p><span class="warn">В data.json секретов нет</span> — ключи/сертификаты
 живут в файлах профилей и на сервере.</p>
@@ -484,6 +495,6 @@ split-tunnel — идут только маршруты, что прописал
 <p>Подключаться не сможет: admin-API Cloak отклоняет. Продлить —
 «Изменить…» у юзера (срок/квоты), конфиг перевыпустится сам.</p></details>
 
-<footer>DGCloak VPN · docs/user-guide.html · интерфейс и логи — RU/EN</footer>
+<footer>DGCloak VPN · docs/user-guide-ru.html · интерфейс и логи — RU/EN</footer>
 </body>
 </html>

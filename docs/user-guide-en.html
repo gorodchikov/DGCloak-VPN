@@ -198,10 +198,14 @@ managed.</td></tr>
 <td><code>sudo reboot</code> with an uptime check before/after; needed when
 the "System update" step is marked <code>⚠ reboot required</code>.</td></tr>
 <tr><td>Copy log / Clear log</td>
-<td>Act on the current server's "deploy" channel.</td></tr>
+<td>Act on the current server's "deploy" channel. Journals live on disk —
+<code>Admin\logs\&lt;server&gt;\&lt;channel&gt;.log</code>, rotating to
+<code>.old</code> at 256 KB — they survive restarts.</td></tr>
 <tr><td>Language:</td>
 <td>RU/EN on the fly. Lines already written to the log and step notes stay
 in the old language (the hover tooltip says so).</td></tr>
+<tr><td><b>?</b></td>
+<td>Top right — opens this guide in a browser, in the UI language.</td></tr>
 </table>
 <p>Status legend: <code>✓</code> done · <code>⚠</code> warning ·
 <code>✗</code> error · <code>–</code> skipped · <code>…</code> not run.</p>
@@ -304,6 +308,9 @@ panel opens by itself.</td></tr>
 <tr><td>Language:</td>
 <td>RU/EN. Hover tooltip: log lines already written stay in the old
 language.</td></tr>
+<tr><td><b>?</b></td>
+<td>Next to the language picker — opens this guide in a browser. Also
+available as "User guide" in the tray menu.</td></tr>
 </table>
 
 <figure><img src="img/client-main.png" alt="Client main window">
@@ -457,8 +464,11 @@ services and packages, keys in <code>~/.ssh</code>.</p>
 <code>last.log</code>/<code>prev.log</code>, <code>runtime.ovpn</code>,
 <code>pids.json</code>, <code>profiles\&lt;name&gt;\</code>.</td></tr>
 <tr><td><code>%APPDATA%\DGCloak\Admin\</code></td>
-<td>Server and user registry, journals, keys,
-<code>bundles\*.dgcloak</code> — ready user configs.</td></tr>
+<td>Server and user registry, keys,
+<code>bundles\*.dgcloak</code> — ready user configs,
+<code>logs\&lt;server&gt;\</code> — per-tab journals
+(<code>deploy.log</code>/<code>users.log</code> + <code>.old</code>
+rotation).</td></tr>
 </table>
 <p><span class="warn">data.json holds no secrets</span> — keys and
 certificates live in profile files and on the server.</p>
