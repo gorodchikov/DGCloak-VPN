@@ -6,6 +6,7 @@
 """
 import base64
 import ctypes
+import glob
 import io
 import json
 import os
@@ -259,6 +260,8 @@ STRINGS_EN = {
         "ck-client-windows-amd64*.exe not found in the latest Cloak release",
     "Cloak не скачался: {e}. Скачайте вручную: github.com/cbeuw/Cloak/releases":
         "Cloak download failed: {e}. Download manually: github.com/cbeuw/Cloak/releases",
+    "ярлык «OpenVPN GUI» убран с рабочего стола":
+        "OpenVPN GUI shortcut removed from desktop",
     "winget вернул код {rc} — установите OpenVPN вручную.":
         "winget returned code {rc} — install OpenVPN manually.",
     "{title} есть, но не запускается: {path}": "{title} exists but failed to run: {path}",
@@ -564,6 +567,26 @@ def exe_runs(path):
         return False
 
 
+def remove_desktop_shortcut(name):
+    """Убирает ярлык с рабочего стола: общий (C:\\Users\\Public\\Desktop —
+    туда ложат инсталляторы), личный и OneDrive-перенаправленный.
+    Возвращает список удалённых путей."""
+    home = os.path.expanduser("~")
+    dirs = [os.path.join(os.environ.get("PUBLIC", r"C:\Users\Public"),
+                         "Desktop"),
+            os.path.join(home, "Desktop")]
+    dirs += glob.glob(os.path.join(home, "OneDrive*", "Desktop"))
+    removed = []
+    for d in dirs:
+        p = os.path.join(d, name)
+        try:
+            os.remove(p)
+            removed.append(p)
+        except OSError:
+            pass
+    return removed
+
+
 def cloak_latest_url():
     """Ссылка на свежий ck-client-windows-amd64*.exe из GitHub API (прямая ссылка не нужна)."""
     req = urllib.request.Request(CLOAK_API, headers={"User-Agent": "DGCloakVPN"})
@@ -802,6 +825,12 @@ class SetupDialog(tk.Toplevel):
                     found = find_openvpn()
                     if found:
                         app.data["openvpn_exe"] = found
+                        # инсталлятор OpenVPN лепит ярлык GUI на общий рабочий
+                        # стол — наш клиент его заменяет, ярлык не нужен.
+                        # Трогаем только ярлык после НАШЕЙ установки.
+                        if remove_desktop_shortcut("OpenVPN GUI.lnk"):
+                            self._say(app.t("ярлык «OpenVPN GUI» убран "
+                                            "с рабочего стола"))
                 else:
                     self._say("winget не найден. Установите OpenVPN Community вручную: "
                               "openvpn.net/community-downloads/")

@@ -743,6 +743,35 @@ def t_inbox(app):
           "u1@srvA" not in [q["name"] for q in app.data["profiles"]])
 
 
+def t_shortcut():
+    """T22: удаление ярлыка OpenVPN GUI — Public/личный/OneDrive десктопы."""
+    env0 = {k: os.environ.get(k) for k in ("PUBLIC", "USERPROFILE")}
+    pub = os.path.join(TMP, "pub"); home = os.path.join(TMP, "home")
+    os.environ["PUBLIC"] = pub
+    os.environ["USERPROFILE"] = home
+    try:
+        lnks = []
+        for d in (os.path.join(pub, "Desktop"),
+                  os.path.join(home, "Desktop"),
+                  os.path.join(home, "OneDrive - X", "Desktop")):
+            os.makedirs(d, exist_ok=True)
+            p = os.path.join(d, "OpenVPN GUI.lnk")
+            open(p, "w").close()
+            lnks.append(p)
+        got = CO.remove_desktop_shortcut("OpenVPN GUI.lnk")
+        check("T22.1 ярлык снят на всех трёх десктопах",
+              sorted(got) == sorted(lnks)
+              and all(not os.path.exists(p) for p in lnks))
+        check("T22.2 повторный вызов без ярлыка → пусто, без ошибок",
+              CO.remove_desktop_shortcut("OpenVPN GUI.lnk") == [])
+    finally:
+        for k, v in env0.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
 def t_migrate():
     ok = os.path.isfile(os.path.join(CO.BIN_DIR, "ck-client.exe")) \
         and not os.path.isdir(CO.OLD_APP_DIR) and os.path.isfile(CO.DATA_FILE)
@@ -773,6 +802,7 @@ def main():
     t_check_dlg(app)
     t_data()
     t_inbox(app)
+    t_shortcut()
     t_migrate()
     try:
         app.destroy()
