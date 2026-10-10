@@ -697,7 +697,7 @@ def u13_rename():
               not os.path.exists(kd_old)
               and os.path.isfile(os.path.join(kd_new, "key"))
               and srv["key"] == os.path.join(kd_new, "key"))
-        check("U13.4 user_bundles\\<new> на месте, <old> снесён",
+        check("U13.4 user_bundles/<new> на месте, <old> снесён",
               os.path.isfile(os.path.join(bd_new, "u1.dgcloak"))
               and not os.path.exists(bd_old))
         check("U13.5 u1: .del старого + .dgcloak нового, pname обновлён",
@@ -748,7 +748,7 @@ def u14_key_stash():
         CA.ServerDialog = lambda *a, **k: _D()
         app._srv_add()
         srv = app.data["servers"][-1]
-        check("U14.1 add: внешние ключи скопированы в keys\\<srv>",
+        check("U14.1 add: внешние ключи скопированы в keys/<srv>",
               srv["key"] == os.path.join(kd, "aws.pem")
               and srv["ppk"] == os.path.join(kd, "aws.ppk")
               and open(srv["key"]).read() == "KEYDATA"
