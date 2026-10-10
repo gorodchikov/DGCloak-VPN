@@ -218,6 +218,8 @@ CEN = {
  "68cea55": "client: Real IP line in status + click an IP line to copy it",
  "99b4496": "docs: commit translations (Real IP + click-to-copy)",
  "e3ba988": "client: network info strip at the bottom of Advanced (LAN + tun client/server)",
+ "7896206": "docs: commit translations (network info strip)",
+ "209df56": "client: VPN pause — signal SUSPEND/RESUME, direct traffic without disconnect",
  "3a7d9d2": "docs: reports for tray menu and journals + guide tagline",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
