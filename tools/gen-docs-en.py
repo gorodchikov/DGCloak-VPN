@@ -214,6 +214,8 @@ CEN = {
  "7cdff67": "client: OpenVPN debug log checkbox now persists across runs",
  "df71ca7": "docs: commit translations (verbose persist + buttons near log)",
  "22494c2": "client: Start with Windows checkbox (HKCU Run key autorun, path self-heal)",
+ "ef280f3": "docs: commit translations (Windows autorun)",
+ "68cea55": "client: Real IP line in status + click an IP line to copy it",
  "3a7d9d2": "docs: reports for tray menu and journals + guide tagline",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
