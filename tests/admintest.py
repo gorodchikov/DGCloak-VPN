@@ -576,6 +576,77 @@ def u11_provision():
 
 
 # ======================================================================
+# U12. Журналы на диске: logs\<srv>\<tab>.log, JSONL, ротация
+# ======================================================================
+
+def u12_journal_files():
+    srv = {"name": "u12 srv [x]", "host": "1.2.3.4"}
+    lib.add_srv(app, srv)
+    name = srv["name"]
+    ldir = app._log_dir(name)
+    try:
+        # запись say → файл канала deploy
+        app._log_name = name
+        app._log_ctx = None
+        app._op_tab = None
+        app.nb.select(0)
+        app.say("u12 обычная строка")
+        app.vsay("u12 verbose строка")
+        f = os.path.join(ldir, "deploy.log")
+        ok = os.path.isfile(f)
+        check("U12.1 say/vsay → deploy.log создан под sanitize(имя)", ok)
+        if ok:
+            lines = [json.loads(l) for l in open(f, encoding="utf-8")]
+            check("U12.2 JSONL: verbose-флаг и текст строки",
+                  lines[0]["v"] is False and "обычная" in lines[0]["l"]
+                  and lines[1]["v"] is True and "verbose" in lines[1]["l"])
+        # каналы разделены: _mark_log("users") → другой файл
+        app._mark_log("users", "u12 отметка users")
+        check("U12.3 users-канал → users.log отдельным файлом",
+              os.path.isfile(os.path.join(ldir, "users.log")))
+        # перезагрузка: память чистим, читаем с диска
+        app._logs.clear()
+        app._logs_load()
+        got = lib.jrnl(app, name, "deploy")
+        check("U12.4 после рестарта журнал поднят с диска",
+              len(got) == 2 and "обычная" in got[0], len(got))
+        # ротация: заниженный лимит → текущий файл уходит в .old
+        old_max = CA.LOG_MAX
+        CA.LOG_MAX = 10
+        try:
+            app._log_write(name, "deploy", "[00:00:01] rot", False)
+        finally:
+            CA.LOG_MAX = old_max
+        check("U12.5 ротация по размеру: .log → .log.old",
+              os.path.isfile(os.path.join(ldir, "deploy.log.old")))
+        # очистка канала: история с диска уходит, остаётся только
+        # свежая отметка «Лог очищен» (файл пересоздаётся mark'ом)
+        app._clear_log("deploy")
+        f2 = os.path.join(ldir, "deploy.log")
+        left = [json.loads(l)["l"] for l in open(f2, encoding="utf-8")] \
+            if os.path.isfile(f2) else []
+        check("U12.6 «очистить лог»: .old снят, в .log только отметка",
+              not os.path.exists(os.path.join(ldir, "deploy.log.old"))
+              and len(left) == 1 and "очищен" in left[0], left)
+        # удаление сервера сносит папку журналов
+        CA.messagebox.askyesno = lambda *a, **k: True
+        app.data["servers"] = [srv]
+        app._refresh_servers()
+        app.srv_tv.selection_set(name)
+        app._on_srv_select()
+        lib.pump(app, 0.15)
+        app._srv_del()
+        lib.pump(app, 0.2)
+        check("U12.7 удаление сервера → папка журналов снесена",
+              not os.path.exists(ldir))
+    finally:
+        app.data["servers"] = [s for s in app.data["servers"]
+                               if s.get("name") != name]
+        app._logs.pop(name, None)
+        app._refresh_servers()
+
+
+# ======================================================================
 
 u1_localization()
 u2_regressions()
@@ -591,5 +662,6 @@ u8_matrix()
 u9_revert()
 u10_srv_mark()
 u11_provision()
+u12_journal_files()
 
 finish(app)

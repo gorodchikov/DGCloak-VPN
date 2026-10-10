@@ -48,6 +48,7 @@ VPN_DIR = os.path.join(DGCLOAK_DIR, "VPN")  # данные соседнего VP
 PIDS_FILE = os.path.join(APP_DIR, "pids.json")  # наши дочерние plink/pscp/ssh
 GUIDE_URL = ("https://gorodchikov.github.io/DGCloak-VPN-releases/"
              "user-guide-%s.html")
+LOG_MAX = 256 * 1024   # журнал сервера: >256К → файл уходит в .old, 2 поколения
 
 # Скрипты лежат рядом с исходником/exe (для onefile — внутри _MEIPASS)
 if getattr(sys, "frozen", False):
@@ -2060,6 +2061,8 @@ class App(tk.Tk):
         self._spin_t0 = 0.0
         self._spin_hb = 0.0
         self._logs = {}           # name -> [строки лога]
+        self._log_lock = threading.Lock()  # _log_write зовут рабочие потоки
+        self._logs_load()
         self._log_name = None     # чей лог показан
         self._log_ctx = None      # на каком сервере идёт операция
         self._op_tab = None       # канал лога операции: "deploy"|"users"
@@ -2268,6 +2271,54 @@ class App(tk.Tk):
             pass
         self.after(100, self._drain)
 
+    # ---- журналы на диске: logs\<сервер>\<deploy|users>.log (JSONL) ----
+    # Хранятся между запусками; ротация по размеру, два поколения:
+    # X.log переполнился → X.log.old. Имя папки — sanitize(имя сервера),
+    # как в keys\ — из неё имя не восстановить, поэтому читаем журналы
+    # только у серверов из реестра (сироты пропускаем).
+
+    def _log_dir(self, name):
+        return os.path.join(APP_DIR, "logs",
+                            re.sub(r"[^\w-]", "_", name))
+
+    def _log_write(self, name, tab, line, verbose):
+        try:
+            d = self._log_dir(name)
+            os.makedirs(d, exist_ok=True)
+            f = os.path.join(d, tab + ".log")
+            with self._log_lock:
+                if os.path.isfile(f) and os.path.getsize(f) > LOG_MAX:
+                    os.replace(f, f + ".old")
+                with open(f, "a", encoding="utf-8") as fh:
+                    fh.write(json.dumps({"v": bool(verbose), "l": line},
+                                        ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+
+    def _logs_load(self):
+        """Поднимает журналы с диска в память при старте."""
+        for s in self.data["servers"]:
+            d = self._log_dir(s["name"])
+            if not os.path.isdir(d):
+                continue
+            for tab in ("deploy", "users"):
+                for fn in (tab + ".log.old", tab + ".log"):
+                    p = os.path.join(d, fn)
+                    if not os.path.isfile(p):
+                        continue
+                    try:
+                        with open(p, encoding="utf-8") as fh:
+                            for ln in fh:
+                                try:
+                                    e = json.loads(ln)
+                                    self._logs.setdefault(
+                                        s["name"], []).append(
+                                        (e["l"], bool(e["v"]), tab))
+                                except (ValueError, KeyError):
+                                    continue
+                    except OSError:
+                        continue
+
     def _say(self, msg, verbose=False):
         """verbose=True — служебная строка: хранится в журнале, но на экране
         видна только при включённом «Подробном выводе» (фильтр при показе —
@@ -2280,6 +2331,7 @@ class App(tk.Tk):
         tab = self._op_tab or self._cur_tab()
         if name is not None:
             self._logs.setdefault(name, []).append((line, verbose, tab))
+            self._log_write(name, tab, line, verbose)
         # self._verbose_on — обычный bool-дубль tk-переменной: _say зовут
         # из рабочих потоков, а tk-переменные читать оттуда нельзя
         if (name == self._log_name or name is None) and \
@@ -2345,6 +2397,7 @@ class App(tk.Tk):
         if self._log_name is not None:
             self._logs.setdefault(self._log_name, []).append(
                 (line, False, tab))
+            self._log_write(self._log_name, tab, line, False)
         w_ = self.logw_usr if tab == "users" else self.logw_dep
         w_.insert("end", line + "\n")
         w_.see("end")
@@ -2367,6 +2420,12 @@ class App(tk.Tk):
         if name is not None:
             self._logs[name] = [e for e in self._logs.get(name, [])
                                 if e[2] != tab]
+            d = self._log_dir(name)
+            for suf in (".log", ".log.old"):
+                try:
+                    os.remove(os.path.join(d, tab + suf))
+                except OSError:
+                    pass
         w_ = self.logw_usr if tab == "users" else self.logw_dep
         w_.delete("1.0", "end")
         self._mark_log(tab, self.t("Лог очищен."))
@@ -2928,7 +2987,19 @@ class App(tk.Tk):
             return
         d = ServerDialog(self, srv=s)
         if d.result:
+            old = s["name"]
             s.update(d.result)
+            if s["name"] != old:
+                # журналы переживают переименование: память + папка на диске
+                if old in self._logs:
+                    self._logs[s["name"]] = self._logs.pop(old)
+                for attr in ("_log_name", "_log_ctx"):
+                    if getattr(self, attr) == old:
+                        setattr(self, attr, s["name"])
+                try:
+                    os.rename(self._log_dir(old), self._log_dir(s["name"]))
+                except OSError:
+                    pass
             save_data(self.data)
             self._refresh_servers()
 
@@ -2947,6 +3018,7 @@ class App(tk.Tk):
             self.data["servers"].remove(s)
             save_data(self.data)
             self._logs.pop(s["name"], None)
+            shutil.rmtree(self._log_dir(s["name"]), ignore_errors=True)
             # бандлы юзеров сносим; SSH-ключ НЕ трогаем — он стоит на сервере
             # в authorized_keys и может быть единственным способом зайти
             shutil.rmtree(os.path.join(BUNDLES_DIR, s["name"]), ignore_errors=True)
