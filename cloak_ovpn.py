@@ -178,6 +178,8 @@ STRINGS_EN = {
     "отключено": "offline",
     "Лог скопирован в буфер обмена.": "Log copied to clipboard.",
     "Лог очищен.": "Log cleared.",
+    "Идёт операция. Прервать её и выйти из программы?":
+    "Operation in progress. Abort it and exit?",
     "Лог": "Log",
     "Лог — %s": "Log — %s",
     "…идёт операция на «%s» — её вывод пишется в журнал этого профиля…":
@@ -1329,7 +1331,12 @@ class App(tk.Tk):
         webbrowser.open(GUIDE_URL % self.lang())
 
     def _exit_clicked(self):
-        if self.active and not messagebox.askyesno(
+        if self.busy:
+            # идёт подключение/отключение/переключение — выход оборвёт её
+            if not messagebox.askyesno(
+                    APP_NAME, self.t("Идёт операция. Прервать её и выйти из программы?")):
+                return
+        elif self.active and not messagebox.askyesno(
                 APP_NAME, self.t("VPN подключён. Отключить и выйти из программы?")):
             return
         self._quit()
@@ -1589,10 +1596,13 @@ class App(tk.Tk):
             # подменю: профили кроме выбранного (для него есть кнопка выше)
             if any(p["name"] != self.cur_name for p in self.data["profiles"]):
                 yield MI(self.t("Подключить"), pystray.Menu(self._tray_profile_items), enabled=idle)
+        yield pystray.Menu.SEPARATOR
         yield MI(self.t("Руководство пользователя"),
                  lambda i, it: self.ui(self._guide))
-        yield pystray.Menu.SEPARATOR
-        yield MI(self.t("Отключить VPN и выйти из программы"), lambda i, it: self.ui(self._exit_clicked))
+        # активен или идёт операция → выход с остановкой VPN; в простое — просто выход
+        label = self.t("Отключить VPN и выйти из программы") \
+            if self.active or self.busy else self.t("Выход")
+        yield MI(label, lambda i, it: self.ui(self._exit_clicked))
 
     def _tray_profile_items(self):
         for p in list(self.data["profiles"]):

@@ -484,6 +484,11 @@ CL = {
 "T24.7 «Очистить лог» — файлы снесены, осталась метка": "T24.7 Clear log — files removed, marker line remains",
 "T24.8 _log_ctx: строка ушла в журнал операции, не видимого профиля": "T24.8 _log_ctx: line went to the operation's log, not the viewed profile",
 "T24.9 удаление профиля → logs/<name> снесён": "T24.9 profile delete → logs/<name> removed",
+"T25.1 «Руководство» под разделителем, перед пунктом выхода": "T25.1 User guide below separator, before the exit item",
+"T25.2 active → «Отключить VPN и выйти из программы»": "T25.2 active → «Disconnect VPN and exit»",
+"T25.3 busy (идёт операция) → «Отключить VPN и выйти…»": "T25.3 busy (op in progress) → «Disconnect VPN and exit…»",
+"T25.4 busy+exit → подтверждение «прервать операцию», выход": "T25.4 busy+exit → «abort operation» prompt, then exit",
+"T25.5 idle+exit → выход без вопроса": "T25.5 idle+exit → exits without prompt",
 }
 
 AD = {

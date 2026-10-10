@@ -873,6 +873,45 @@ def t_profile_logs(app):
     pump(app)
 
 
+def t_tray_menu(app):
+    """T25: трей — гайд под чертой; пункт выхода и подтверждение по состоянию."""
+    SEP = CO.pystray.Menu.SEPARATOR
+
+    def labels():
+        return [("---" if i is SEP else str(getattr(i, "text", i)))
+                for i in app._tray_items()]
+
+    old = (app.busy, app.active, list(app.data["profiles"]))
+    app.active, app.busy = None, False
+    app.data["profiles"] = [{"name": "u1"}]
+    L = labels()
+    check("T25.1 «Руководство» под разделителем, перед пунктом выхода",
+          "---" in L and L.index("Руководство пользователя") > L.index("---")
+          and L[-1] == "Выход", L)
+    app.active = {"name": "u1"}
+    check("T25.2 active → «Отключить VPN и выйти из программы»",
+          labels()[-1] == "Отключить VPN и выйти из программы")
+    app.active, app.busy = None, True
+    check("T25.3 busy (идёт операция) → «Отключить VPN и выйти…»",
+          labels()[-1] == "Отключить VPN и выйти из программы")
+    calls, quits = [], []
+    old_ask = CO.messagebox.askyesno
+    CO.messagebox.askyesno = lambda *a, **kw: calls.append(a) or True
+    app._quit = lambda: quits.append(1)
+    app._exit_clicked()
+    check("T25.4 busy+exit → подтверждение «прервать операцию», выход",
+          len(quits) == 1 and calls and "Прервать" in str(calls[-1]),
+          calls[-1] if calls else "no prompt")
+    calls.clear()
+    app.busy = False
+    app._exit_clicked()
+    check("T25.5 idle+exit → выход без вопроса",
+          len(quits) == 2 and not calls)
+    CO.messagebox.askyesno = old_ask
+    del app._quit  # вернуть метод класса
+    app.busy, app.active, app.data["profiles"] = old[0], old[1], old[2]
+
+
 def t_migrate():
     ok = os.path.isfile(os.path.join(CO.BIN_DIR, "ck-client.exe")) \
         and not os.path.isdir(CO.OLD_APP_DIR) and os.path.isfile(CO.DATA_FILE)
@@ -906,6 +945,7 @@ def main():
     t_shortcut()
     t_rename(app)
     t_profile_logs(app)
+    t_tray_menu(app)
     t_migrate()
     try:
         app.destroy()
