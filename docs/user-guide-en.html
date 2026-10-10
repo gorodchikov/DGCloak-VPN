@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DGCloak VPN — User Guide</title>
+<style>
+body{font:14px/1.55 'Segoe UI',system-ui,sans-serif;background:#14171c;
+color:#d7dce2;max-width:960px;margin:0 auto;padding:32px 20px}
+h1{color:#fff;font-size:24px;border-bottom:2px solid #3d4b5c;
+padding-bottom:10px}
+h2{color:#8fb8e8;margin-top:34px;font-size:18px;border-bottom:1px solid #262d36;
+padding-bottom:6px}
+h3{color:#a8c3de;margin-top:22px;font-size:15px}
+.sub{color:#7d8a99;margin:-6px 0 24px}
+table{width:100%;border-collapse:collapse;background:#1b2027;
+border-radius:8px;overflow:hidden;margin:10px 0}
+th{background:#232b35;text-align:left;padding:8px 12px;color:#9db4cd;
+font-weight:600}
+td{padding:7px 12px;border-top:1px solid #262d36;vertical-align:top}
+tr:hover td{background:#212831}
+code{background:#0f1318;padding:1px 6px;border-radius:4px;color:#e8b96a;
+font-size:12.5px;white-space:nowrap}
+a{color:#6ea8fe;text-decoration:none}
+a:hover{text-decoration:underline}
+.tag{display:inline-block;background:#25384e;color:#9ec7f0;
+border-radius:4px;padding:1px 8px;font-size:12px;margin-right:4px}
+.warn{display:inline-block;background:#4a3519;color:#f0c98a;
+border-radius:4px;padding:1px 8px;font-size:12px}
+.note{display:inline-block;background:#2a3a1e;color:#b8e08f;
+border-radius:4px;padding:1px 8px;font-size:12px}
+.box{background:#1b2027;border-left:3px solid #357;border-radius:6px;
+padding:10px 16px;margin:12px 0}
+.box.warnbox{border-left-color:#a66}
+pre{background:#0f1318;border-radius:8px;padding:14px 18px;overflow-x:auto;
+color:#c9d4e0;font:12.5px/1.5 Consolas,monospace}
+figure{margin:14px 0;background:#1b2027;border-radius:8px;padding:12px}
+figure img{max-width:100%;border-radius:4px}
+figcaption{color:#7d8a99;font-size:12.5px;margin-top:6px}
+ol li,ul li{margin:5px 0}
+footer{margin-top:40px;color:#5c6875;font-size:12px;
+border-top:1px solid #262d36;padding-top:12px}
+details{margin:10px 0}
+summary{cursor:pointer;color:#8fb8e8;font-size:15px;padding:4px 0}
+summary:hover{color:#fff}
+.stat{display:inline-block;background:#1e3a2a;color:#8fe0a8;
+border-radius:6px;padding:4px 14px;margin:4px 8px 4px 0;font-weight:600}
+</style>
+</head>
+<body>
+
+<h1>DGCloak VPN — User Guide</h1>
+<div class="sub">The DGCloakVPN Windows client and the DGCloakAdmin tool:
+OpenVPN over Cloak (HTTPS masquerade).</div>
+
+<h2>1. What it is</h2>
+<p>A pair of Windows applications for running your own VPN server:</p>
+<table>
+<tr><th style="width:160px">Program</th><th>Purpose</th></tr>
+<tr><td><b>DGCloakAdmin.exe</b></td>
+<td>The admin tool. Installs <b>OpenVPN + Cloak</b> onto a clean Linux VPS
+over SSH (native packages, no Docker) and manages users: create, limits,
+quotas, revoke, instant disconnect, ready-to-use config export.</td></tr>
+<tr><td><b>DGCloakVPN.exe</b></td>
+<td>The end-user client. Brings up a local Cloak proxy, then OpenVPN
+through it. Profiles, system tray, auto-reconnect, full or split tunnel.</td></tr>
+</table>
+
+<pre>openvpn.exe ──TCP──► 127.0.0.1:&lt;local port&gt; ──ck-client──► server:443 (looks like HTTPS) ──► ck-server ──► openvpn-server</pre>
+<p>From the outside only TLS-like traffic to the Cloak port is visible
+(usually 443) — Cloak masquerades it as access to a mask domain. To DPI
+the connection is indistinguishable from ordinary HTTPS.</p>
+
+<div class="box"><b>Supported servers:</b>
+Ubuntu 20.04 / 22.04 / 24.04 / 26.04, Debian 11 / 12 / 13.
+Firewalls: nftables, ufw, firewalld, iptables — detected automatically.</div>
+
+<h2>2. Features</h2>
+<h3>DGCloakAdmin</h3>
+<ul>
+<li>One-shot deployment of OpenVPN+Cloak on a clean VPS — 9 steps with a
+journal and per-step statuses; completed steps are skipped.</li>
+<li>Busy-port handling: detects who owns the port (systemd service,
+docker container, bare process) and offers to quench it or pick another port.</li>
+<li>Users: name (CN), lifetime, max sessions, up/down speed limits,
+up/down traffic quotas, per-user mask domain.</li>
+<li>Instant disconnect of a live session; certificate revocation + removal
+from Cloak.</li>
+<li>Exports a single <code>.dgcloak</code> file — the user imports it into
+the client with one field.</li>
+<li>Key import from an already-configured server (migration/new admin PC).</li>
+<li>Server firewall management: list open ports, open/close your own.</li>
+<li><b>Revert server</b>: rolls back to the pre-deploy state using a snapshot —
+restores quenched services and docker containers, the original firewall,
+leaves foreign packages and SSH access alone.</li>
+<li>Two journals per server (deploy / users), RU/EN UI switch on the fly.</li>
+</ul>
+<h3>DGCloakVPN</h3>
+<ul>
+<li>One profile file <code>.dgcloak</code> (or a ck-config + .ovpn pair).</li>
+<li>Full tunnel or split tunnel; the bypass route to the Cloak server is
+handled automatically.</li>
+<li>Auto-reconnect on drops, process monitoring, speed/traffic stats in the
+status block and tray.</li>
+<li>External IP detection before and through the VPN (3 services with
+fallback).</li>
+<li>First-run dependency setup: OpenVPN via winget, latest ck-client from
+GitHub.</li>
+<li>Rotating journal (current + previous run), OpenVPN debug log.</li>
+<li>Tray: switch profiles without the window, Disconnect / switch-profile
+menu.</li>
+<li>RU/EN interface, remembered.</li>
+</ul>
+
+<h2>3. DGCloakAdmin — panels and buttons</h2>
+
+<figure><img src="img/admin-main.png" alt="DGCloakAdmin main window">
+<figcaption>Main window: servers on the left, "Deployment" and "Users" tabs
+on the right.</figcaption></figure>
+
+<h3>3.1 Servers panel (left)</h3>
+<table>
+<tr><th style="width:150px">Element</th><th>What it does</th></tr>
+<tr><td><i>Name / SSH / Cloak</i> table</td>
+<td>Server list. Marks next to the name: <code>✓</code> — all deploy steps
+green, <code>⚠</code> — a warning/error exists. The SSH and Cloak columns
+show online status (TCP probe; Cloak only on deployed servers).</td></tr>
+<tr><td>Add / Edit / Delete</td>
+<td>Server registry. Deletion cleans local user configs; the SSH key is
+kept — you can still log in later. The server itself is untouched.</td></tr>
+<tr><td>▲ / ▼</td><td>Reorder servers in the list.</td></tr>
+<tr><td><b>Abort operation</b></td>
+<td>Enabled only during an SSH operation. Kills a hung command — when the
+ISP drops the link and the server goes silent.</td></tr>
+</table>
+
+<h3>3.2 Server dialog (Add/Edit)</h3>
+<table>
+<tr><th style="width:200px">Field</th><th>Description</th></tr>
+<tr><td>Name</td><td>Any label for the list.</td></tr>
+<tr><td>Hostname/IP</td><td>Server address.</td></tr>
+<tr><td>SSH port / SSH login</td><td>Default 22; a sudo-capable user or root.</td></tr>
+<tr><td>OpenSSH key / .ppk key / Password</td>
+<td>Authentication. Priority: OpenSSH key → .ppk → password.
+If you pick a <code>.pub</code> file the tool swaps in the private key or
+refuses with a clear message. When logging in by password, deployment
+generates a key and sets up key authorization.</td></tr>
+<tr><td>Comment</td><td>Free text.</td></tr>
+</table>
+<figure><img src="img/admin-server-dialog.png" alt="Server dialog">
+<figcaption>The add/edit server dialog.</figcaption></figure>
+
+<h3>3.3 Deployment tab</h3>
+<table>
+<tr><th style="width:210px">Element</th><th>What it does</th></tr>
+<tr><td>Mask domain</td>
+<td>Default mask domain for new users of this server
+(<code>www.bing.com</code> out of the box). Each user may have their own.</td></tr>
+<tr><td>OpenVPN protocol</td>
+<td><code>udp</code> (faster, default) or <code>tcp</code>
+(with a "TCP is slower" note). <span class="warn">Locked after deploy —
+changing it requires rebuilding user configs.</span></td></tr>
+<tr><td>Cloak port</td>
+<td>Port where ck-server listens (usually 443). If busy, deployment offers
+to quench the owner or pick another port.
+<span class="warn">Locked after deploy.</span></td></tr>
+<tr><td>Steps table</td>
+<td>9 deploy steps (see §5) with status and comment per step. The active
+step's status shows a spinning arc.</td></tr>
+<tr><td><b>▶ Deploy all</b></td>
+<td>Full run top to bottom; completed steps are skipped. Before the run a
+probe check verifies the server so a stale "all ok" registry entry can't
+skip steps on a reverted machine.</td></tr>
+<tr><td>Selected step only</td>
+<td>Run a single table step — a targeted retry after fixing an error.</td></tr>
+<tr><td>Check statuses</td>
+<td>Read-only audit (probe.sh): verifies real state and refreshes the icons.
+If the server doesn't respond, the "deployed" mark is cleared.</td></tr>
+<tr><td>Firewall management</td>
+<td>Window with the server's open ports: list, open/close a custom port.
+Dangerous ports (SSH, Cloak) warn before being closed.</td></tr>
+<tr><td>Import keys</td>
+<td>Pulls keys and users from a server configured manually or by another
+copy of this tool. Reinstalls nothing; afterwards the server can be
+managed.</td></tr>
+<tr><td>Revert server</td>
+<td>Rolls back to the pre-deploy state (see §7).</td></tr>
+<tr><td>Reboot server</td>
+<td><code>sudo reboot</code> with an uptime check before/after; needed when
+the "System update" step is marked <code>⚠ reboot required</code>.</td></tr>
+<tr><td>Copy log / Clear log</td>
+<td>Act on the current server's "deploy" channel.</td></tr>
+<tr><td>Language:</td>
+<td>RU/EN on the fly. Lines already written to the log and step notes stay
+in the old language (the hover tooltip says so).</td></tr>
+</table>
+<p>Status legend: <code>✓</code> done · <code>⚠</code> warning ·
+<code>✗</code> error · <code>–</code> skipped · <code>…</code> not run.</p>
+
+<h3>3.4 Users tab</h3>
+<p>Columns: <i>Name (CN) · Max sessions · Limit ↑/↓ · Quota ↑/↓ · Expires ·
+Mask domain · Online</i>.</p>
+<table>
+<tr><th style="width:190px">Button</th><th>What it does</th></tr>
+<tr><td>Refresh</td>
+<td>Queries the server: UIDs from the Cloak admin-API, limits from
+users.json, who's online from the OpenVPN mgmt interface.</td></tr>
+<tr><td>Create…</td>
+<td>New-user dialog → OpenVPN certificate + UID in Cloak; the ready config
+is saved to <code>%APPDATA%\DGCloak\Admin\bundles</code>.</td></tr>
+<tr><td>Edit…</td>
+<td>Limits/expiry/mask domain of the selected user; changed parameters
+reissue the config. No changes — the server is not touched.</td></tr>
+<tr><td>Disconnect now</td>
+<td>Drops the live session via the OpenVPN mgmt interface. The user stays
+and can reconnect.</td></tr>
+<tr><td>Revoke and delete</td>
+<td>Revokes the certificate (CRL) + deletes the UID from Cloak + drops the
+session. <span class="warn">Irreversible.</span></td></tr>
+<tr><td>Export config…</td>
+<td>Saves the selected user's single <code>.dgcloak</code> file wherever
+you choose — hand that file to the user.</td></tr>
+<tr><td>☐ Verbose output</td>
+<td>Shows/hides service lines of user operations (ck-client, user-cert).
+Remembered per server.</td></tr>
+</table>
+<p>A user that isn't in the tool's registry (foreign UID) can't have its
+certificate revoked — the tool offers only to delete the UID from Cloak
+(new connections get blocked; the current session is untouched).</p>
+
+<figure><img src="img/admin-users.png" alt="Users tab">
+<figcaption>The Users tab: registry, action buttons, journal.</figcaption></figure>
+
+<h3>3.5 User dialog</h3>
+<table>
+<tr><th style="width:230px">Field</th><th>Description</th></tr>
+<tr><td>Name (CN)</td><td>Latin letters, digits, <code>_</code> and
+<code>-</code>. Duplicates on the same server are rejected.</td></tr>
+<tr><td>Lifetime, days</td><td><code>0</code> = forever.</td></tr>
+<tr><td>Max simultaneous connections</td>
+<td>How many devices may be connected with this config at once
+(minimum 1).</td></tr>
+<tr><td>Speed limit ↑/↓, Mbit/s</td>
+<td><code>0</code> = unlimited. Caps the user's channel.</td></tr>
+<tr><td>Traffic quota ↑/↓, MB</td>
+<td><code>0</code> = unlimited. Total traffic over the lifetime.</td></tr>
+<tr><td>Mask domain</td>
+<td>Which domain Cloak impersonates for this user. Different users may use
+different domains.</td></tr>
+</table>
+
+<h2>4. DGCloakVPN (client) — panels and buttons</h2>
+
+<h3>4.1 First run — "Program setup" wizard</h3>
+<p>If <code>openvpn.exe</code> or <code>ck-client.exe</code> isn't found,
+the window offers:</p>
+<ul>
+<li><b>Install automatically</b> — OpenVPN via winget, latest ck-client
+downloaded from GitHub into <code>%APPDATA%\DGCloak\bin</code>.</li>
+<li><b>Set paths manually</b> — point to your own executables.</li>
+</ul>
+<p>With an empty profile list it offers to add the first profile.</p>
+
+<figure><img src="img/client-setup.png" alt="First-run wizard">
+<figcaption>First-run wizard — automatic OpenVPN and ck-client setup.</figcaption></figure>
+
+<h3>4.2 Main window</h3>
+<table>
+<tr><th style="width:190px">Element</th><th>What it does</th></tr>
+<tr><td>Profile picker (list)</td>
+<td>The active profile; remembered after a successful connect.</td></tr>
+<tr><td>+ / Edit / Delete</td>
+<td>Profiles: add via dialog (§4.3), edit, delete (files under
+<code>profiles\</code> are cleaned up).</td></tr>
+<tr><td><b>Connect / Disconnect</b></td><td>The main button.</td></tr>
+<tr><td>Status block</td>
+<td>A column: profile name, <b>VPN IP</b> (external IP through the tunnel;
+hidden if it can't be determined), "Connected for …" (uptime),
+↓/↑ speed.</td></tr>
+<tr><td>Exit</td>
+<td>Closes the app; with VPN active it asks — disconnects and exits.
+The close and minimize buttons hide the window to the tray.</td></tr>
+<tr><td>Advanced ▾</td>
+<td>Reveals the log and buttons: <b>Copy log</b>, <b>Clear log</b>,
+<b>Paths to Cloak and OpenVPN…</b>, and the <b>OpenVPN debug log</b>
+checkbox (<code>--verb 4</code>, applies on next connect). On errors the
+panel opens by itself.</td></tr>
+<tr><td>Language:</td>
+<td>RU/EN. Hover tooltip: log lines already written stay in the old
+language.</td></tr>
+</table>
+
+<figure><img src="img/client-main.png" alt="Client main window">
+<figcaption>Client main window: profiles, status, buttons.</figcaption></figure>
+
+<h3>4.3 Profile dialog</h3>
+<p>Two ways to fill it — pick one:</p>
+<ul>
+<li>the <b>DGCloak config (.dgcloak)</b> field — one file from the admin
+tool, everything else is filled in;</li>
+<li><b>— OR —</b> manually: name + <code>Cloak config (.json)</code> +
+<code>OpenVPN profile (.ovpn)</code>.</li>
+</ul>
+<p>Rare settings live under the "Advanced ▾" expander:</p>
+<table>
+<tr><th style="width:240px">Field</th><th>Purpose</th></tr>
+<tr><td>Local Cloak port (-l)</td>
+<td>Where ck-client accepts OpenVPN (default 1984). <code>remote</code>
+lines in .ovpn are rewritten to <code>127.0.0.1:port</code>.</td></tr>
+<tr><td>Cloak server (-s) / Server port (-p)</td>
+<td>Override RemoteHost/RemotePort from the ck config — usually empty.</td></tr>
+<tr><td>Bypass IP</td>
+<td>A route to the server via the main gateway so Cloak's own traffic
+doesn't loop into the VPN. Empty = resolved from the ck config.</td></tr>
+<tr><td>UDP mode (-u)</td>
+<td>Cloak transport over UDP. Also picked up from <code>"UDP":true</code>
+in the ck config.</td></tr>
+<tr><td>Route all traffic via VPN</td>
+<td>Full tunnel (<code>redirect-gateway local def1</code>) or split
+tunnel — only the routes pushed by the server.</td></tr>
+<tr><td>Reconnect on drop</td>
+<td>Up to 3 attempts with a pause, "Reconnecting…" status.</td></tr>
+</table>
+<p>Profile files are copied into
+<code>%APPDATA%\DGCloak\VPN\profiles\&lt;name&gt;</code> — the originals may
+be deleted afterwards.</p>
+<figure><img src="img/client-profile.png" alt="Profile dialog">
+<figcaption>Profile dialog: .dgcloak or a file pair + "Advanced ▾".</figcaption></figure>
+
+<h3>4.4 Tray</h3>
+<p>The cloak color = status (green = connected, etc.). Right-click menu:</p>
+<table>
+<tr><th style="width:250px">Item</th><th>When</th></tr>
+<tr><td>Open</td><td>Show the window.</td></tr>
+<tr><td>Connect «name» / Connect ▸</td>
+<td>VPN down: direct connect or pick a profile from the submenu.</td></tr>
+<tr><td>Disconnect «name»</td>
+<td>VPN up — a standalone item.</td></tr>
+<tr><td>Disconnect «name» and connect ▸</td>
+<td>Submenu with the other profiles — selecting one switches without the
+window (hidden when there's a single profile).</td></tr>
+<tr><td>Disconnect VPN and exit</td>
+<td>Full quit from the tray.</td></tr>
+</table>
+<p>The tray tooltip shows the same status block (profile, IP, uptime,
+speed).</p>
+
+<figure><img src="img/client-tray.png" alt="Tray menu">
+<figcaption>Tray menu with VPN active: standalone "Disconnect", submenu —
+other profiles.</figcaption></figure>
+
+<h2>5. Example: deploying a server from scratch</h2>
+<div class="box"><b>You need:</b> a clean VPS on a supported OS
+(Ubuntu 20–26 / Debian 11–13), SSH access (root or a sudo-capable user —
+password or key).</div>
+<ol>
+<li><b>Run DGCloakAdmin</b> → <b>Add</b> on the left: name, IP, SSH port,
+login, key or password → save.</li>
+<li>Select the server → the <b>Deployment</b> tab. Set the <b>mask
+domain</b>, <b>protocol</b> (udp) and <b>Cloak port</b> (443). They lock
+after deployment — pick them right the first time.</li>
+<li><b>▶ Deploy all</b>. Steps run down the table:</li>
+</ol>
+<pre>1. SSH connection     — auth, root/sudo check (sudo -S with password)
+2. Key authorization  — if you logged in by password: generates and installs a key
+3. OS/environment audit — distro, packages, docker, busy ports;
+                          the predeploy.env snapshot is written here (for Revert)
+4. Firewall           — backend audit → install/configure (nftables/ufw/…)
+5. System update      — apt full-upgrade (can be declined; may take 10–30 min)
+6. Packages           — OpenVPN, Easy-RSA, nftables as needed
+7. OpenVPN + PKI      — Easy-RSA CA, certificates, server.conf, mgmt interface
+8. Routing and NAT    — ip_forward, masquerade for 10.8.0.0/24 + tun0 only
+9. Cloak server       — ck-server, keys, mask domain, systemd unit</pre>
+<ol start="4">
+<li>If the <b>System update</b> step ends with <code>⚠ reboot
+required</code> — press <b>Reboot server</b> (or accept the dialog), then
+<b>▶ Deploy all</b> again — finished steps won't repeat.</li>
+<li>If <b>port 443 is busy</b> — see §6: choose "quench the owner" or
+"another port".</li>
+<li>All steps <code>✓</code> and the server shows <code>✓</code> —
+deployed. Go to the <b>Users</b> tab → <b>Create…</b>: CN, lifetime,
+limits, mask domain → done; the config is already in
+<code>bundles\</code>.</li>
+<li><b>Export config…</b> → save <code>user1.dgcloak</code> → hand it to
+the user.</li>
+<li>On the user's side: <b>DGCloakVPN</b> → <b>+</b> → the <b>DGCloak
+config (.dgcloak)</b> field → pick the file → Save → <b>Connect</b>.
+The status block shows VPN IP, uptime and speed.</li>
+</ol>
+<div class="box"><b>Verify:</b> "Check statuses" re-audits the server at
+any time; in the client the external IP through the VPN should equal the
+server address.</div>
+
+<h2>6. If the Cloak port is busy</h2>
+<p>Before installing ck-server the tool checks who owns the port and acts
+by type:</p>
+<table>
+<tr><th style="width:170px">Owner</th><th>What it offers</th></tr>
+<tr><td>systemd service (nginx etc.)</td>
+<td>"Quench it?" — <code>systemctl disable --now</code>. Agree → Cloak takes
+the port; decline → you're asked for another port (opened in the firewall
+automatically).</td></tr>
+<tr><td>docker container</td>
+<td>"Quench it?" — <code>docker stop</code> + <code>--restart=no</code>
+(the container is NOT removed). Decline → another port.</td></tr>
+<tr><td>Bare process</td>
+<td>Can't be freed automatically — you only pick another port.</td></tr>
+<tr><td>SSH</td>
+<td>Must not be quenched (management would die) — another port only.</td></tr>
+</table>
+<p>Quenched services/containers are recorded in the snapshot — "Revert
+server" brings them back.</p>
+
+<h2>7. "Revert server" — what it does</h2>
+<p>During deployment the tool writes a snapshot to
+<code>/etc/dgcloak/predeploy.env</code> before touching anything. The
+revert button:</p>
+<ul>
+<li>removes Cloak, OpenVPN configs, PKI, users, our unit files and firewall
+rules, and the local user configs on this PC;</li>
+<li>restores the previous port owner: a quenched service gets
+<code>enable --now</code>, a docker container gets its original
+restart-policy back and is started (with a dockerd restart if the ruleset
+was flushed);</li>
+<li>restores the original <code>ip_forward</code>, the original ufw lines
+(sysctl/forward-policy/before.rules), firewalld masquerade;</li>
+<li>removes only the packages we installed; pre-existing ones are kept;</li>
+<li>on a foreign nftables setup it re-dumps <code>/etc/nftables.conf</code>
+so our table doesn't resurrect after reboot.</li>
+</ul>
+<p><span class="note">Untouched:</span> SSH access, your account, foreign
+services and packages, keys in <code>~/.ssh</code>.</p>
+
+<h2>8. Files and folders</h2>
+<table>
+<tr><th style="width:300px">Path</th><th>Contents</th></tr>
+<tr><td><code>%APPDATA%\DGCloak\bin\</code></td>
+<td>Downloaded dependencies of both apps: ck-client, plink/pscp.</td></tr>
+<tr><td><code>%APPDATA%\DGCloak\VPN\</code></td>
+<td><code>data.json</code> (settings+profiles, no secrets),
+<code>last.log</code>/<code>prev.log</code>, <code>runtime.ovpn</code>,
+<code>pids.json</code>, <code>profiles\&lt;name&gt;\</code>.</td></tr>
+<tr><td><code>%APPDATA%\DGCloak\Admin\</code></td>
+<td>Server and user registry, journals, keys,
+<code>bundles\*.dgcloak</code> — ready user configs.</td></tr>
+</table>
+<p><span class="warn">data.json holds no secrets</span> — keys and
+certificates live in profile files and on the server.</p>
+
+<h2>9. FAQ</h2>
+<details><summary>Server silent / SSH hangs</summary>
+<p>The <b>Abort operation</b> button kills the hung command. The window
+title pulses "operation running for Ns". ISPs can cut long SSH sessions —
+check connectivity and retry the step.</p></details>
+<details><summary>"Warning: you're managing your own VPN server"</summary>
+<p>If the admin tool runs on a PC whose client is connected to that very
+server, it asks before mutating operations (reboot/revert/deploy). Losing
+the tunnel mid-deploy means a broken operation.</p></details>
+<details><summary>No "VPN IP" line in the status</summary>
+<p>The client couldn't determine the external IP (the tunnel was still
+coming up). The line appears once one of the three services answers; if it
+never does, the line stays hidden — that's normal.</p></details>
+<details><summary>"Cloak stopped — VPN down"</summary>
+<p>ck-client died (busy port, antivirus). With reconnect enabled the client
+reconnects by itself; otherwise Disconnect/Connect. Leftover processes from
+the previous run are killed via <code>pids.json</code> automatically.</p></details>
+<details><summary>"127.0.0.1 does not respond"</summary>
+<p>An abnormal OpenVPN exit ate the system loopback route — the client
+restores it before/after a session; if the warning persists, reboot the PC.</p></details>
+<details><summary>Language switched but the log stayed Russian</summary>
+<p>By design: the UI and new lines are translated. Old log entries and step
+notes are not rewritten (the "Language:" tooltip says the same).</p></details>
+<details><summary>TCP or UDP?</summary>
+<p>UDP is faster — it's the default. TCP if the network mangles UDP.
+Only changeable before deployment.</p></details>
+<details><summary>User "expired" / quota exhausted</summary>
+<p>They can't connect: the Cloak admin-API refuses. Extend via "Edit…" on
+the user (lifetime/quotas) — the config is reissued automatically.</p></details>
+
+<footer>DGCloak VPN · docs/user-guide-en.html · UI and logs — RU/EN</footer>
+</body>
+</html>
