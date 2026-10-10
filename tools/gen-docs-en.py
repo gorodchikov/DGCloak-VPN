@@ -525,6 +525,11 @@ CL = {
 "T30.3 клик по строке VPN IP → буфер = 5.6.7.8": "T30.3 click VPN IP line → clipboard = 5.6.7.8",
 "T30.4 клик по «Подключено:» → буфер не менялся": "T30.4 click non-IP line → clipboard unchanged",
 "T30.5 isp_ip=None → строки «Реальный IP» нет": "T30.5 isp_ip=None → no Real IP line",
+"T31.1 tun_server_ip: 10.8.0.2 → 10.8.0.1": "T31.1 tun_server_ip: 10.8.0.2 → 10.8.0.1",
+"T31.2 lan_ip() → IPv4 или None": "T31.2 lan_ip() → IPv4 or None",
+"T31.3 строки заполнены: lan/cli/srv": "T31.3 fields filled: lan/cli/srv",
+"T31.4 клик по tun-адресу → буфер": "T31.4 click tun address → clipboard",
+"T31.5 tun_ip=None → «—»": "T31.5 tun_ip=None → «—»",
 }
 
 AD = {

@@ -1035,6 +1035,30 @@ def t_real_ip_copy(app):
     app.ext_ip = None
 
 
+def t_netinfo(app):
+    """T31: инфо-строка Advanced — LAN/tun адреса, клик копирует."""
+    check("T31.1 tun_server_ip: 10.8.0.2 → 10.8.0.1",
+          CO.tun_server_ip("10.8.0.2") == "10.8.0.1")
+    ip = CO.lan_ip()
+    check("T31.2 lan_ip() → IPv4 или None",
+          ip is None or re.match(r"^\d+\.\d+\.\d+\.\d+$", ip) is not None, ip)
+    app._lan_ip = None                       # сброс кэша — реальный вызов
+    app.tun_ip = "10.8.0.6"
+    app._refresh_netinfo()
+    vals = {k: v.cget("text") for k, v in app._net_vals.items()}
+    check("T31.3 строки заполнены: lan/cli/srv",
+          vals["cli"] == "10.8.0.6" and vals["srv"] == "10.8.0.1"
+          and vals["lan"] != "", vals)
+    ev = type("E", (), {"x_root": 0, "y_root": 0, "widget": app._net_vals["cli"]})
+    app._net_copy(ev)
+    check("T31.4 клик по tun-адресу → буфер", app.clipboard_get() == "10.8.0.6")
+    app.tun_ip = None
+    app._refresh_netinfo()
+    vals = {k: v.cget("text") for k, v in app._net_vals.items()}
+    check("T31.5 tun_ip=None → «—»",
+          vals["cli"] == "—" and vals["srv"] == "—", vals)
+
+
 def t_autorun(app):
     """T29: «Запускаться вместе с Windows» — галочка↔HKCU\\...\\Run."""
     try:                                   # снять и вернуть старое значение
@@ -1105,6 +1129,7 @@ def main():
     t_start_minimized(app)
     t_verbose_persist(app)
     t_real_ip_copy(app)
+    t_netinfo(app)
     t_autorun(app)
     t_migrate()
     try:

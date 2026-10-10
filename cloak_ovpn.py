@@ -168,6 +168,10 @@ STRINGS_EN = {
     "Реальный IP:": "Real IP:",
     "Клик по строке с IP скопирует его в буфер обмена":
         "Click an IP line to copy it to the clipboard",
+    "Клик по адресу копирует его в буфер обмена":
+        "Click an address to copy it to the clipboard",
+    "tun клиент:": "tun client:",
+    "tun сервер:": "tun server:",
     "{ip} скопирован в буфер обмена": "{ip} copied to clipboard",
     "Скопировано": "Copied",
     "Автоподключение «{name}»…": "Auto-connecting «{name}»…",
@@ -442,6 +446,31 @@ def autorun_set(enabled):
                 winreg.DeleteValue(k, RUN_VALUE)
             except FileNotFoundError:
                 pass
+
+
+def lan_ip():
+    """IP LAN-интерфейса — интерфейс дефолтного маршрута из `route print -4`.
+    При активном def1-туннеле маска 128.0.0.0 отсекается — берём именно 0.0.0.0/0."""
+    try:
+        out = subprocess.check_output(["route", "print", "-4"],
+                                      stdin=subprocess.DEVNULL, creationflags=NO_WINDOW,
+                                      text=True, errors="replace")
+        for line in out.splitlines():
+            p = line.split()
+            if len(p) >= 4 and p[0] == "0.0.0.0" and p[1] == "0.0.0.0":
+                return p[3]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
+def tun_server_ip(tun_ip):
+    """Серверный адрес туннеля по клиентскому: первый адрес подсети OpenVPN
+    (server <net> <mask> → сервер занимает .1; topology subnet)."""
+    try:
+        return tun_ip.rsplit(".", 1)[0] + ".1"
+    except (AttributeError, IndexError):
+        return None
 
 
 def probe(host, port, timeout=2.0):
@@ -1194,6 +1223,8 @@ class App(tk.Tk):
         self.verb = False
         self.ext_ip = None      # внешний IP через VPN (резолвится после CONNECTED)
         self.isp_ip = None      # внешний IP провайдера (замерен до подключения)
+        self.tun_ip = None      # клиентский адрес туннеля (из mgmt CONNECTED)
+        self._lan_ip = None     # кэш LAN IP (за сессию не меняется)
         self._copy_rows = {}    # строка статуса → IP (клик копирует в буфер)
         self.up_since = None
         self.bypass_missing = False
@@ -1380,6 +1411,20 @@ class App(tk.Tk):
         self.log.config(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
         self.log.pack(fill="both", expand=True, padx=4, pady=4)
+        # сетевая инфо-строка внизу панели: LAN + оба конца туннеля, клик — копия
+        netf = ttk.Frame(self.adv)
+        netf.pack(fill="x", pady=(4, 0))
+        self._net_lbls = {}
+        self._net_vals = {}
+        for key, lbl in (("lan", "LAN IP:"), ("cli", "tun клиент:"), ("srv", "tun сервер:")):
+            l = ttk.Label(netf, text=t(lbl))
+            l.pack(side="left")
+            self._net_lbls[key] = (l, lbl)
+            v = ttk.Label(netf, text="—", font=("Consolas", 9), cursor="hand2")
+            v.pack(side="left", padx=(2, 10))
+            v.bind("<Button-1>", self._net_copy)
+            self._net_vals[key] = v
+        Tooltip(netf, t("Клик по адресу копирует его в буфер обмена"))
         self._refresh_combo(self.data.get("last_profile"))
 
     def _on_lang_pick(self, _e):
@@ -1411,6 +1456,8 @@ class App(tk.Tk):
                         "переводятся только новые.")
         if getattr(self, "_status_tip", None):
             self._status_tip.text = t("Клик по строке с IP скопирует его в буфер обмена")
+        for l, ru in getattr(self, "_net_lbls", {}).values():
+            l.config(text=t(ru))
         if self._status_msg:
             text, color, kw = self._status_msg
             self.set_status(text, color, **kw)
@@ -1452,6 +1499,7 @@ class App(tk.Tk):
 
     def _show_adv(self):
         if not self.adv_open:            # флаг ведём сами: winfo_ismapped() отстаёт от pack()
+            self._refresh_netinfo()
             self.adv.pack(fill="both", expand=True, padx=10, pady=(0, 10))
             self.b_adv.config(text=self.t("Дополнительно ▴"))
             self.adv_open = True
@@ -1637,6 +1685,25 @@ class App(tk.Tk):
                  relief="solid", bd=1, padx=6, pady=2, font=("", 9)).pack()
         tw.geometry("+%d+%d" % (e.x_root + 12, e.y_root - 26))
         self.after(900, tw.destroy)
+
+    def _net_copy(self, e):
+        ip = e.widget.cget("text")
+        if not ip or ip == "—":
+            return
+        self.clipboard_clear()
+        self.clipboard_append(ip)
+        self.say("{ip} скопирован в буфер обмена", ip=ip)
+        self._copied_tip(e)
+
+    def _refresh_netinfo(self):
+        """Инфо-строка панели: LAN IP + клиентский/серверный адреса туннеля."""
+        if self._lan_ip is None:
+            self._lan_ip = lan_ip() or ""    # за сессию LAN почти не меняется — кэш
+        vals = {"lan": self._lan_ip or "—",
+                "cli": self.tun_ip or "—",
+                "srv": tun_server_ip(self.tun_ip) if self.tun_ip else "—"}
+        for k, v in vals.items():
+            self._net_vals[k].config(text=v)
 
     def _copy_log(self):
         self.clipboard_clear()
@@ -2272,6 +2339,12 @@ class App(tk.Tk):
                 line = line.strip()
                 m = STATE_RE.match(line)
                 if m:
+                    if m.group(1) == "CONNECTED":
+                        # >STATE:…,CONNECTED,SUCCESS,<tun-ip>,<remote>,<port>
+                        parts = line.split(",")
+                        if len(parts) > 3 and self.tun_ip != parts[3]:
+                            self.tun_ip = parts[3]
+                            self.ui(self._refresh_netinfo)
                     self._on_state(m.group(1), p)
                 elif line.startswith(">PASSWORD:"):
                     self.say("OpenVPN запрашивает логин/пароль — это пока не поддерживается: {line}", line=line)
@@ -2400,6 +2473,8 @@ class App(tk.Tk):
         self.up_since = None
         self.ext_ip = None
         self.isp_ip = None
+        self.tun_ip = None
+        self.ui(self._refresh_netinfo)
         self._copy_rows = {}
         self.bypass_missing = False
         self.traffic = None
