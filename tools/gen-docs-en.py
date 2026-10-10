@@ -197,6 +197,8 @@ CEN = {
  "b83ec36": "admin: external SSH keys copied into keys\\<srv>\\ on save",
  "8a6d8af": "docs+tests: U13 translations, check name without quotes, reports",
  "65fffb7": "docs: reports for key stashing + translations",
+ "c5afa01": "client: profile rename fixes + admin: DPAPI for secrets",
+ "a887a89": "docs+tests: check names without backslash (harvester truncated)",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
  "c1cfa05": "firewalld: zone forward + own verification and audit branch (backlog #1)",
@@ -360,6 +362,9 @@ BUGS = [
     ("Deploy", "firewalld: --add-masquerade was set without --add-forward — forwarding never opened on firewalld \u22650.9; there was no post-check either (generic nft/iptables checks would have lied)", "c1cfa05"),
     ("Admin", "Server mark was blank when deployed with a skipped step (cancelled updates) or after key import \u2014 it looked undeployed. Third mark \u2713-", "ab040d8"),
     ("Admin", "Online columns: \u201cnot probed yet\u201d and \u201cunreachable\u201d looked identically blank; on a black-holed host probe threads piled up every 15 s \u2014 in-flight dedup + explicit \u2026/\u2713/\u2717/\u2014 states", "c1425cc"),
+    ("Client", "Profile rename left files in profiles\\<old name> (the \u201calready our copy\u201d check skipped them) \u2014 orphan folders piled up; also: duplicate and safe-name collisions (\u00abe x\u00bb vs \u00abe_x\u00bb) shared one folder with mutual rmtree", "c5afa01"),
+    ("Client", "Renamed managed profile (from admin) lost inbox sync: .del/<cn>@<srv> missed it \u2192 permanent orphan. Managed profile name is now readonly", "c5afa01"),
+    ("Admin", "SSH password and Cloak admin_uid were stored in data.json as plaintext \u2014 now DPAPI *_dp blobs (CryptProtectData, readable only under this user on this PC)", "c5afa01"),
 ]
 bug_rows = "".join(
     '<tr><td style="width:120px"><span class=tag>%s</span></td>'
@@ -463,6 +468,10 @@ CL = {
 "T21.4 inbox .del → профиль удалён": "T21.4 inbox .del \u2192 profile removed",
 "T22.1 ярлык снят на всех трёх десктопах": "T22.1 shortcut removed on all three desktops",
 "T22.2 повторный вызов без ярлыка → пусто, без ошибок": "T22.2 second call without shortcut \u2192 empty, no errors",
+"T23.1 переименование: файлы и ключи переехали в profiles/<new>": "T23.1 rename: files and keys moved to profiles/<new>",
+"T23.2 safe-коллизия («e x» vs «e_x») → отказ": "T23.2 safe-name collision (\u00abe x\u00bb vs \u00abe_x\u00bb) \u2192 rejected",
+"T23.3 правка без смены имени → ок": "T23.3 edit without rename \u2192 ok",
+"T23.4 managed: поле имени readonly": "T23.4 managed: name field readonly",
 }
 
 AD = {
@@ -585,6 +594,10 @@ AD = {
 "U14.3 edit: новый внешний ключ стешен": "U14.3 edit: new external key stashed",
 "U14.4 rename: key+ppk переехали за новым именем": "U14.4 rename: key+ppk moved with new name",
 "U14.5 несуществующий файл → путь как был": "U14.5 missing file \u2192 path kept as-is",
+"U15.1 в файле нет открытых password/admin_uid": "U15.1 no plaintext password/admin_uid in file",
+"U15.2 в памяти секреты остались открытыми": "U15.2 secrets stay plaintext in memory",
+"U15.3 load_data → расшифровано обратно": "U15.3 load_data \u2192 decrypted back",
+"U15.4 пустой секрет → без *_dp и без поля": "U15.4 empty secret \u2192 no *_dp, no field",
 }
 
 LG = {
