@@ -347,9 +347,12 @@ STRINGS_EN = {
     # --- тултипы ---
     "✓ развёрнут, все шаги ok\n✓- развёрнут, но есть пропущенные шаги\n"
     "⚠ есть предупреждение/ошибка в шагах\n"
-    "пусто — не развёрнут или не прошёл аудит":
+    "пусто — не развёрнут или не прошёл аудит\n"
+    "SSH/Cloak: ✓ порт доступен · ✗ недоступен · "
+    "… проверяется · — н/д":
         "✓ deployed, all steps ok\n✓- deployed, some steps skipped\n"
-        "⚠ warning/error in steps\nempty — not deployed or audit failed",
+        "⚠ warning/error in steps\nempty — not deployed or audit failed\n"
+        "SSH/Cloak: ✓ reachable · ✗ down · … probing · — n/a",
     "Шаги идут сверху вниз, готовые шаги — пропускаются":
         "Steps run top to bottom; completed steps are skipped",
     "Выполнить один выбранный в таблице шаг —\nточечный повтор после исправления ошибки":
@@ -2057,6 +2060,7 @@ class App(tk.Tk):
         self._log_ctx = None      # на каком сервере идёт операция
         self._op_tab = None       # канал лога операции: "deploy"|"users"
         self._online = {}         # (name, ssh|cloak) -> bool: порт доступен
+        self._probing = set()     # (name, which) в полёте — без дублей
         self._no_sel_ev = False   # глушит <<TreeviewSelect>> при rebuild
         self.verbose = tk.BooleanVar(value=False)
         self._verbose_on = False  # потокобезопасный дубль для _say
@@ -2452,7 +2456,9 @@ class App(tk.Tk):
                   "✓ развёрнут, все шаги ok\n"
                   "✓- развёрнут, но есть пропущенные шаги\n"
                   "⚠ есть предупреждение/ошибка в шагах\n"
-                  "пусто — не развёрнут или не прошёл аудит")
+                  "пусто — не развёрнут или не прошёл аудит\n"
+                  "SSH/Cloak: ✓ порт доступен · ✗ недоступен · "
+                  "… проверяется · — н/д")
         btns = ttk.Frame(left)
         btns.pack(fill="x", padx=4, pady=4)
         for t, c in (("Добавить", self._srv_add),
@@ -2745,9 +2751,15 @@ class App(tk.Tk):
             return " ✓-"
         return ""
 
-    def _srv_online_txt(self, name, which):
-        ok = self._online.get((name, which))
-        return "" if ok is None else ("✓" if ok else "✗")
+    def _srv_online_txt(self, s, which):
+        # cloak на неразвёрнутом: TCP-проба не отличит наш ck-server от
+        # чужого TLS на 443 — колонка неприменима, а не «недоступен»
+        if which == "cloak" and not s.get("deployed"):
+            return "—"
+        ok = self._online.get((s["name"], which))
+        if ok is None:
+            return "…"   # первая проба ещё не вернулась
+        return "✓" if ok else "✗"
 
     def _refresh_servers(self):
         # delete+insert сносит выделение — сохраняем его, иначе
@@ -2762,8 +2774,8 @@ class App(tk.Tk):
                 self.srv_tv.insert(
                     "", "end", iid=name,
                     values=(name + self._srv_mark(s),
-                            self._srv_online_txt(name, "ssh"),
-                            self._srv_online_txt(name, "cloak")))
+                            self._srv_online_txt(s, "ssh"),
+                            self._srv_online_txt(s, "cloak")))
             if keep and self.srv_tv.exists(keep):
                 self.srv_tv.selection_set(keep)
         finally:
@@ -2778,40 +2790,52 @@ class App(tk.Tk):
         while True:
             for s in list(self.data.get("servers", [])):
                 host = s.get("host")
-                threading.Thread(
-                    target=self._probe_srv,
-                    args=(s.get("name"), "ssh", host,
-                          int(s.get("ssh_port") or 22)),
-                    daemon=True).start()
+                self._spawn_probe(s.get("name"), "ssh", host,
+                                  int(s.get("ssh_port") or 22))
                 ck = s.get("ck_port")
                 if s.get("deployed") and ck:
-                    threading.Thread(
-                        target=self._probe_srv,
-                        args=(s.get("name"), "cloak", host, int(ck)),
-                        daemon=True).start()
+                    self._spawn_probe(s.get("name"), "cloak", host,
+                                      int(ck))
                 elif self._online.get((s.get("name"), "cloak")) is not None:
                     self._online[(s.get("name"), "cloak")] = None
                     self.ui(lambda n=s.get("name"): self._srv_online_set(
                             n, "cloak"))
             time.sleep(15)
 
-    def _probe_srv(self, name, which, host, port):
-        ok = False
-        if host:
-            try:
-                socket.create_connection((host, port), timeout=4).close()
-                ok = True
-            except OSError:
-                pass
+    def _spawn_probe(self, name, which, host, port):
+        # в полёте на (сервер, порт) не больше одной пробы — иначе на
+        # «чёрной дыре» потоки плодились бы каждые 15 с
         key = (name, which)
-        prev = self._online.get(key)
-        self._online[key] = ok
-        if prev != ok:
-            self.ui(lambda: self._srv_online_set(name, which))
+        if key in self._probing:
+            return
+        self._probing.add(key)
+        threading.Thread(target=self._probe_srv,
+                         args=(name, which, host, port),
+                         daemon=True).start()
+
+    def _probe_srv(self, name, which, host, port):
+        key = (name, which)
+        try:
+            ok = False
+            if host:
+                try:
+                    socket.create_connection((host, port),
+                                             timeout=4).close()
+                    ok = True
+                except OSError:
+                    pass
+            prev = self._online.get(key)
+            self._online[key] = ok
+            if prev != ok:
+                self.ui(lambda: self._srv_online_set(name, which))
+        finally:
+            self._probing.discard(key)
 
     def _srv_online_set(self, name, which):
-        if self.srv_tv.exists(name):
-            self.srv_tv.set(name, which, self._srv_online_txt(name, which))
+        s = next((x for x in self.data["servers"]
+                  if x["name"] == name), None)
+        if s and self.srv_tv.exists(name):
+            self.srv_tv.set(name, which, self._srv_online_txt(s, which))
 
     def _apply_opt_lock(self):
         """Порт/протокол зашиты в конфиги юзеров — правка на развёрнутом

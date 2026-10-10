@@ -520,6 +520,22 @@ def u10_srv_mark():
     check("U10.7 метка: все ok, но deployed снят → пусто",
           m({"steps": all_ok}) == "")
 
+    # онлайн-колонки SSH/Cloak: ✓ ✗ … — (три состояния + н/д)
+    ot = app._srv_online_txt
+    dep = {"name": "sD", "deployed": True}
+    und = {"name": "sU", "deployed": False}
+    app._online.clear()
+    check("U10.8 онлайн: до первой пробы → …",
+          ot(dep, "ssh") == "…")
+    app._online[("sD", "ssh")] = True
+    app._online[("sD", "cloak")] = False
+    check("U10.9 онлайн: доступен ✓ / недоступен ✗",
+          ot(dep, "ssh") == "✓" and ot(dep, "cloak") == "✗")
+    check("U10.10 cloak на неразвёрнутом → — (н/д)",
+          ot(und, "cloak") == "—")
+    check("U10.11 ssh на неразвёрнутом всё равно пробуется → …",
+          ot(und, "ssh") == "…")
+
 
 # ======================================================================
 # U11. provision_client: профиль в клиентский inbox
