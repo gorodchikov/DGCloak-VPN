@@ -201,6 +201,8 @@ CEN = {
  "a887a89": "docs+tests: check names without backslash (harvester truncated)",
  "199f9bd": "docs: reports for rename fixes and DPAPI + translations",
  "73bb4c0": "client: per-profile disk logs (JSONL+rotation), framed log w/ scrollbar, buttons in a row, window-resize fix on Advanced",
+ "bd00eb0": "client tray: guide below separator, exit item by state (active/busy→with stop, idle→Exit+abort prompt)",
+ "3a34615": "docs: reports for profile journals + window-resize fix",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
  "c1cfa05": "firewalld: zone forward + own verification and audit branch (backlog #1)",
