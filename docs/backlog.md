@@ -1,23 +1,22 @@
 # Backlog — отложенные задачи
 
-## 1. Firewalld-бэкенд: полноценная верификация NAT/forward
+## 1. ~~Firewalld-бэкенд: полноценная верификация NAT/forward~~
 
-**Статус:** отложено. **Приоритет:** низкий (на поддерживаемых дистрах
-Ubuntu 20–26 / Debian 11–13 firewalld нет из коробки).
+**Статус:** сделано. Реализация по схеме «детект → своя ветка»:
+firewalld-пробы выполняются только когда `fw_backend`/`FW` = firewalld,
+для остальных бэкендов логика прежняя.
 
-Текущее состояние: `_step_nat` для `fw == "firewalld"` делает только
-`firewall-cmd --permanent --add-masquerade --zone=public`, а пост-проверка
-(`masq 10.8.0.0/24` + forward-правила `tun0`) для firewalld сознательно
-пропущена — её проверки на iptables/nft на этом бэкенде давали бы ложный
-`warn`.
-
-Что нужно при реализации:
-- проверять `firewall-cmd --query-masquerade --zone=public`;
-- проверять форвардинг между зонами: на firewalld ≥ 1.0 masquerade
-  не открывает forward — нужен `--add-forward` на интерфейсах или
-  policy-объект (`--new-policy`, `--add-ingress-zone`, `--add-egress-zone`);
-- в `probe.sh` добавить firewalld-ветку аудита (`--query-masquerade` +
-  наличие forward-policy для tun0), иначе аудит будет врать в обе стороны.
+- `_step_nat`: к masquerade добавлен `--add-forward --zone=public`
+  (на firewalld ≥ 0.9 masq сам по себе forward не открывает; на старее
+  опции нет — ошибка глушится, там masq открывал forward сам).
+- Пост-проверка для firewalld: `--query-masquerade` + `--query-forward`
+  (ответ `yes/no`; опция недоступна → `na`, пропускаем).
+- `probe.sh`: firewalld-ветка аудита NAT — те же два query, выводится
+  `nat_ok`/`nat_no_masq`/`nat_no_fwd`/`no_forward`.
+- Снимок/revert: `predeploy-save.sh` пишет `FIREWALLD_FWD=yes|no|na`;
+  `purge-dgcloak.sh` снимает `--remove-forward`, только если до нас было
+  `no`.
+- admintest: U9.21–U9.25.
 
 ## 2. ~~Предупреждение: сервер управляется через свой же VPN-туннель~~
 

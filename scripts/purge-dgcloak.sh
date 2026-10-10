@@ -103,6 +103,11 @@ if command -v firewall-cmd >/dev/null 2>&1 && \
     else
         firewall-cmd --permanent --remove-masquerade >/dev/null 2>&1 || true
     fi
+    # --add-forward мы ставили сами (firewalld ≥0.9): снимаем,
+    # только если до нас его не было; на старом firewalld опции нет
+    [ "$(pdget FIREWALLD_FWD)" = "no" ] && \
+        firewall-cmd --permanent --remove-forward --zone=public \
+            >/dev/null 2>&1 || true
     firewall-cmd --permanent "--remove-port=$CK_PORT/tcp" >/dev/null 2>&1 || true
     firewall-cmd --reload >/dev/null 2>&1 || true
     _ "firewalld: наш порт $CK_PORT/tcp снят" \

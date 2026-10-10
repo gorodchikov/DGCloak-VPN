@@ -3536,8 +3536,14 @@ class App(tk.Tk):
             for ln in out.splitlines():
                 self.say("  " + ln)
         elif fw == "firewalld":
+            # На firewalld >= 0.9 masquerade сам по себе forward не
+            # открывает — нужен --add-forward на зоне. На старых версиях
+            # опции нет (masq открывал forward сам) — ошибку глушим.
             ssh.run("%sbash -c 'firewall-cmd --permanent --add-masquerade "
-                    "--zone=public && firewall-cmd --reload && "
+                    "--zone=public && "
+                    "firewall-cmd --permanent --add-forward --zone=public "
+                    "2>/dev/null; "
+                    "firewall-cmd --reload && "
                     "echo net.ipv4.ip_forward=1 "
                     "> /etc/sysctl.d/99-dgcloak-vpn.conf && "
                     "sysctl -w net.ipv4.ip_forward=1'" % ssh.sudo, timeout=60)
@@ -3561,7 +3567,23 @@ class App(tk.Tk):
         # Пост-проверка: masq именно 10.8.0.0/24 и forward-правила tun0
         # реально стоят. Иначе «успешный» деплой без интернета —
         # чужие docker/amnezia masq давали ложное ok (живой кейс AWS).
-        if fw != "firewalld":
+        if fw == "firewalld":
+            # Своя ветка: masq в зоне public + forward (опция с 0.9;
+            # на старее ответа нет вообще → F=na, пропускаем — там masq
+            # включал форвардинг сам).
+            chk = ssh.run(
+                "%sbash -c 'M=no; firewall-cmd --query-masquerade "
+                "--zone=public >/dev/null 2>&1 && M=yes;"
+                "O=$(firewall-cmd --query-forward --zone=public 2>/dev/null);"
+                "F=na; [ \"$O\" = yes ] && F=yes; [ \"$O\" = no ] && F=no;"
+                "echo V:NAT=$M:FWD=$F'" % ssh.sudo, timeout=30)
+            mv = re.search(r"V:NAT=(\w+):FWD=(\w+)", chk)
+            m_v, f_v = (mv.group(1), mv.group(2)) if mv else ("?", "?")
+            if m_v != "yes" or f_v == "no":
+                return "fail", self.t(
+                    "NAT/форвардинг не подтвердился (masq=%s, fwd_rules=%s)"
+                    % (m_v, f_v))
+        else:
             # NB: один sudo на всю команду — в pw-режиме пароль читается
             # из stdin один раз, второй sudo в цепочке получает EOF.
             chk = ssh.run(

@@ -101,7 +101,23 @@ iptables -t nat -S POSTROUTING 2>/dev/null \
 FWRULE=""
 nft list chain inet dgcloak forward 2>/dev/null | grep -q tun0 && FWRULE=1
 iptables -S 2>/dev/null | grep -q tun0 && FWRULE=1
-if [ "$FWD" != "1" ]; then
+if [ "$FW" = "firewalld" ]; then
+    # Своя ветка — nft/iptables-проверки на firewalld врали бы.
+    # --query-forward есть с firewalld 0.9; на старее опции нет
+    # (stdout пуст) — там masq открывал forward сам.
+    MASQ=""; firewall-cmd --query-masquerade --zone=public \
+        >/dev/null 2>&1 && MASQ=1
+    OFWD=$(firewall-cmd --query-forward --zone=public 2>/dev/null)
+    if [ "$FWD" != "1" ]; then
+        emit nat "fail" "no_forward"
+    elif [ -z "$MASQ" ]; then
+        emit nat "warn" "nat_no_masq"
+    elif [ "$OFWD" = "no" ]; then
+        emit nat "warn" "nat_no_fwd"
+    else
+        emit nat "ok" "nat_ok"
+    fi
+elif [ "$FWD" != "1" ]; then
     emit nat "fail" "no_forward"
 elif [ -z "$NATOK" ]; then
     emit nat "warn" "nat_no_masq"

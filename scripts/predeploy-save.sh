@@ -31,6 +31,12 @@ fi
        firewall-cmd --state >/dev/null 2>&1; then
         firewall-cmd --query-masquerade >/dev/null 2>&1 \
             && echo "FIREWALLD_MASQ=yes" || echo "FIREWALLD_MASQ=no"
+        # --query-forward есть с firewalld 0.9; на старее опции нет —
+        # там forward держал сам masq, снимать нечего → пишем na
+        O=$(firewall-cmd --query-forward --zone=public 2>/dev/null)
+        [ "$O" = yes ] && echo "FIREWALLD_FWD=yes"
+        [ "$O" = no ] && echo "FIREWALLD_FWD=no"
+        [ -z "$O" ] && echo "FIREWALLD_FWD=na"
     fi
     # ufw-оригиналы — до правок deploy-net-ufw.sh
     [ -f /etc/default/ufw ] && \

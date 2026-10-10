@@ -476,6 +476,22 @@ def u9_revert():
           "systemctl restart docker" in pg and "не стартовал" in pg)
     check("U9.20 ключ-фолбэк помечает host:port (PerSourcePenalties)",
           "_auth_pw_hosts" in src and "_pw_forced" in src)
+    # firewalld-ветка (backlog п.1): forward ставится и проверяется своей
+    # веткой; на <0.9 опции нет — masq открывал forward сам
+    check("U9.21 _step_nat firewalld: --add-forward в зоне",
+          'add-forward --zone=public' in src)
+    check("U9.22 _step_nat firewalld: пост-проверка "
+          "query-masquerade/query-forward",
+          "--query-masquerade" in src and "--query-forward" in src)
+    check("U9.23 снимок: FIREWALLD_FWD (forward до нас)",
+          "FIREWALLD_FWD" in pd)
+    check("U9.24 purge: FWD=no → --remove-forward",
+          'FIREWALLD_FWD)" = "no"' in pg and "--remove-forward" in pg)
+    pb = open(os.path.join(REPO, "scripts", "probe.sh"),
+              encoding="utf-8").read()
+    check("U9.25 probe: firewalld-ветка NAT заведена по FW=firewalld",
+          'FW" = "firewalld"' in pb and "--query-masquerade" in pb
+          and "--query-forward" in pb)
 
 
 # ======================================================================
