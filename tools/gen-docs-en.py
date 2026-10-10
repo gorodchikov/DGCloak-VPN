@@ -541,11 +541,15 @@ CL = {
 "T32.2 def1 сняты → paused=True": "T32.2 def1 removed → paused=True",
 "T32.3 статус «Пауза — трафик идёт напрямую»": "T32.3 status «Paused — traffic goes directly»",
 "T32.4 кнопка → «Возобновить»": "T32.4 button → «Resume»",
-"T32.5 пункт трея «Возобновить VPN»": "T32.5 tray item «Resume VPN»",
+"T32.5 пункт трея «Возобновить VPN» сразу после «Открыть»": "T32.5 tray item «Resume VPN» right after «Open»",
+"T32.5b тултип кнопки → «Возобновить VPN»": "T32.5b button tooltip → «Resume VPN»",
 "T32.6 «Возобновить» → route add, paused сброшен": "T32.6 Resume → route add, paused cleared",
 "T32.7 сторож: вернувшиеся def1 сняты повторно": "T32.7 watchdog: re-appeared def1 removed again",
 "T32.8 без tun_ip → молчим, route не трогаем": "T32.8 no tun_ip → stay silent, no route calls",
 "T32.9 paused-иконка рисуется (64px)": "T32.9 paused icon renders (64px)",
+"T32.10 тултип обратно → «Приостановить VPN»": "T32.10 tooltip back → «Pause VPN»",
+"T33.1 комбобокс по ширине «Подключить+Пауза»": "T33.1 combobox width matches «Connect+Pause» pair",
+"T33.2 высота окна не прыгает от многострочного статуса": "T33.2 window height stable across multiline status",
 }
 
 AD = {

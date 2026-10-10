@@ -85,7 +85,7 @@ def draw_tray_icon(color, size=64, paused=False):
     canvas.paste(fig, ((side - fig.width) // 2, (side - fig.height) // 2), fig)
     if paused:
         d = ImageDraw.Draw(canvas)
-        bw, gap, h = side // 9, side // 8, side * 2 // 5     # полоски по центру плаща
+        bw, gap, h = side // 5, side // 9, side // 2       # полоски по центру плаща
         x0, y0 = (side - 2 * bw - gap) // 2, (side - h) // 2 + side // 14
         for i in range(2):
             x = x0 + i * (bw + gap)

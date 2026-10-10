@@ -187,6 +187,12 @@ STRINGS_EN = {
         "Could not remove VPN routes — check administrator rights.",
     "def1-маршруты вернулись (re-key?) — сняты повторно":
         "def1 routes are back (re-key?) — removed again",
+    "Приостановить VPN — трафик пойдёт напрямую, мимо туннеля.\n"
+    "Для ресурсов, недоступных через VPN.":
+        "Pause the VPN — traffic will go directly, outside the tunnel.\n"
+        "For resources that are unreachable through the VPN.",
+    "Возобновить VPN — трафик снова пойдёт через туннель.":
+        "Resume the VPN — traffic will go through the tunnel again.",
     "{ip} скопирован в буфер обмена": "{ip} copied to clipboard",
     "Скопировано": "Copied",
     "Автоподключение «{name}»…": "Auto-connecting «{name}»…",
@@ -1388,8 +1394,12 @@ class App(tk.Tk):
         box.pack(fill="x", padx=10, pady=(10, 10))
         box.columnconfigure(0, weight=1)
 
-        self.combo = ttk.Combobox(box, state="readonly", width=30)
-        self.combo.grid(row=0, column=0, sticky="w", pady=(0, 6))
+        # комбобокс в рамке фиксированной ширины — по ширине пары кнопок
+        # «Подключить + Пауза» (выставляется ниже после раскладки)
+        self.combo_box = ttk.Frame(box)
+        self.combo_box.grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self.combo = ttk.Combobox(self.combo_box, state="readonly")
+        self.combo.pack(fill="x")
         self.combo.bind("<<ComboboxSelected>>", lambda e: self._sync_current())
         btns = ttk.Frame(box)
         btns.grid(row=0, column=1, sticky="e", pady=(0, 6))
@@ -1408,17 +1418,31 @@ class App(tk.Tk):
         self.b_pause = ttk.Button(row1, text=t("Пауза"), width=BTN_W,
                                   command=self._toggle_pause, state="disabled")
         self.b_pause.pack(side="left", padx=(8, 0))
-        # статус — отдельной строкой под кнопкой, столбиком; окно подгоняет высоту
+        self._pause_tip = Tooltip(self.b_pause, t(
+            "Приостановить VPN — трафик пойдёт напрямую, мимо туннеля.\n"
+            "Для ресурсов, недоступных через VPN."))
+        # статус — отдельной строкой под кнопкой, столбиком; рамка фиксированной
+        # высоты (6 строк = максимум статуса с предупреждением) — высота окна
+        # не прыгает между «отключено» (1 строка) и «подключено» (5-6 строк)
         # моноширинный шрифт — значения статуса выравниваются столбцом
-        self.status = ttk.Label(box, text=t("Отключено"), foreground="gray",
+        self._status_ls = tkfont.Font(font=("Consolas", 9)).metrics("linespace")
+        self.status_box = ttk.Frame(box, height=6 * self._status_ls + 4)
+        self.status_box.pack_propagate(False)
+        self.status_box.grid(row=2, column=0, columnspan=2, sticky="ew", padx=2, pady=(0, 4))
+        self.status = ttk.Label(self.status_box, text=t("Отключено"), foreground="gray",
                                 justify="left", anchor="nw", font=("Consolas", 9))
-        self.status.grid(row=2, column=0, columnspan=2, sticky="w", padx=2, pady=(0, 4))
+        self.status.pack(anchor="nw")
         # клик по строке с IP копирует адрес; высоту строки берём из метрик шрифта
-        self._status_ls = tkfont.Font(font=self.status.cget("font")).metrics("linespace")
         self.status.bind("<Button-1>", self._status_click)
         self.status.bind("<Motion>", self._status_hover)
         self._status_tip = Tooltip(
             self.status, t("Клик по строке с IP скопирует его в буфер обмена"))
+
+        # ширина комбобокса профиля = ширине пары кнопок «Подключить + Пауза»
+        self.update_idletasks()
+        self.combo_box.pack_propagate(False)
+        self.combo_box.config(
+            width=self.btn.winfo_reqwidth() + 8 + self.b_pause.winfo_reqwidth())
 
         self.b_adv = ttk.Button(box, text=t("Дополнительно ▾"), width=BTN_W, command=self._toggle_adv)
         self.b_adv.grid(row=3, column=0, sticky="w")
@@ -1837,10 +1861,10 @@ class App(tk.Tk):
         idle = lambda it: not self.busy  # noqa: E731
         yield MI(self.t("Открыть"), lambda i, it: self.ui(self._show), default=True)
         if self.active:
-            yield MI(self.t("Отключить «{name}»", name=self.active["name"]),
-                     lambda i, it: self.ui(self._toggle), enabled=idle)
             yield MI(self.t("Возобновить VPN" if self.paused else "Пауза VPN"),
                      lambda i, it: self.ui(self._toggle_pause), enabled=idle)
+            yield MI(self.t("Отключить «{name}»", name=self.active["name"]),
+                     lambda i, it: self.ui(self._toggle), enabled=idle)
             if any(p["name"] != self.active["name"] for p in self.data["profiles"]):
                 yield MI(self.t("Отключить «{name}» и подключить",
                                 name=self.active["name"]),
@@ -2173,6 +2197,10 @@ class App(tk.Tk):
         """Кнопка/меню/статус по флагу paused. При снятии паузы обычный статус
         возвращаем сами — route-операции состояний от демона не порождают."""
         self.b_pause.config(text=self.t("Возобновить" if self.paused else "Пауза"))
+        self._pause_tip.text = self.t(
+            "Возобновить VPN — трафик снова пойдёт через туннель." if self.paused
+            else "Приостановить VPN — трафик пойдёт напрямую, мимо туннеля.\n"
+                 "Для ресурсов, недоступных через VPN.")
         self._refresh_tray_menu()
         if self.paused:
             self.set_status("Пауза — трафик идёт напрямую", "orange")

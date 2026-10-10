@@ -1110,8 +1110,10 @@ def t_pause(app):
         check("T32.4 кнопка → «Возобновить»",
               app.b_pause.cget("text") == "Возобновить", app.b_pause.cget("text"))
         texts = [str(getattr(i, "text", i)) for i in app._tray_items()]
-        check("T32.5 пункт трея «Возобновить VPN»",
-              "Возобновить VPN" in texts, texts)
+        check("T32.5 пункт трея «Возобновить VPN» сразу после «Открыть»",
+              len(texts) > 1 and texts[1] == "Возобновить VPN", texts)
+        check("T32.5b тултип кнопки → «Возобновить VPN»",
+              "Возобновить" in app._pause_tip.text, app._pause_tip.text)
 
         app._toggle_pause()
         wait_busy()
@@ -1134,11 +1136,30 @@ def t_pause(app):
 
         img = CO.cloak_icon.draw_tray_icon("#00ee5c", 64, paused=True)
         check("T32.9 paused-иконка рисуется (64px)", img.size == (64, 64))
+        app._pause_ui(); pump(app)
+        check("T32.10 тултип обратно → «Приостановить VPN»",
+              "Приостановить" in app._pause_tip.text, app._pause_tip.text)
     finally:
         (app.active, app.busy, app.paused, app.tun_ip, app.last_state,
          app.data["profiles"], CO.def1_route, CO.route_print) = old
         app.up_since = None
         pump(app)
+
+
+def t_layout(app):
+    """T33: геометрия окна — комбобокс по ширине кнопок, статус не прыгает."""
+    app.update_idletasks()
+    target = app.btn.winfo_reqwidth() + 8 + app.b_pause.winfo_reqwidth()
+    check("T33.1 комбобокс по ширине «Подключить+Пауза»",
+          abs(app.combo_box.winfo_reqwidth() - target) <= 2,
+          (app.combo_box.winfo_reqwidth(), target))
+    h0 = app.winfo_reqheight()
+    app.set_status("Подключено:\na\nb\nc\nd\ne", "green")
+    pump(app); app.update_idletasks()
+    check("T33.2 высота окна не прыгает от многострочного статуса",
+          app.winfo_reqheight() == h0, (h0, app.winfo_reqheight()))
+    app.set_status("Отключено", "gray")
+    pump(app)
 
 
 def t_autorun(app):
@@ -1213,6 +1234,7 @@ def main():
     t_real_ip_copy(app)
     t_netinfo(app)
     t_pause(app)
+    t_layout(app)
     t_autorun(app)
     t_migrate()
     try:
