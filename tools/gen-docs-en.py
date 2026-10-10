@@ -204,6 +204,8 @@ CEN = {
  "bd00eb0": "client tray: guide below separator, exit item by state (active/busy→with stop, idle→Exit+abort prompt)",
  "3a34615": "docs: reports for profile journals + window-resize fix",
  "3568ffd": "client: autoconnect selected profile on startup + tray hint shows the real exit item",
+ "86438fb": "client: start minimized to tray option (Advanced, tray-only, no first-profile prompt when hidden)",
+ "866906d": "docs: reports for autoconnect + tray hint bug",
  "3a7d9d2": "docs: reports for tray menu and journals + guide tagline",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
