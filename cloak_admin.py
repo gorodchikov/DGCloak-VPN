@@ -23,6 +23,7 @@ import os
 import queue
 import re
 import secrets
+import shlex
 import shutil
 import socket
 import subprocess
@@ -316,7 +317,7 @@ STRINGS_EN = {
     "Только выбранный шаг": "Selected step only",
     "Проверить статусы": "Check statuses",
     "Управление фаерволом": "Firewall management",
-    "Сбросить сервер": "Reset server",
+    "Вернуть сервер": "Revert server",
     "Перезагрузить сервер": "Reboot server",
     "Отключить сейчас": "Disconnect now",
     "Отозвать и удалить": "Revoke and delete",
@@ -352,8 +353,10 @@ STRINGS_EN = {
         "Read-only server audit (probe): verify state\nand update step icons. If the server doesn't respond —\nthe \"deployed\" mark is cleared until a successful check",
     "Открытые порты сервера: список, открыть/закрыть\nсвой порт (nftables/ufw/firewalld/iptables)":
         "Server's open ports: list, open/close\na custom port (nftables/ufw/firewalld/iptables)",
-    "Удалить только то, что поставила админка: OpenVPN+Cloak,\nнаши правила фаервола, юзеров и локальные конфиги.\nЧужое (docker, данные, SSH-доступ) не трогает":
-        "Removes only what the admin installed: OpenVPN+Cloak,\nour firewall rules, users and local configs.\nForeign stuff (docker, data, SSH access) is untouched",
+    "Вернуть сервер к состоянию до деплоя: снести\nOpenVPN+Cloak, наши правила фаервола, юзеров\nи локальные конфиги; вернуть прежнего владельца\nпорта Cloak, docker-автозапуск и фаервол":
+        "Revert the server to its pre-deploy state: removes\nOpenVPN+Cloak, our firewall rules, users and local\nconfigs; restores the previous Cloak-port owner,\ndocker autostart and firewall state",
+    "  predeploy-снимок не записан: %s":
+        "  pre-deploy snapshot not written: %s",
     "sudo reboot — нужно, если шаг «Обновление системы»\nпомечен ⚠ «нужна перезагрузка»":
         "sudo reboot — needed if the \"System update\" step\nis marked ⚠ \"reboot required\"",
     "Весь лог вкладки в буфер обмена": "Copy the whole tab log to clipboard",
@@ -421,8 +424,8 @@ STRINGS_EN = {
         "Remove server \"%s\" from the list?\n\nLocal user configs will be deleted.\nThe SSH key stays in %s —\nyou can still log in with it later.\nThe server itself is untouched.",
     "Перезагрузить «%s»?\n\nСервер будет недоступен ~1 минуту.":
         "Reboot \"%s\"?\n\nThe server will be unavailable for ~1 minute.",
-    "Полный сброс «%s»:\n\nбудут удалены Cloak, OpenVPN, PKI, юзеры, наши\nправила фаервола и локальные конфиги юзеров.\nSSH-доступ и твой юзер НЕ затрагиваются —\nсервер можно развернуть заново.\n\nПродолжить?":
-        "Full reset of \"%s\":\n\nCloak, OpenVPN, PKI, users, our\nfirewall rules and local user configs will be removed.\nSSH access and your user are NOT affected —\nthe server can be deployed again.\n\nContinue?",
+    "Вернуть «%s» в состояние до деплоя?\n\nУдалит Cloak, OpenVPN, PKI, юзеров, наши\nправила фаервола и локальные конфиги юзеров;\nвернёт прежнего владельца порта, docker-\nавтозапуск и исходный фаервол (по снимку).\nSSH-доступ и твой юзер НЕ затрагиваются.\n\nПродолжить?":
+        "Revert \"%s\" to its pre-deploy state?\n\nRemoves Cloak, OpenVPN, PKI, users, our\nfirewall rules and local user configs; restores\nthe previous port owner, docker autostart and\nthe original firewall (from the snapshot).\nSSH access and your user are NOT affected.\n\nContinue?",
     "Отозвать «%s»?\n\nСертификат отзовётся (CRL), UID удалится,\nживая сессия будет сброшена.":
         "Revoke \"%s\"?\n\nThe certificate will be revoked (CRL), UID removed,\nthe live session will be dropped.",
     "UID %s…\nне из реестра админки — CN неизвестен, сертификат и живую сессию трогать не можем.\n\nУдалить UID из Cloak? (новые подключения закроются)":
@@ -514,9 +517,10 @@ STRINGS_EN = {
     "=== Шаг: %s ===": "=== Step: %s ===",
     "=== Аудит статусов на «%s» ===": "=== Status audit on \"%s\" ===",
     "=== Перезагрузка «%s» ===": "=== Rebooting \"%s\" ===",
-    "=== Полный сброс «%s» ===": "=== Full reset of \"%s\" ===",
+    "=== Возврат «%s» в исходное состояние ===":
+        "=== Reverting \"%s\" to pre-deploy state ===",
     "=== Проход завершён ===": "=== Pass complete ===",
-    "=== Сброс завершён (rc=%s) ===": "=== Reset complete (rc=%s) ===",
+    "=== Возврат завершён (rc=%s) ===": "=== Revert done (rc=%s) ===",
     "  OpenSSH-клиент: на месте": "  OpenSSH client: present",
     "  OpenSSH-клиент: установлен": "  OpenSSH client: installed",
     "  OpenSSH-клиент: НЕТ — нужен для входа по OpenSSH-ключу. Установка: Параметры → Приложения → Дополнительные компоненты → «Клиент OpenSSH», либо используй пароль/.ppk (для них хватит PuTTY)":
@@ -2514,10 +2518,11 @@ class App(tk.Tk):
             "Управление фаерволом":
                 "Открытые порты сервера: список, открыть/закрыть\n"
                 "свой порт (nftables/ufw/firewalld/iptables)",
-            "Сбросить сервер":
-                "Удалить только то, что поставила админка: OpenVPN+Cloak,\n"
-                "наши правила фаервола, юзеров и локальные конфиги.\n"
-                "Чужое (docker, данные, SSH-доступ) не трогает",
+            "Вернуть сервер":
+                "Вернуть сервер к состоянию до деплоя: снести\n"
+                "OpenVPN+Cloak, наши правила фаервола, юзеров\n"
+                "и локальные конфиги; вернуть прежнего владельца\n"
+                "порта Cloak, docker-автозапуск и фаервол",
             "Перезагрузить сервер":
                 "sudo reboot — нужно, если шаг «Обновление системы»\n"
                 "помечен ⚠ «нужна перезагрузка»",
@@ -2542,7 +2547,7 @@ class App(tk.Tk):
                   "— эта кнопка забирает с него ключи/юзеры Cloak,\n"
                   "не переустанавливая ничего. После этого сервером можно\n"
                   "управлять: юзеры, конфиги, статусы.")
-        for i, (t, c) in enumerate((("Сбросить сервер", self._srv_purge),
+        for i, (t, c) in enumerate((("Вернуть сервер", self._srv_purge),
                                     ("Перезагрузить сервер", self._srv_reboot),
                                     ("Копировать лог", self._copy_log_dep),
                                     ("Очистить лог", self._clear_log_dep)),
@@ -3007,7 +3012,9 @@ class App(tk.Tk):
         return True
 
     def _srv_purge(self):
-        """Полный сброс сервера: purge-dgcloak.sh по SSH + чистка реестра."""
+        """Вернуть сервер в состояние до деплоя: purge-dgcloak.sh по SSH
+        (восстанавливает прежнего владельца порта/фаервол по снимку
+        predeploy.env) + чистка реестра."""
         s = self._sel_srv()
         if not s:
             return
@@ -3015,17 +3022,19 @@ class App(tk.Tk):
             return
         if not messagebox.askyesno(
                 APP_NAME,
-                self.t("Полный сброс «%s»:\n\n"
-                "будут удалены Cloak, OpenVPN, PKI, юзеры, наши\n"
-                "правила фаервола и локальные конфиги юзеров.\n"
-                "SSH-доступ и твой юзер НЕ затрагиваются —\n"
-                "сервер можно развернуть заново.\n\n"
+                self.t("Вернуть «%s» в состояние до деплоя?\n\n"
+                "Удалит Cloak, OpenVPN, PKI, юзеров, наши\n"
+                "правила фаервола и локальные конфиги юзеров;\n"
+                "вернёт прежнего владельца порта, docker-\n"
+                "автозапуск и исходный фаервол (по снимку).\n"
+                "SSH-доступ и твой юзер НЕ затрагиваются.\n\n"
                 "Продолжить?") % s["name"]):
             return
 
         def work():
             ssh = SSH(s, self.say)
-            self.say(self.t("=== Полный сброс «%s» ===") % s["name"])
+            self.say(self.t("=== Возврат «%s» в исходное состояние ===")
+                     % s["name"])
             ck = str(s.get("ck_port") or "443")
             rc = ssh.run_script_stream(
                 "purge-dgcloak.sh", ck,
@@ -3039,7 +3048,7 @@ class App(tk.Tk):
             save_data(self.data)
             self.ui(self._fill_steps)
             self.ui(self._refresh_servers)
-            self.say(self.t("=== Сброс завершён (rc=%s) ===") % rc)
+            self.say(self.t("=== Возврат завершён (rc=%s) ===") % rc)
         self._worker(work)
 
     def _srv_reboot(self):
@@ -3292,10 +3301,41 @@ class App(tk.Tk):
                      % os.path.basename(old_key))
         return "ok", self.t("ключ установлен: %s") % os.path.basename(kp)
 
+    def _predeploy_note(self, ssh, kv):
+        """Дописать факт в /etc/dgcloak/predeploy.env — снимок для revert
+        («Вернуть сервер»). Не критично: без файла revert просто сносит наше."""
+        try:
+            ssh.run("%sbash -c 'mkdir -p /etc/dgcloak && echo %s >> "
+                    "/etc/dgcloak/predeploy.env'"
+                    % (ssh.sudo, shlex.quote(kv)), timeout=15)
+        except Exception as e:  # noqa: BLE001
+            self.say("  predeploy-snapshot: %r" % e)
+
+    def _predeploy_docker_pols(self, ssh, names):
+        """Записать исходный restart-policy контейнеров до того, как мы
+        выставим им restart=no — для «Вернуть сервер»."""
+        for c in names:
+            try:
+                pol = ssh.run("%sdocker inspect -f "
+                              "'{{.HostConfig.RestartPolicy.Name}}' %s"
+                              % (ssh.sudo, shlex.quote(c)),
+                              timeout=30).strip()
+            except Exception:  # noqa: BLE001
+                continue
+            if pol:
+                self._predeploy_note(ssh, "DOCKER_POLICY_%s=%s" % (c, pol))
+
     def _step_audit(self, ssh, s):
         out = ssh.run_script("detect.sh", timeout=60)
         for ln in out.splitlines():
             self.say("  " + ln)
+        # снимок «до деплоя» для revert — пока ещё ничего не меняли
+        try:
+            for ln in ssh.run_script("predeploy-save.sh",
+                                     timeout=30).splitlines():
+                self.say("  " + ln)
+        except Exception as e:  # noqa: BLE001 — снимок не критичен
+            self.say(self.t("  predeploy-снимок не записан: %s") % e)
         pkg = parse_section(out, "PKG").strip()
         ossec = parse_section(out, "OS")
         osid = re.search(r"ID=(\S+)", ossec)
@@ -3350,6 +3390,7 @@ class App(tk.Tk):
         m = re.search(r"FW=(\S+)", parse_section(out, "FW_BACKEND"))
         fw = m.group(1) if m else "none"
         s["fw_backend"] = fw
+        self._predeploy_note(ssh, "FW=" + fw)  # какой фаервол был до нас
         for ln in (self.t("--- правила ---\n") + parse_section(out, "FW_RULES")
                    + self.t("\n--- слушают снаружи (tcp) ---\n")
                    + parse_section(out, "LISTEN_TCP")).splitlines():
@@ -3555,6 +3596,7 @@ class App(tk.Tk):
                         "они воскреснут и могут занять порт %s.\n\n"
                         "Отключить их автозапуск? (контейнеры не удаляются)")
                         % (s["name"], ", ".join(autostart), ck)):
+                    self._predeploy_docker_pols(ssh, autostart)
                     ssh.run("%sdocker update --restart=no %s"
                             % (ssh.sudo, " ".join(autostart)), timeout=60)
                     self.say(self.t("  автозапуск amnezia-контейнеров "
@@ -3573,6 +3615,8 @@ class App(tk.Tk):
                         "Загасить его? (остановка + отключение автозапуска,\n"
                         "контейнер НЕ удаляется)") % (ck, who)):
                     self.say(self.t("  гашу контейнер «%s»…") % who)
+                    self._predeploy_docker_pols(ssh, [who])
+                    self._predeploy_note(ssh, "DOCKER_START=" + who)
                     ssh.run("%sbash -c 'docker stop %s && "
                             "docker update --restart=no %s'"
                             % (ssh.sudo, who, who), timeout=120)
@@ -3580,6 +3624,10 @@ class App(tk.Tk):
                              "(stop + restart=no)") % who)
                     # заодно у остальных amnezia-* снять автозапуск
                     if who.startswith("amnezia"):
+                        others = ssh.run(
+                            "%sdocker ps -aq --filter name=amnezia"
+                            % ssh.sudo, timeout=30).split()
+                        self._predeploy_docker_pols(ssh, others)
                         ssh.run("%sbash -c 'for c in $(docker ps -aq "
                                 "--filter name=amnezia); do "
                                 "docker update --restart=no $c; done'"
@@ -3592,6 +3640,7 @@ class App(tk.Tk):
                         "Загасить его? (systemctl stop + отключение "
                         "автозапуска)") % (ck, who)):
                     self.say(self.t("  гашу сервис «%s»…") % who)
+                    self._predeploy_note(ssh, "STOPPED_SVC=" + who)
                     ssh.run("%ssystemctl disable --now %s"
                             % (ssh.sudo, who), timeout=60)
                     self.say(self.t("  сервис «%s» загашен "

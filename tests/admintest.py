@@ -406,6 +406,58 @@ def u8_matrix():
 
 # ======================================================================
 
+# ======================================================================
+# U9. Revert server: снимок predeploy.env + восстановление в purge
+# ======================================================================
+
+def u9_revert():
+    pd = open(os.path.join(REPO, "scripts", "predeploy-save.sh"),
+              encoding="utf-8").read()
+    check("U9.1 predeploy-save: пишет /etc/dgcloak/predeploy.env",
+          "/etc/dgcloak/predeploy.env" in pd)
+    check("U9.2 predeploy-save: baseline не перезаписывается",
+          "baseline kept" in pd)
+    for k in ("IP_FORWARD", "OPENVPN_PKG", "EASYRSA_PKG", "NFT_PKG",
+              "FIREWALLD_MASQ", "UFW_FWD_POLICY", "UFW_IPFWD"):
+        check("U9.3 снимок содержит %s" % k, '"%s=' % k in pd or "%s=" % k in pd)
+
+    pg = open(os.path.join(REPO, "scripts", "purge-dgcloak.sh"),
+              encoding="utf-8").read()
+    check("U9.4 purge читает predeploy.env", "predeploy.env" in pg)
+    check("U9.5 purge: STOPPED_SVC → systemctl enable --now",
+          "STOPPED_SVC" in pg and "systemctl enable --now" in pg)
+    check("U9.6 purge: DOCKER_POLICY_* → docker update --restart",
+          "DOCKER_POLICY_" in pg and "docker update --restart" in pg)
+    check("U9.7 purge: DOCKER_START → docker start",
+          "DOCKER_START" in pg and "docker start" in pg)
+    check("U9.8 purge: ip_forward из снимка, не хардкод 0",
+          "pdget IP_FORWARD" in pg)
+    check("U9.9 purge: FW=none → снос пакета nftables",
+          '"$(pdget FW)" = "none"' in pg and "purge -y -qq nftables" in pg)
+    check("U9.10 purge: чужой nft → re-dump ruleset (fix воскрешения таблицы)",
+          "nft list ruleset > /etc/nftables.conf" in pg)
+    check("U9.11 purge: ufw-оригиналы (UFW_FWD_POLICY/UFW_IPFWD)",
+          "UFW_FWD_POLICY" in pg and "UFW_IPFWD" in pg)
+    check("U9.12 purge: firewalld masq оставляем если был",
+          "FIREWALLD_MASQ" in pg)
+    check("U9.13 purge: pre-existing openvpn/easy-rsa не сносятся",
+          "OPENVPN_PKG" in pg and "EASYRSA_PKG" in pg)
+
+    src = open(os.path.join(REPO, "cloak_admin.py"), encoding="utf-8").read()
+    check("U9.14 audit шаг вызывает predeploy-save.sh",
+          '"predeploy-save.sh"' in src)
+    check("U9.15 _step_fw записывает FW= в снимок",
+          '_predeploy_note(ssh, "FW="' in src)
+    check("U9.16 _step_cloak записывает STOPPED_SVC",
+          '"STOPPED_SVC="' in src)
+    check("U9.17 _step_cloak записывает docker-политики и DOCKER_START",
+          "_predeploy_docker_pols" in src and '"DOCKER_START="' in src)
+    check("U9.18 кнопка переименована в «Вернуть сервер»",
+          '"Вернуть сервер"' in src and '"Сбросить сервер"' not in src)
+
+
+# ======================================================================
+
 u1_localization()
 u2_regressions()
 u2_pipefail_scripts()
@@ -417,5 +469,6 @@ u6_apply_probe()
 u6_configs()
 u7_dialogs()
 u8_matrix()
+u9_revert()
 
 finish(app)
