@@ -577,6 +577,11 @@ AD = {
 "U13.5 u1: .del старого + .dgcloak нового, pname обновлён": "U13.5 u1: old .del + new .dgcloak, pname updated",
 "U13.6 u2 без бандла: pname=<old>, маркеров нет": "U13.6 u2 without bundle: pname=<old>, no markers",
 "U13.7 delete по pname → .del бьёт в старое имя": "U13.7 delete by pname \u2192 .del hits old name",
+"U14.1 add: внешние ключи скопированы в keys\\<srv>": "U14.1 add: external keys copied into keys\\<srv>",
+"U14.2 повторный stash: пути не меняются": "U14.2 re-stash: paths unchanged",
+"U14.3 edit: новый внешний ключ стешен": "U14.3 edit: new external key stashed",
+"U14.4 rename: key+ppk переехали за новым именем": "U14.4 rename: key+ppk moved with new name",
+"U14.5 несуществующий файл → путь как был": "U14.5 missing file \u2192 path kept as-is",
 }
 
 LG = {

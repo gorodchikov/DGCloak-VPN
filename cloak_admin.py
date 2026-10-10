@@ -874,6 +874,41 @@ def _migrate_layout():
                         os.rmdir(p)
                     except OSError:
                         pass
+    # внешние ключи из реестра → keys\<srv>\ (единое место хранения)
+    try:
+        d = load_data()
+        changed = any(stash_keys(s) for s in d.get("servers", []))
+        if changed:
+            save_data(d)
+    except Exception:
+        pass
+
+
+def stash_keys(s):
+    """Внешние ключи сервера → keys\\<имя>\\<basename>: все ключи в одном
+    месте, реестр держит локальные пути (переживают удаление исходника и
+    переезд APP_DIR). Файлы, которые уже лежат внутри, не трогаем.
+    True = хоть один путь переписан."""
+    if not s.get("name"):
+        return False
+    kd = os.path.join(APP_DIR, "keys", re.sub(r"[^\w-]", "_", s["name"]))
+    kdn = os.path.normpath(os.path.abspath(kd)) + os.sep
+    changed = False
+    for f in ("key", "ppk"):
+        src = (s.get(f) or "").strip()
+        if (not src or not os.path.isfile(src)
+                or os.path.normpath(os.path.abspath(src)).startswith(kdn)):
+            continue
+        try:
+            os.makedirs(kd, exist_ok=True)
+            dst = os.path.join(kd, os.path.basename(src))
+            if os.path.normpath(src) != os.path.normpath(dst):
+                shutil.copy2(src, dst)
+            s[f] = dst
+            changed = True
+        except OSError:
+            pass
+    return changed
 
 
 def load_data():
@@ -2983,6 +3018,7 @@ class App(tk.Tk):
         d = ServerDialog(self)
         if d.result:
             d.result["users"] = []
+            stash_keys(d.result)
             self.data["servers"].append(d.result)
             save_data(self.data)
             self._refresh_servers()
@@ -3014,10 +3050,11 @@ class App(tk.Tk):
                 kd_new = os.path.join(APP_DIR, "keys",
                                       re.sub(r"[^\w-]", "_", s["name"]))
                 if self._move_dir(kd_old, kd_new):
-                    k = s.get("key")
-                    if (k and os.path.normpath(os.path.dirname(k))
-                            == os.path.normpath(kd_old)):
-                        s["key"] = os.path.join(kd_new, os.path.basename(k))
+                    for f in ("key", "ppk"):
+                        k = s.get(f)
+                        if (k and os.path.normpath(os.path.dirname(k))
+                                == os.path.normpath(kd_old)):
+                            s[f] = os.path.join(kd_new, os.path.basename(k))
                 # бандлы юзеров — та же привязка к имени
                 self._move_dir(os.path.join(BUNDLES_DIR, old),
                                os.path.join(BUNDLES_DIR, s["name"]))
@@ -3037,6 +3074,7 @@ class App(tk.Tk):
                         u["pname"] = new_p
                     else:
                         u["pname"] = old_p
+            stash_keys(s)  # новые внешние ключи из диалога → в keys\
             save_data(self.data)
             self._refresh_servers()
 

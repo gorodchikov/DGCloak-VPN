@@ -728,6 +728,79 @@ def u13_rename():
 
 
 # ======================================================================
+# U14. Внешние ключи копируются в keys\<srv>\ при сохранении сервера
+# ======================================================================
+
+def u14_key_stash():
+    ext = tempfile.mkdtemp(prefix="dgext-")
+    ext_k = os.path.join(ext, "aws.pem")
+    ext_p = os.path.join(ext, "aws.ppk")
+    open(ext_k, "w").write("KEYDATA")
+    open(ext_p, "w").write("PPKDATA")
+    name = "u14 srv"
+    kd = os.path.join(CA.APP_DIR, "keys", re.sub(r"[^\w-]", "_", name))
+    _orig = CA.ServerDialog
+    try:
+        # добавление: оба внешних ключа копируются, пути переписаны
+        class _D:
+            result = {"name": name, "host": "1.2.3.4",
+                      "key": ext_k, "ppk": ext_p}
+        CA.ServerDialog = lambda *a, **k: _D()
+        app._srv_add()
+        srv = app.data["servers"][-1]
+        check("U14.1 add: внешние ключи скопированы в keys\\<srv>",
+              srv["key"] == os.path.join(kd, "aws.pem")
+              and srv["ppk"] == os.path.join(kd, "aws.ppk")
+              and open(srv["key"]).read() == "KEYDATA"
+              and open(srv["ppk"]).read() == "PPKDATA")
+        # повторный stash — no-op (файл уже внутри)
+        check("U14.2 повторный stash: пути не меняются",
+              not CA.stash_keys(srv))
+        # правка: новый внешний ключ тоже стешится
+        new_k = os.path.join(ext, "aws2.pem")
+        open(new_k, "w").write("KEY2")
+        class _D2:
+            result = {"name": name, "host": "1.2.3.4",
+                      "key": new_k, "ppk": srv["ppk"]}
+        CA.ServerDialog = lambda *a, **k: _D2()
+        app.data["servers"] = [srv]
+        app._refresh_servers()
+        lib.sel(app, 0)
+        app._srv_edit()
+        check("U14.3 edit: новый внешний ключ стешен",
+              srv["key"] == os.path.join(kd, "aws2.pem")
+              and open(srv["key"]).read() == "KEY2")
+        # переименование: ppk-путь тоже переписывается за папкой
+        name2 = "u14 srv2"
+        kd2 = os.path.join(CA.APP_DIR, "keys",
+                           re.sub(r"[^\w-]", "_", name2))
+        class _D3:
+            result = {"name": name2, "host": "1.2.3.4",
+                      "key": srv["key"], "ppk": srv["ppk"]}
+        CA.ServerDialog = lambda *a, **k: _D3()
+        app._srv_edit()
+        check("U14.4 rename: key+ppk переехали за новым именем",
+              srv["key"] == os.path.join(kd2, "aws2.pem")
+              and srv["ppk"] == os.path.join(kd2, "aws.ppk")
+              and os.path.isfile(srv["key"])
+              and os.path.isfile(srv["ppk"]))
+        # удалённый внешний файл: путь не трогаем, ошибка будет при SSH
+        s3 = {"name": "u14 ghost", "key": os.path.join(ext, "gone.pem")}
+        check("U14.5 несуществующий файл → путь как был",
+              not CA.stash_keys(s3) and s3["key"].endswith("gone.pem"))
+    finally:
+        CA.ServerDialog = _orig
+        app.data["servers"] = [s for s in app.data["servers"]
+                               if s.get("name") not in (name, "u14 srv2")]
+        import shutil as _sh
+        _sh.rmtree(os.path.join(CA.APP_DIR, "keys", name),
+                   ignore_errors=True)
+        _sh.rmtree(os.path.join(CA.APP_DIR, "keys", "u14 srv2"),
+                   ignore_errors=True)
+        app._refresh_servers()
+
+
+# ======================================================================
 
 u1_localization()
 u2_regressions()
@@ -745,5 +818,6 @@ u10_srv_mark()
 u11_provision()
 u12_journal_files()
 u13_rename()
+u14_key_stash()
 
 finish(app)
