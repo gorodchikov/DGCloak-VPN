@@ -15,11 +15,13 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 import tkinter as tk
 import urllib.request
 import webbrowser
+import winreg
 from tkinter import filedialog, messagebox, ttk
 
 try:
@@ -45,6 +47,8 @@ GUIDE_URL = ("https://gorodchikov.github.io/DGCloak-VPN-releases/"
              "user-guide-%s.html")
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 LOG_MAX = 256 * 1024   # журнал профиля: >256К → файл уходит в .old, 2 поколения
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"  # автозапуск HKCU
+RUN_VALUE = "DGCloakVPN"
 
 DEFAULT_DATA = {
     "ck_client": r"C:\Tools\Cloak\ck-client-windows-amd64.exe",
@@ -158,6 +162,8 @@ STRINGS_EN = {
         "App keeps running in tray. Exit: right-click icon → «%s».",
     "Подключаться при запуске": "Connect on startup",
     "Сворачивать в трей при запуске": "Start minimized to tray",
+    "Запускаться вместе с Windows": "Start with Windows",
+    "Не удалось изменить автозапуск: {e}": "Failed to change autorun: {e}",
     "Автоподключение «{name}»…": "Auto-connecting «{name}»…",
     # мастер установки
     "Настройка программ": "Program setup",
@@ -399,6 +405,37 @@ def save_data(data):
     os.makedirs(APP_DIR, exist_ok=True)
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def autorun_path():
+    """Команда автозапуска: exe в сборке, в dev — pythonw + скрипт."""
+    if getattr(sys, "frozen", False):
+        return '"%s"' % sys.executable
+    pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+    return '"%s" "%s"' % (pyw if os.path.isfile(pyw) else sys.executable,
+                          os.path.abspath(__file__))
+
+
+def autorun_get():
+    """True, если программа стоит в автозапуске HKCU\\...\\Run."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+            return bool(winreg.QueryValueEx(k, RUN_VALUE)[0])
+    except OSError:
+        return False
+
+
+def autorun_set(enabled):
+    """Записать/удалить значение автозапуска. OSError при неудаче."""
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
+                        winreg.KEY_SET_VALUE) as k:
+        if enabled:
+            winreg.SetValueEx(k, RUN_VALUE, 0, winreg.REG_SZ, autorun_path())
+        else:
+            try:
+                winreg.DeleteValue(k, RUN_VALUE)
+            except FileNotFoundError:
+                pass
 
 
 def probe(host, port, timeout=2.0):
@@ -1163,6 +1200,7 @@ class App(tk.Tk):
         self.verbose = tk.BooleanVar(value=bool(self.data.get("verbose")))
         self.autoconnect = tk.BooleanVar(value=bool(self.data.get("autoconnect")))
         self.start_minimized = tk.BooleanVar(value=bool(self.data.get("start_minimized")))
+        self.autorun = tk.BooleanVar(value=autorun_get())
         self.adv_open = False
         self._hint_shown = False
         self._log_lock = threading.Lock()
@@ -1198,6 +1236,11 @@ class App(tk.Tk):
     def _first_run(self):
         """Первый запуск: подставить найденные пути; если чего-то нет — мастер установки.
         Если программы на месте, а профилей нет — предложить добавить первый."""
+        try:
+            if autorun_get():
+                autorun_set(True)  # освежить путь — exe мог переехать при обновлении
+        except OSError:
+            pass
         if not os.path.isfile(self.data["ck_client"]):
             found = find_ck_client()
             if found:
@@ -1291,6 +1334,10 @@ class App(tk.Tk):
 
         # Скрываемая панель: лог и редко нужные настройки
         self.adv = ttk.Frame(self)
+        self.chk_autorun = ttk.Checkbutton(
+            self.adv, text=t("Запускаться вместе с Windows"),
+            variable=self.autorun, command=self._on_autorun)
+        self.chk_autorun.pack(anchor="w", pady=(4, 0))
         self.chk_auto = ttk.Checkbutton(
             self.adv, text=t("Подключаться при запуске"),
             variable=self.autoconnect, command=self._on_autoconnect)
@@ -1340,6 +1387,7 @@ class App(tk.Tk):
         self.b_clear.config(text=t("Очистить лог"))
         self.b_paths.config(text=t("Пути к Cloak и OpenVPN…"))
         self.chk_verbose.config(text=t("Отладочный лог OpenVPN (применится при следующем подключении)"))
+        self.chk_autorun.config(text=t("Запускаться вместе с Windows"))
         self.chk_auto.config(text=t("Подключаться при запуске"))
         self.chk_min.config(text=t("Сворачивать в трей при запуске"))
         self.logf.config(text=self._log_title())
@@ -1880,6 +1928,14 @@ class App(tk.Tk):
     def _on_verbose(self):
         self.data["verbose"] = bool(self.verbose.get())
         save_data(self.data)
+
+    def _on_autorun(self):
+        try:
+            autorun_set(bool(self.autorun.get()))
+        except OSError as e:
+            self.autorun.set(not self.autorun.get())   # вернуть галочку как было
+            messagebox.showerror(APP_NAME,
+                                 self.t("Не удалось изменить автозапуск: {e}", e=e))
 
     def _paths(self):
         for key, title in (("ck_client", "ck-client.exe"), ("openvpn_exe", "openvpn.exe")):

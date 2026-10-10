@@ -513,6 +513,9 @@ CL = {
 "T27.5 флаг off → не сворачивает": "T27.5 flag off → does not minimize",
 "T28.1 «Отладочный лог OpenVPN» → data.json": "T28.1 OpenVPN debug log checkbox → data.json",
 "T28.2 снятая галочка → False": "T28.2 unchecked → False",
+"T29.1 «Запускаться вместе с Windows» → значение в Run": "T29.1 Start with Windows checkbox → value in Run key",
+"T29.2 значение — команда запуска (exe/скрипт)": "T29.2 value is a launch command (exe/script)",
+"T29.3 снятая галочка → значения нет": "T29.3 unchecked → value removed",
 }
 
 AD = {

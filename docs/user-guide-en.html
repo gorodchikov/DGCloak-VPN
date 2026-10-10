@@ -304,11 +304,12 @@ The close and minimize buttons hide the window to the tray.</td></tr>
 <td>Reveals the log and buttons: <b>Copy log</b>, <b>Clear log</b>,
 <b>Paths to Cloak and OpenVPN…</b>, the <b>OpenVPN debug log</b>
 checkbox (<code>--verb 4</code>, applies on next connect, persisted
-across runs), and two startup options: <b>Connect on startup</b> — the selected profile
-connects automatically when the app starts; <b>Start minimized to
-tray</b> — the app starts straight in the tray without showing the
-window (combined with autoconnect the VPN comes up silently; only
-works when the tray icon is available). The log is the
+across runs), and three startup options: <b>Start with Windows</b> —
+launches the app on sign-in; <b>Connect on startup</b> — the selected
+profile connects automatically when the app starts; <b>Start minimized
+to tray</b> — the app starts straight in the tray without showing the
+window (only works when the tray icon is available). All three
+together give a fully silent VPN autostart in the tray. The log is the
 selected profile's journal: it persists on disk across runs
 (<code>VPN\logs\&lt;profile&gt;\session.log</code>, rotates to
 <code>.old</code> at 256 KB); switching profiles shows that profile's

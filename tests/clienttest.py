@@ -8,7 +8,7 @@
 
 Запуск: python tests\\clienttest.py   (выход 0 — всё зелёное)
 """
-import sys, os, io, re, ast, json, time, tempfile, threading, shutil
+import sys, os, io, re, ast, json, time, tempfile, threading, shutil, winreg
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -1002,6 +1002,38 @@ def t_verbose_persist(app):
           json.load(open(CO.DATA_FILE, encoding="utf-8"))["verbose"] is False)
 
 
+def t_autorun(app):
+    """T29: «Запускаться вместе с Windows» — галочка↔HKCU\\...\\Run."""
+    try:                                   # снять и вернуть старое значение
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, CO.RUN_KEY) as k:
+            old_val = winreg.QueryValueEx(k, CO.RUN_VALUE)[0]
+    except OSError:
+        old_val = None
+    try:
+        app.autorun.set(True); app._on_autorun()
+        check("T29.1 «Запускаться вместе с Windows» → значение в Run",
+              CO.autorun_get())
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, CO.RUN_KEY) as k:
+            v = winreg.QueryValueEx(k, CO.RUN_VALUE)[0]
+        check("T29.2 значение — команда запуска (exe/скрипт)",
+              "cloak_ovpn.py" in v or ".exe" in v.lower(), v)
+        app.autorun.set(False); app._on_autorun()
+        check("T29.3 снятая галочка → значения нет", not CO.autorun_get())
+    finally:
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, CO.RUN_KEY, 0,
+                                winreg.KEY_SET_VALUE) as k:
+                if old_val is None:
+                    try:
+                        winreg.DeleteValue(k, CO.RUN_VALUE)
+                    except FileNotFoundError:
+                        pass
+                else:
+                    winreg.SetValueEx(k, CO.RUN_VALUE, 0, winreg.REG_SZ, old_val)
+        except OSError:
+            pass
+
+
 def t_migrate():
     ok = os.path.isfile(os.path.join(CO.BIN_DIR, "ck-client.exe")) \
         and not os.path.isdir(CO.OLD_APP_DIR) and os.path.isfile(CO.DATA_FILE)
@@ -1039,6 +1071,7 @@ def main():
     t_autoconnect(app)
     t_start_minimized(app)
     t_verbose_persist(app)
+    t_autorun(app)
     t_migrate()
     try:
         app.destroy()
