@@ -28,6 +28,33 @@ Deploy all, опасными шагами (fw/sysupd/pkgs/ovpn/nat/cloak), purge
 Ограничение: детектит только наш клиент (DGCloakVPN); сторонние VPN
 (Amnezia и т.п.) не видны.
 
+## 2b. Матрица поддержки: RHEL-семейство (dnf)
+
+**Статус:** план. Лабы поднимаются: Rocky 9, Alma 9, Fedora 41/42.
+
+Что нужно в коде/скриптах:
+
+- `pkgs.sh`, `sysupdate.sh`, `deploy-openvpn.sh`, `deploy-net-iptables.sh`,
+  `purge-amnezia.sh`, `purge-dgcloak.sh`, `probe.sh` — ветки dnf вместо apt
+  (openvpn/easy-rsa на RHEL-клонах — через `epel-release`; на Fedora — из
+  базовых реп). Путь easy-rsa на RHEL — `/usr/share/easy-rsa/3`, не
+  `/usr/share/easy-rsa`.
+- **SELinux** (enforcing на всём семействе): OpenVPN на tcp/443 не
+  забиндится без `semanage port -m -t openvpn_port_t -p tcp 443` (+udp при
+  UDP-режиме). Пакет `policycoreutils-python-utils`. Откат — снять метку.
+- firewalld — уже поддержан (fw-detect/fw-manage), проверить на живом
+  firewalld-хосте.
+- `iptables-persistent` (deploy-net-iptables.sh) — debian-only пакет; для
+  RHEL-семейства ветка через nftables (`/etc/sysconfig/nftables.conf`) или
+  чистый firewalld-путь.
+- `_detect_check`/матрица в `cloak_admin.py`: `rocky`/`alma`/`fedora` +
+  версии (9, 41/42).
+- detect.sh: убедиться, что PKG=dnf корректно ловится (уже печатает).
+
+Amazon Linux 2023 — осознанно пропускаем: курируемые репы без EPEL
+(easy-rsa под вопросом), образ только cloud-init, аудитория = EC2, где он
+и так нативный. Вернёмся, если появятся юзеры на AWS.
+
 ## 3. ~~Добивать дочерние plink/pscp/ssh при выходе админки~~
 
 **Статус:** сделано (`600b19a`). Реестр `Admin\pids.json` (PID → имя exe):
