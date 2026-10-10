@@ -300,15 +300,15 @@ STRINGS_EN = {
     "Язык:": "Language:",
     "Руководство пользователя": "User guide",
     "Подробный вывод": "Verbose output",
-    "Стоп операцию": "Abort operation",
+    "Остановить операцию": "Stop operation",
     "с": "s",
     "Убить зависшую SSH-команду\n(провайдер рвёт связь, сервер молчит)":
         "Kill the hung SSH command\n(ISP dropped the link, server went silent)",
     "  прерываю операцию…": "  aborting the operation…",
     "(прервано пользователем)": "(aborted by user)",
     "…операция идёт уже %d с": "…operation running for %ds already",
-    "операция на «%s», можно прервать кнопкой «Стоп»":
-        "operation on «%s», press «Abort operation» to stop it",
+    "операция на «%s», можно прервать кнопкой «Остановить»":
+        "operation on «%s», press «Stop» to abort it",
     "SSH tcp/%s на %s недоступен (проверь связь/VPN)":
         "SSH tcp/%s on %s is unreachable (check connectivity/VPN)",
     "Шаг": "Step",
@@ -2579,7 +2579,7 @@ class App(tk.Tk):
         el = int(time.time() - (self._op_started or time.time()))
         self.title("%s — %s (%d %s)" % (
             APP_NAME,
-            self.t("операция на «%s», можно прервать кнопкой «Стоп»")
+            self.t("операция на «%s», можно прервать кнопкой «Остановить»")
             % (self._log_ctx or "?"),
             el, self.t("с")))
         if el and el % 15 == 0 and el != getattr(self, "_beat_last", 0):
@@ -2588,7 +2588,7 @@ class App(tk.Tk):
         self.after(1000, self._op_tick)
 
     def _op_stop(self):
-        """Кнопка «Стоп»: не ждём таймаут plink — убиваем текущий процесс,
+        """Кнопка «Остановить»: не ждём таймаут plink — убиваем текущий процесс,
         операция завершится ошибкой и разблокирует интерфейс."""
         if not self.busy:
             return
@@ -2635,12 +2635,12 @@ class App(tk.Tk):
                         command=lambda: self._srv_move(-1))
         self._tip(up, "Поднять в списке")
         up.pack(side="right", padx=2)
-        # «Стоп» живёт вне _all_buttons: именно он должен оставаться живым,
-        # пока остальные кнопки заблокированы висящей операцией
+        # «Остановить» живёт вне _all_buttons: именно она должна оставаться
+        # живой, пока остальные кнопки заблокированы висящей операцией
         self.btn_stop = ttk.Button(left, state="disabled",
                                    command=self._op_stop)
-        self._i18n.append((self.btn_stop, "Стоп операцию", ()))
-        self.btn_stop.config(text=self.t("Стоп операцию"))
+        self._i18n.append((self.btn_stop, "Остановить операцию", ()))
+        self.btn_stop.config(text=self.t("Остановить операцию"))
         self._tip(self.btn_stop, "Убить зависшую SSH-команду\n"
                   "(провайдер рвёт связь, сервер молчит)")
         self.btn_stop.pack(fill="x", padx=4, pady=(0, 4))
@@ -2840,7 +2840,9 @@ class App(tk.Tk):
             "limit": "Лимит ↑/↓", "quota": "Квота ↑/↓",
             "expiry": "Истекает", "mask": "Домен маскировки",
             "online": "Онлайн"}
-        widths = {"cn": 120, "sessions": 50, "limit": 100, "quota": 100,
+        # sessions: «Макс. сессий» = 73px текста + паддинг заголовка — 50 не
+        # хватало, добрали по 20 у limit/quota (их заголовки всё ещё влезают)
+        widths = {"cn": 120, "sessions": 90, "limit": 80, "quota": 80,
                   "expiry": 90, "mask": 140, "online": 55}
         for c in cols:
             ctr = c in ("sessions", "online")
