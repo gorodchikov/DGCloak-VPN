@@ -190,6 +190,8 @@ CEN = {
  "4e7aa92": "admin: per-server journals on disk — logs\\<srv>\\<deploy|users>.log",
  "8eec5c9": "tools+docs: report generators into repo, auto-regen convention in CLAUDE.md",
  "a300004": "client: remove \"OpenVPN GUI\" desktop shortcut after our install",
+ "cddcd60": "client: SHChangeNotify after shortcut removal — icon gone without F5",
+ "f4e4c0f": "docs: reports for the shortcut fix + translations of new commits",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
  "c1cfa05": "firewalld: zone forward + own verification and audit branch (backlog #1)",
