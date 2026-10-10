@@ -244,10 +244,10 @@ STRINGS_EN = {
     "Иконка и трей отключены: установите пакеты  pip install pystray pillow":
         "Tray icon disabled: run  pip install pystray pillow",
     "Не удалось создать иконку в трее: {e}": "Failed to create tray icon: {e}",
-    "Язык интерфейса переключён. Уже выведенные в лог записи "
-    "останутся на прежнем языке — переводятся только новые.":
-        "Interface language switched. Log entries already written remain "
-        "in the previous language — only new ones are translated.",
+    "Уже выведенные в лог записи останутся на прежнем языке — "
+    "переводятся только новые.":
+        "Log entries already written remain in the previous language — "
+        "only new ones are translated.",
     "В последнем релизе Cloak не найден ck-client-windows-amd64*.exe":
         "ck-client-windows-amd64*.exe not found in the latest Cloak release",
     "Cloak не скачался: {e}. Скачайте вручную: github.com/cbeuw/Cloak/releases":
@@ -995,6 +995,40 @@ class ProfileDialog(tk.Toplevel):
         self.destroy()
 
 
+class Tooltip:
+    """Простой всплывающий текст при наведении на виджет."""
+
+    def __init__(self, widget, text):
+        self.text = text
+        self.tip = None
+        widget.bind("<Enter>", self._show)
+        widget.bind("<Leave>", self._hide)
+
+    def _show(self, _e=None):
+        if self.tip or _e is None:
+            return
+        wgt = _e.widget
+        x = wgt.winfo_rootx() + 16
+        y = wgt.winfo_rooty() + wgt.winfo_height() + 4
+        tw = tk.Toplevel(wgt)
+        tw.overrideredirect(True)
+        tw.attributes("-topmost", True)
+        tk.Label(tw, text=self.text, bg="#ffffd8", fg="#222",
+                 relief="solid", bd=1, padx=6, pady=4,
+                 font=("", 9), justify="left").pack()
+        tw.update_idletasks()
+        # у нижнего края экрана показываем подсказку над виджетом
+        if y + tw.winfo_reqheight() > wgt.winfo_screenheight():
+            y = wgt.winfo_rooty() - tw.winfo_reqheight() - 4
+        tw.geometry("+%d+%d" % (x, y))
+        self.tip = tw
+
+    def _hide(self, _e=None):
+        if self.tip:
+            self.tip.destroy()
+            self.tip = None
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -1132,6 +1166,9 @@ class App(tk.Tk):
         self.lang_combo.set(LANG_NAMES[self.lang()])
         self.lang_combo.pack(side="left", padx=(4, 0))
         self.lang_combo.bind("<<ComboboxSelected>>", self._on_lang_pick)
+        tip = self.t("Уже выведенные в лог записи останутся на прежнем языке — "
+                     "переводятся только новые.")
+        self._lang_tips = [Tooltip(w, tip) for w in (self.lang_label, self.lang_combo)]
 
         # Скрываемая панель: лог и редко нужные настройки
         self.adv = ttk.Frame(self)
@@ -1159,9 +1196,6 @@ class App(tk.Tk):
             self.data["language"] = code
             save_data(self.data)
             self._apply_lang()
-            messagebox.showinfo(APP_NAME, self.t(
-                "Язык интерфейса переключён. Уже выведенные в лог записи "
-                "останутся на прежнем языке — переводятся только новые."))
 
     def _apply_lang(self):
         """Перетекстировать все виджеты и меню трея на выбранном языке."""
@@ -1176,6 +1210,9 @@ class App(tk.Tk):
         self.b_paths.config(text=t("Пути к Cloak и OpenVPN…"))
         self.chk_verbose.config(text=t("Отладочный лог OpenVPN (применится при следующем подключении)"))
         self.lang_label.config(text=t("Язык:"))
+        for tp in getattr(self, "_lang_tips", ()):
+            tp.text = t("Уже выведенные в лог записи останутся на прежнем языке — "
+                        "переводятся только новые.")
         if self._status_msg:
             text, color, kw = self._status_msg
             self.set_status(text, color, **kw)
@@ -1330,9 +1367,12 @@ class App(tk.Tk):
         idle = lambda it: not self.busy  # noqa: E731
         yield MI(self.t("Открыть"), lambda i, it: self.ui(self._show), default=True)
         if self.active:
-            # один пункт: отключить и/или переключиться — отдельное «Отключить» путало
-            yield MI(self.t("Отключить «{name}» и подключить", name=self.active["name"]),
-                     pystray.Menu(self._tray_connected_items), enabled=idle)
+            yield MI(self.t("Отключить «{name}»", name=self.active["name"]),
+                     lambda i, it: self.ui(self._toggle), enabled=idle)
+            if any(p["name"] != self.active["name"] for p in self.data["profiles"]):
+                yield MI(self.t("Отключить «{name}» и подключить",
+                                name=self.active["name"]),
+                         pystray.Menu(self._tray_connected_items), enabled=idle)
         else:
             if self.cur_name in [p["name"] for p in self.data["profiles"]]:
                 yield MI(self.t("Подключить «{name}»", name=self.cur_name),
@@ -1351,9 +1391,7 @@ class App(tk.Tk):
                                    checked=self._tray_checked(p["name"]), radio=True)
 
     def _tray_connected_items(self):
-        """Подменю при активном VPN: простое отключение и переключение на другой профиль."""
-        yield pystray.MenuItem(self.t("Отключить"), lambda i, it: self.ui(self._toggle))
-        yield pystray.Menu.SEPARATOR
+        """Подменю при активном VPN: переключение на другой профиль."""
         for p in list(self.data["profiles"]):
             if p["name"] == self.active["name"]:
                 continue

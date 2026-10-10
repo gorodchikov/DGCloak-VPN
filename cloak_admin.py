@@ -1019,10 +1019,14 @@ class Tooltip:
         tw = tk.Toplevel(wgt)
         tw.overrideredirect(True)
         tw.attributes("-topmost", True)
-        tw.geometry("+%d+%d" % (x, y))
         tk.Label(tw, text=self.text, bg="#ffffd8", fg="#222",
                  relief="solid", bd=1, padx=6, pady=4,
                  font=("", 9), justify="left").pack()
+        tw.update_idletasks()
+        # у нижнего края экрана показываем подсказку над виджетом
+        if y + tw.winfo_reqheight() > wgt.winfo_screenheight():
+            y = wgt.winfo_rooty() - tw.winfo_reqheight() - 4
+        tw.geometry("+%d+%d" % (x, y))
         self.tip = tw
 
     def _hide(self, _e=None):
@@ -2036,12 +2040,6 @@ class App(tk.Tk):
         self.data["language"] = lang
         save_data(self.data)
         self._apply_lang()
-        messagebox.showinfo(
-            APP_NAME,
-            self.t("Уже написанное остаётся на прежнем языке:\n"
-                   "записи в логе и статусы/заметки шагов деплоя.\n\n"
-                   "Чтобы обновить статусы шагов — нажми\n"
-                   "«Проверить статусы»."))
         # на новом языке: RU→EN пишет по-английски, EN→RU по-русски
         self.say(self.t("Язык интерфейса: %s") %
                  self.v_lang.get())
@@ -2567,7 +2565,13 @@ class App(tk.Tk):
                                     values=["Русский", "English"], width=9)
         self.cb_lang.pack(side="right")
         self.cb_lang.bind("<<ComboboxSelected>>", self._on_lang)
-        self._tw(ttk.Label(leg), "Язык:").pack(side="right", padx=(0, 4))
+        lbl_lang = self._tw(ttk.Label(leg), "Язык:")
+        lbl_lang.pack(side="right", padx=(0, 4))
+        for w in (lbl_lang, self.cb_lang):
+            self._tip(w, "Уже написанное остаётся на прежнем языке:\n"
+                         "записи в логе и статусы/заметки шагов деплоя.\n\n"
+                         "Чтобы обновить статусы шагов — нажми\n"
+                         "«Проверить статусы».")
 
         row += 1
         self.logframe_dep = self._tw(ttk.LabelFrame(f), "Лог")

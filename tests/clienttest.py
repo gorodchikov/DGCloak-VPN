@@ -74,6 +74,28 @@ def logfile():
         return ""
 
 
+def _tray_active_shape(app):
+    """Меню трея при активном VPN: «Отключить «name»» — отдельным пунктом,
+    «Отключить «name» и подключить» — подменю только с другими профилями."""
+    old_active, old_profiles = app.active, app.data["profiles"]
+    app.active = {"name": "u1"}
+    app.data["profiles"] = [{"name": "u1"}, {"name": "u2"}, {"name": "u3"}]
+    try:
+        items = list(app._tray_items())
+        texts = [str(getattr(i, "text", i)) for i in items]
+        if "Отключить «u1»" not in texts:
+            return False
+        parent = next((i for i in items
+                       if getattr(i, "text", "") == "Отключить «u1» и подключить"),
+                      None)
+        if parent is None or parent.submenu is None:
+            return False
+        sub = [getattr(i, "text", "") for i in list(parent.submenu)]
+        return sub == ["u2", "u3"]
+    finally:
+        app.active, app.data["profiles"] = old_active, old_profiles
+
+
 # ---------- T1. Целостность локализации (аудит как тест) ------------------
 
 def t_strings():
@@ -123,14 +145,21 @@ def t_lang(app):
     app.lang_combo.set("English")
     app._on_lang_pick(None)
     pump(app)
-    check("T3.1 при смене языка — предупреждение про лог",
-          bool(MSGBOX) and MSGBOX[-1][0] == "info"
-          and "remain" in str(MSGBOX[-1][1]) or "previous language" in str(MSGBOX[-1][1]),
-          MSGBOX[-1][1] if MSGBOX else "no msgbox")
+    check("T3.1 при смене языка диалог НЕ показывается (тултип на «Язык:»)",
+          not MSGBOX, MSGBOX)
+    check("T3.1b тултип перепереведён на en",
+          app._lang_tips and "previous language" in app._lang_tips[0].text,
+          app._lang_tips[0].text if app._lang_tips else "no tips")
     check("T3.2 язык сохранён в data.json",
           json.load(open(CO.DATA_FILE, encoding="utf-8"))["language"] == "en")
-    app.data["language"] = "ru"
     app.lang_combo.set("Русский")
+    app._on_lang_pick(None)
+    pump(app)
+    check("T3.3 обратно на ru — тултип по-русски",
+          "останутся на прежнем языке" in app._lang_tips[0].text,
+          app._lang_tips[0].text)
+    check("T3.4 меню трея при active: «Отключить» вынесен, подменю — только профили",
+          _tray_active_shape(app))
 
 
 # ---------- T4-T5. Диалог профиля -----------------------------------------
