@@ -693,7 +693,7 @@ def u13_rename():
               and os.path.isfile(os.path.join(ldir_new, "deploy.log"))
               and not os.path.exists(ldir_old))
         check("U13.2 показанный журнал → новое имя", app._log_name == new)
-        check("U13.3 ключи переехали, s[\"key\"] переписан",
+        check("U13.3 ключи переехали, s«key» переписан",
               not os.path.exists(kd_old)
               and os.path.isfile(os.path.join(kd_new, "key"))
               and srv["key"] == os.path.join(kd_new, "key"))
