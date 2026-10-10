@@ -8,7 +8,7 @@
 
 Запуск: python tests\\clienttest.py   (выход 0 — всё зелёное)
 """
-import sys, os, io, re, ast, json, time, tempfile, threading, shutil, winreg
+import sys, os, io, re, ast, json, time, tempfile, threading, shutil, winreg, socket
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -1065,7 +1065,7 @@ def t_pause(app):
   0.0.0.0   128.0.0.0   10.8.0.1       10.8.0.2         36
   128.0.0.0 128.0.0.0   10.8.0.1       10.8.0.2         36"""
     TABLE_DIRECT = "  0.0.0.0   0.0.0.0     192.168.50.1   192.168.50.118   35\n"
-    calls, state = [], {"table": TABLE_VPN}
+    calls, killed, flushed, state = [], [], [], {"table": TABLE_VPN}
 
     def fake_route(action, gw):
         calls.append((action, gw))
@@ -1086,9 +1086,12 @@ def t_pause(app):
           and not CO.def1_routes_present(TABLE_VPN, "9.9.9.9"))
 
     old = (app.active, app.busy, app.paused, app.tun_ip, app.last_state,
-           list(app.data["profiles"]), CO.def1_route, CO.route_print)
+           list(app.data["profiles"]), CO.def1_route, CO.route_print,
+           CO.kill_tun_tcp, CO.flush_routes)
     try:
         CO.def1_route, CO.route_print = fake_route, lambda: state["table"]
+        CO.kill_tun_tcp = lambda ip, port=None: killed.append(ip) or 3
+        CO.flush_routes = lambda: flushed.append(1)
         app.data["profiles"] = [{"name": "u1"}]
         app.active = {"name": "u1"}
         app.busy = False
@@ -1103,6 +1106,8 @@ def t_pause(app):
         check("T32.1 «Пауза» → route delete def1 через tun-gw",
               calls == [("delete", "10.8.0.1")], calls)
         check("T32.2 def1 сняты → paused=True", app.paused)
+        check("T32.2b пауза: tun-TCP убиты + кэши сброшены",
+              killed == ["10.8.0.2"] and len(flushed) == 1, (killed, flushed))
         app._conn_status()
         check("T32.3 статус «Пауза — трафик идёт напрямую»",
               "Пауза" in app._status_msg[0], app._status_msg[0])
@@ -1119,6 +1124,8 @@ def t_pause(app):
         wait_busy()
         check("T32.6 «Возобновить» → route add, paused сброшен",
               calls[-1] == ("add", "10.8.0.1") and not app.paused, calls)
+        check("T32.6b возобновление: кэши сброшены, TCP не тронут",
+              len(flushed) == 2 and killed == ["10.8.0.2"], (killed, flushed))
 
         # сторож: re-key вернул маршруты в паузе → срезаем повторно
         app.paused = True
@@ -1141,9 +1148,82 @@ def t_pause(app):
               "Приостановить" in app._pause_tip.text, app._pause_tip.text)
     finally:
         (app.active, app.busy, app.paused, app.tun_ip, app.last_state,
-         app.data["profiles"], CO.def1_route, CO.route_print) = old
+         app.data["profiles"], CO.def1_route, CO.route_print,
+         CO.kill_tun_tcp, CO.flush_routes) = old
         app.up_since = None
         pump(app)
+
+
+def _tcprow(state, la, lp, ra, rp):
+    """MIB_TCPROW (20 байт): порты — первые 2 байта поля, сетевой порядок."""
+    return (state.to_bytes(4, "little") + socket.inet_aton(la) +
+            lp.to_bytes(2, "big") + b"\0\0" + socket.inet_aton(ra) +
+            rp.to_bytes(2, "big") + b"\0\0")
+
+
+def t_tcpkill(app):
+    """T34: _tun_tcp_rows — парсинг таблицы и фильтры; kill_tun_tcp — живой прогон."""
+    rows = [_tcprow(5, "10.8.0.2", 50001, "1.2.3.4", 443),      # наша, tun
+            _tcprow(5, "10.8.0.2", 50002, "5.6.7.8", 443),      # наша, tun
+            _tcprow(5, "192.168.1.5", 50003, "9.9.9.9", 443),   # чужая, LAN
+            _tcprow(2, "0.0.0.0", 50004, "0.0.0.0", 0)]         # LISTEN-вся-сеть
+    buf = len(rows).to_bytes(4, "little") + b"".join(rows)
+    sel = CO._tun_tcp_rows(buf, "10.8.0.2")
+    check("T34.1 выбраны только строки с local addr = tun IP", len(sel) == 2, len(sel))
+    check("T34.2 строка помечена DELETE_TCB (state=12)",
+          all(int.from_bytes(r[0:4], "little") == 12 for r in sel))
+    sel2 = CO._tun_tcp_rows(buf, "10.8.0.2", 443)
+    check("T34.3 фильтр remote_port отбирает обе", len(sel2) == 2, len(sel2))
+    sel3 = CO._tun_tcp_rows(buf, "10.8.0.2", 9999)
+    check("T34.4 несовпадающий remote_port → пусто", sel3 == [])
+    check("T34.5 несовпадающий local addr → пусто",
+          CO._tun_tcp_rows(buf, "10.8.0.9") == [])
+
+    srv = socket.socket()
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+    cli = socket.socket()
+    try:
+        cli.connect(("127.0.0.1", port))
+        acc, _ = srv.accept()
+        # Живая таблица: наше соединение должно распарситься _tun_tcp_rows.
+        import ctypes
+        iphlp = ctypes.windll.iphlpapi
+        size = ctypes.c_ulong(0)
+        iphlp.GetExtendedTcpTable(None, ctypes.byref(size), False, 2, 2, 0)
+        live = (ctypes.c_char * size.value)()
+        for _ in range(4):
+            if iphlp.GetExtendedTcpTable(live, ctypes.byref(size),
+                                       False, 2, 2, 0) == 0:
+                break
+            live = (ctypes.c_char * size.value)()
+        found = [r for r in CO._tun_tcp_rows(bytes(live), "127.0.0.1", port)]
+        check("T34.6 живое соединение находится в таблице", len(found) >= 1,
+              len(found))
+        # Реальный килл возможен только с правами админа (SetTcpEntry требует;
+        # у собранного exe они есть — uac_admin). Без прав — 0, без падения.
+        killed = CO.kill_tun_tcp("127.0.0.1", port)
+        check("T34.7 kill_tun_tcp возвращает число без падения",
+              isinstance(killed, int) and killed >= 0, killed)
+        if killed:
+            err = None
+            try:
+                for _ in range(20):         # RST может прийти не с первого send
+                    cli.send(b"x" * 64)
+                    time.sleep(0.05)
+            except OSError as e:
+                err = e
+            check("T34.8 клиентский сокет сброшен (RST)", err is not None)
+        else:
+            check("T34.8 пропуск — нет прав админа, килл не проверялся", True)
+        acc.close()
+    finally:
+        cli.close()
+        srv.close()
+    check("T34.9 несовпадающий local addr → 0 убитых",
+          CO.kill_tun_tcp("9.9.9.9") == 0)
 
 
 def t_layout(app):
@@ -1252,6 +1332,7 @@ def main():
     t_real_ip_copy(app)
     t_netinfo(app)
     t_pause(app)
+    t_tcpkill(app)
     t_layout(app)
     t_autorun(app)
     t_migrate()

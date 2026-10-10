@@ -296,9 +296,12 @@ downloaded from GitHub into <code>%APPDATA%\DGCloak\bin</code>.</li>
 <tr><td><b>Pause / Resume</b></td>
 <td>Suspends the VPN without dropping the session: the tunnel routes are
 removed — traffic goes directly outside the VPN while the connection stays
-alive. Resume puts the routes back without a new connection. The tray icon
-shows a green cloak with a pause badge. Useful for resources unreachable
-through the VPN.</td></tr>
+alive. TCP connections already opened through the tunnel are reset
+instantly so applications switch to the direct path at once (UDP migrates
+on its own). On Resume connections are left alone — direct sessions live
+out their lifetime. Resume puts the routes back without a new connection.
+The tray icon shows a green cloak with a pause badge. Useful for resources
+unreachable through the VPN.</td></tr>
 <tr><td>Status block</td>
 <td>A column: profile name, <b>VPN IP</b> (external IP through the tunnel;
 hidden if it can't be determined), <b>Real IP</b> (the ISP address,

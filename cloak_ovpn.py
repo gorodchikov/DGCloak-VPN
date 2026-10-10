@@ -187,6 +187,7 @@ STRINGS_EN = {
         "Could not remove VPN routes — check administrator rights.",
     "def1-маршруты вернулись (re-key?) — сняты повторно":
         "def1 routes are back (re-key?) — removed again",
+    "Сброшено соединений через туннель: {n}": "Killed tunnel connections: {n}",
     "Приостановить VPN — трафик пойдёт напрямую, мимо туннеля.\n"
     "Для ресурсов, недоступных через VPN.":
         "Pause the VPN — traffic will go directly, outside the tunnel.\n"
@@ -535,6 +536,70 @@ def def1_route(action, gw):
         except OSError:
             ok = False
     return ok
+
+
+def flush_routes():
+    """Сброс destination-кэша и DNS-кэша Windows — иначе система ещё десятки
+    секунд резолвит пути по старым записям после смены маршрутов."""
+    for cmd in (["netsh", "interface", "ipv4", "delete", "destinationcache"],
+                ["ipconfig", "/flushdns"]):
+        try:
+            subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, creationflags=NO_WINDOW)
+        except OSError:
+            pass
+
+
+TCPROW = 20                                 # sizeof(MIB_TCPROW)
+
+
+def _tun_tcp_rows(buf, local_ip, remote_port=None):
+    """Из буфера GetExtendedTcpTable (TCP_TABLE_BASIC_ALL) — строки соединений с
+    local addr = local_ip, помеченные MIB_TCP_STATE_DELETE_TCB для SetTcpEntry."""
+    n = min(int.from_bytes(buf[:4], "little"), (len(buf) - 4) // TCPROW)
+    want = socket.inet_aton(local_ip)
+    out = []
+    for i in range(n):
+        off = 4 + i * TCPROW
+        if buf[off + 4:off + 8] != want:        # dwLocalAddr, network order
+            continue
+        if remote_port is not None and \
+                int.from_bytes(buf[off + 16:off + 18], "big") != remote_port:
+            continue                            # dwRemotePort — первые 2 байта поля
+        row = bytearray(buf[off:off + TCPROW])
+        row[0:4] = (12).to_bytes(4, "little")   # MIB_TCP_STATE_DELETE_TCB
+        out.append(bytes(row))
+    return out
+
+
+def kill_tun_tcp(local_ip, remote_port=None):
+    """Мгновенно рвём TCP-соединения, уходившие в туннель (local addr = tun IP):
+    без этого приложения висят до TCP-таймаута на мёртвый путь. UDP само
+    переползает (QUIC migration). remote_port — для тестов, ограничение цели.
+    Требует прав администратора (SetTcpEntry) — у собранного exe они есть."""
+    try:
+        import ctypes
+        iphlp = ctypes.windll.iphlpapi
+        size = ctypes.c_ulong(0)
+        # af=2 (IPv4), tableClass=2 (TCP_TABLE_BASIC_ALL), bOrder=0
+        iphlp.GetExtendedTcpTable(None, ctypes.byref(size), False, 2, 2, 0)
+        buf = (ctypes.c_char * size.value)()
+        for _ in range(4):                      # таблица может вырасти между вызовами
+            rc = iphlp.GetExtendedTcpTable(buf, ctypes.byref(size), False, 2, 2, 0)
+            if rc == 0:
+                break
+            if rc != 122:                       # не ERROR_INSUFFICIENT_BUFFER — сдаёмся
+                return 0
+            buf = (ctypes.c_char * size.value)()
+        else:
+            return 0
+        killed = 0
+        for row in _tun_tcp_rows(bytes(buf), local_ip, remote_port):
+            if iphlp.SetTcpEntry(row) == 0:
+                killed += 1
+        return killed
+    except (OSError, ValueError, AttributeError):
+        return 0
 
 
 def probe(host, port, timeout=2.0):
@@ -2192,6 +2257,7 @@ class App(tk.Tk):
                 self.say("Не удалось вернуть маршруты VPN — проверьте права администратора.")
                 return
             self.paused = False
+            flush_routes()
             self.say("Возобновлено — трафик снова через VPN.")
         else:
             def1_route("delete", gw)
@@ -2199,7 +2265,11 @@ class App(tk.Tk):
                 self.say("Не удалось снять маршруты VPN — проверьте права администратора.")
                 return
             self.paused = True
+            killed = kill_tun_tcp(self.tun_ip)
+            flush_routes()
             self.say("Пауза — трафик идёт напрямую.")
+            if killed:
+                self.say("Сброшено соединений через туннель: {n}", n=killed)
         self.ui(self._pause_ui)
 
     def _pause_ui(self):
