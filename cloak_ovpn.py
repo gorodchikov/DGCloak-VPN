@@ -1298,18 +1298,18 @@ class App(tk.Tk):
         self.b_clear.pack(side="left", padx=(4, 0))
         self.b_paths = ttk.Button(bar, text=t("Пути к Cloak и OpenVPN…"), command=self._paths)
         self.b_paths.pack(side="left", padx=(8, 0))
-        self.chk_verbose = ttk.Checkbutton(
-            self.adv, text=t("Отладочный лог OpenVPN (применится при следующем подключении)"),
-            variable=self.verbose)
-        self.chk_verbose.pack(anchor="w", pady=(6, 0))
         self.chk_auto = ttk.Checkbutton(
             self.adv, text=t("Подключаться при запуске"),
             variable=self.autoconnect, command=self._on_autoconnect)
-        self.chk_auto.pack(anchor="w", pady=(4, 0))
+        self.chk_auto.pack(anchor="w", pady=(6, 0))
         self.chk_min = ttk.Checkbutton(
             self.adv, text=t("Сворачивать в трей при запуске"),
             variable=self.start_minimized, command=self._on_start_minimized)
         self.chk_min.pack(anchor="w", pady=(4, 0))
+        self.chk_verbose = ttk.Checkbutton(
+            self.adv, text=t("Отладочный лог OpenVPN (применится при следующем подключении)"),
+            variable=self.verbose)
+        self.chk_verbose.pack(anchor="w", pady=(4, 0))
         self.logf = ttk.LabelFrame(self.adv, text=t("Лог"))
         self.logf.pack(fill="both", expand=True, pady=(6, 0))
         self.log = tk.Text(self.logf, height=16, state="disabled", wrap="word",
