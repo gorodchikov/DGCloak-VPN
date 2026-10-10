@@ -1060,14 +1060,17 @@ def t_netinfo(app):
 
 
 def t_pause(app):
-    """T32: пауза — SUSPEND/RESUME в mgmt, статус, кнопка, пункт трея."""
-    sent = []
+    """T32: пауза — route delete/add def1-маршрутов, статус, кнопка, трей, сторож."""
+    TABLE_VPN = """  0.0.0.0   0.0.0.0     192.168.50.1   192.168.50.118   35
+  0.0.0.0   128.0.0.0   10.8.0.1       10.8.0.2         36
+  128.0.0.0 128.0.0.0   10.8.0.1       10.8.0.2         36"""
+    TABLE_DIRECT = "  0.0.0.0   0.0.0.0     192.168.50.1   192.168.50.118   35\n"
+    calls, state = [], {"table": TABLE_VPN}
 
-    class FakeMgmt:
-        def sendall(self, b):
-            sent.append(b)
-            app._sig_ok = True
-            app._sig_event.set()
+    def fake_route(action, gw):
+        calls.append((action, gw))
+        state["table"] = TABLE_VPN if action == "add" else TABLE_DIRECT
+        return True
 
     def wait_busy():
         for _ in range(100):
@@ -1077,21 +1080,29 @@ def t_pause(app):
             time.sleep(0.05)
         return False
 
-    old = (app.active, app.busy, app.mgmt, app.paused, list(app.data["profiles"]))
+    check("T32.0 def1_routes_present парсит таблицу",
+          CO.def1_routes_present(TABLE_VPN, "10.8.0.1")
+          and not CO.def1_routes_present(TABLE_DIRECT, "10.8.0.1")
+          and not CO.def1_routes_present(TABLE_VPN, "9.9.9.9"))
+
+    old = (app.active, app.busy, app.paused, app.tun_ip, app.last_state,
+           list(app.data["profiles"]), CO.def1_route, CO.route_print)
     try:
+        CO.def1_route, CO.route_print = fake_route, lambda: state["table"]
         app.data["profiles"] = [{"name": "u1"}]
         app.active = {"name": "u1"}
         app.busy = False
         app.paused = False
-        app.mgmt = FakeMgmt()
+        app.tun_ip = "10.8.0.2"
+        app.last_state = "CONNECTED"
         app.up_since = time.time() - 60
         app._rate = None
 
         app._toggle_pause()
         wait_busy()
-        check("T32.1 «Пауза» → signal SUSPEND в mgmt",
-              sent == [b"signal SUSPEND\n"], sent)
-        check("T32.2 ack → paused=True", app.paused)
+        check("T32.1 «Пауза» → route delete def1 через tun-gw",
+              calls == [("delete", "10.8.0.1")], calls)
+        check("T32.2 def1 сняты → paused=True", app.paused)
         app._conn_status()
         check("T32.3 статус «Пауза — трафик идёт напрямую»",
               "Пауза" in app._status_msg[0], app._status_msg[0])
@@ -1104,18 +1115,28 @@ def t_pause(app):
 
         app._toggle_pause()
         wait_busy()
-        check("T32.6 «Возобновить» → signal RESUME",
-              sent[-1] == b"signal RESUME\n" and not app.paused, sent)
+        check("T32.6 «Возобновить» → route add, paused сброшен",
+              calls[-1] == ("add", "10.8.0.1") and not app.paused, calls)
+
+        # сторож: re-key вернул маршруты в паузе → срезаем повторно
+        app.paused = True
+        state["table"] = TABLE_VPN
+        app._pause_watch()
+        check("T32.7 сторож: вернувшиеся def1 сняты повторно",
+              calls[-1] == ("delete", "10.8.0.1"), calls)
 
         app.paused = False
-        app.mgmt = None
-        app._toggle_pause()          # без mgmt — молча выходим, ничего не шлём
-        check("T32.7 без mgmt → нет команд", len(sent) == 2, sent)
+        app.tun_ip = None
+        app._toggle_pause()
+        wait_busy()
+        check("T32.8 без tun_ip → молчим, route не трогаем",
+              len(calls) == 3, calls)
 
         img = CO.cloak_icon.draw_tray_icon("#00ee5c", 64, paused=True)
-        check("T32.8 paused-иконка рисуется (64px)", img.size == (64, 64))
+        check("T32.9 paused-иконка рисуется (64px)", img.size == (64, 64))
     finally:
-        app.active, app.busy, app.mgmt, app.paused, app.data["profiles"] = old
+        (app.active, app.busy, app.paused, app.tun_ip, app.last_state,
+         app.data["profiles"], CO.def1_route, CO.route_print) = old
         app.up_since = None
         pump(app)
 

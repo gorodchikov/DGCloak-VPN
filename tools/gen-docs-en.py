@@ -534,14 +534,16 @@ CL = {
 "T31.3 строки заполнены: lan/cli/srv": "T31.3 fields filled: lan/cli/srv",
 "T31.4 клик по tun-адресу → буфер": "T31.4 click tun address → clipboard",
 "T31.5 tun_ip=None → «—»": "T31.5 tun_ip=None → «—»",
-"T32.1 «Пауза» → signal SUSPEND в mgmt": "T32.1 Pause → signal SUSPEND to mgmt",
-"T32.2 ack → paused=True": "T32.2 ack → paused=True",
+"T32.0 def1_routes_present парсит таблицу": "T32.0 def1_routes_present parses the table",
+"T32.1 «Пауза» → route delete def1 через tun-gw": "T32.1 Pause → route delete def1 via tun-gw",
+"T32.2 def1 сняты → paused=True": "T32.2 def1 removed → paused=True",
 "T32.3 статус «Пауза — трафик идёт напрямую»": "T32.3 status «Paused — traffic goes directly»",
 "T32.4 кнопка → «Возобновить»": "T32.4 button → «Resume»",
 "T32.5 пункт трея «Возобновить VPN»": "T32.5 tray item «Resume VPN»",
-"T32.6 «Возобновить» → signal RESUME": "T32.6 Resume → signal RESUME",
-"T32.7 без mgmt → нет команд": "T32.7 no mgmt → no commands",
-"T32.8 paused-иконка рисуется (64px)": "T32.8 paused icon renders (64px)",
+"T32.6 «Возобновить» → route add, paused сброшен": "T32.6 Resume → route add, paused cleared",
+"T32.7 сторож: вернувшиеся def1 сняты повторно": "T32.7 watchdog: re-appeared def1 removed again",
+"T32.8 без tun_ip → молчим, route не трогаем": "T32.8 no tun_ip → stay silent, no route calls",
+"T32.9 paused-иконка рисуется (64px)": "T32.9 paused icon renders (64px)",
 }
 
 AD = {

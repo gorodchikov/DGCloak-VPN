@@ -179,12 +179,14 @@ STRINGS_EN = {
     "Пауза — трафик идёт напрямую": "Paused — traffic goes directly",
     "Пауза — трафик идёт напрямую.": "Paused — traffic is going directly.",
     "Возобновлено — трафик снова через VPN.": "Resumed — traffic goes through the VPN again.",
-    "management-канал закрыт — пауза недоступна":
-        "management channel closed — pause unavailable",
-    "Нет ответа на signal — пауза требует OpenVPN 2.5+":
-        "No reply to signal — pause requires OpenVPN 2.5+",
-    "OpenVPN отклонил команду signal (нужен 2.5+)":
-        "OpenVPN rejected the signal command (requires 2.5+)",
+    "Пауза недоступна — адрес туннеля ещё не известен.":
+        "Pause is unavailable — tunnel address is not known yet.",
+    "Не удалось вернуть маршруты VPN — проверьте права администратора.":
+        "Could not restore VPN routes — check administrator rights.",
+    "Не удалось снять маршруты VPN — проверьте права администратора.":
+        "Could not remove VPN routes — check administrator rights.",
+    "def1-маршруты вернулись (re-key?) — сняты повторно":
+        "def1 routes are back (re-key?) — removed again",
     "{ip} скопирован в буфер обмена": "{ip} copied to clipboard",
     "Скопировано": "Copied",
     "Автоподключение «{name}»…": "Auto-connecting «{name}»…",
@@ -485,6 +487,48 @@ def tun_server_ip(tun_ip):
         return tun_ip.rsplit(".", 1)[0] + ".1"
     except (AttributeError, IndexError):
         return None
+
+
+def route_print():
+    """Таблица IPv4-маршрутов (`route print -4`) или None."""
+    try:
+        return subprocess.check_output(["route", "print", "-4"],
+                                       stdin=subprocess.DEVNULL, creationflags=NO_WINDOW,
+                                       text=True, errors="replace")
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+DEF1_NETS = ("0.0.0.0", "128.0.0.0")
+
+
+def def1_routes_present(table, gw):
+    """Есть ли в таблице оба def1-маршрута OpenVPN (0.0.0.0/1 + 128.0.0.0/1 через gw).
+    Физический дефолт (маска 0.0.0.0) не считается."""
+    if not table or not gw:
+        return False
+    found = set()
+    for line in table.splitlines():
+        p = line.split()
+        if len(p) >= 4 and p[1] == "128.0.0.0" and p[0] in DEF1_NETS and p[2] == gw:
+            found.add(p[0])
+    return found == set(DEF1_NETS)
+
+
+def def1_route(action, gw):
+    """`route <add|delete>` обоих def1-маршрутов через gw (шлюз по подсети tun
+    привязывает их к TAP-адаптеру). Идемпотентность проверяем снаружи через
+    def1_routes_present — «route not found» при delete не страшен."""
+    ok = True
+    for net in DEF1_NETS:
+        try:
+            rc = subprocess.run(["route", action, net, "mask", "128.0.0.0", gw],
+                                stdin=subprocess.DEVNULL, creationflags=NO_WINDOW,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+            ok = ok and rc == 0
+        except OSError:
+            ok = False
+    return ok
 
 
 def probe(host, port, timeout=2.0):
@@ -1238,9 +1282,7 @@ class App(tk.Tk):
         self.ext_ip = None      # внешний IP через VPN (резолвится после CONNECTED)
         self.isp_ip = None      # внешний IP провайдера (замерен до подключения)
         self.tun_ip = None      # клиентский адрес туннеля (из mgmt CONNECTED)
-        self.paused = False     # signal SUSPEND отправлен и принят — трафик напрямую
-        self._sig_event = threading.Event()  # ответ на signal из mgmt-цикла
-        self._sig_ok = None
+        self.paused = False     # пауза: def1-маршруты сняты, трафик идёт напрямую
         self._lan_ip = None     # кэш LAN IP (за сессию не меняется)
         self._copy_rows = {}    # строка статуса → IP (клик копирует в буфер)
         self.up_since = None
@@ -2097,41 +2139,54 @@ class App(tk.Tk):
             self._run(lambda: self._connect(p))
 
     def _toggle_pause(self):
-        """Пауза/возобновление туннеля (signal SUSPEND/RESUME в mgmt)."""
-        if self.busy or not self.active or not self.mgmt:
+        """Пауза/возобновление туннеля (снятие/возврат def1-маршрутов)."""
+        if self.busy or not self.active:
             return
         self._run(self._pause_op)
 
     def _pause_op(self):
-        """signal SUSPEND → OpenVPN снимает tun и маршруты, сессия жива;
-        signal RESUME → туннель встаёт обратно без нового хэндшейка (OpenVPN 2.5+).
+        """Пауза = `route delete` def1-маршрутов OpenVPN → трафик идёт напрямую,
+        туннель и процессы живы. Возобновление = `route add` их же через
+        tun-шлюз. (signal SUSPEND/RESUME есть только в Android-OpenVPN.)
         Ошибки — только в журнал: ронять VPN из-за неудачной паузы нельзя."""
-        cmd = b"signal RESUME\n" if self.paused else b"signal SUSPEND\n"
-        self._sig_event.clear()
-        self._sig_ok = None
-        try:
-            self.mgmt.sendall(cmd)
-        except (OSError, AttributeError):
-            self.say("management-канал закрыт — пауза недоступна")
+        gw = tun_server_ip(self.tun_ip)
+        if not gw:
+            self.say("Пауза недоступна — адрес туннеля ещё не известен.")
             return
-        if not self._sig_event.wait(4):
-            self.say("Нет ответа на signal — пауза требует OpenVPN 2.5+")
-            return
-        if not self._sig_ok:
-            self.say("OpenVPN отклонил команду signal (нужен 2.5+)")
-            return
-        self.paused = not self.paused
-        self.say("Пауза — трафик идёт напрямую." if self.paused
-                 else "Возобновлено — трафик снова через VPN.")
+        if self.paused:
+            def1_route("add", gw)
+            if not def1_routes_present(route_print(), gw):
+                self.say("Не удалось вернуть маршруты VPN — проверьте права администратора.")
+                return
+            self.paused = False
+            self.say("Возобновлено — трафик снова через VPN.")
+        else:
+            def1_route("delete", gw)
+            if def1_routes_present(route_print(), gw):
+                self.say("Не удалось снять маршруты VPN — проверьте права администратора.")
+                return
+            self.paused = True
+            self.say("Пауза — трафик идёт напрямую.")
         self.ui(self._pause_ui)
 
     def _pause_ui(self):
-        """Кнопка/меню/статус по флагу paused. Статус «возобновлено» не ставим —
-        за RESUME демон сам пришлёт состояния (CONNECTING→…→CONNECTED)."""
+        """Кнопка/меню/статус по флагу paused. При снятии паузы обычный статус
+        возвращаем сами — route-операции состояний от демона не порождают."""
         self.b_pause.config(text=self.t("Возобновить" if self.paused else "Пауза"))
         self._refresh_tray_menu()
         if self.paused:
             self.set_status("Пауза — трафик идёт напрямую", "orange")
+        elif self.active and self.last_state == "CONNECTED":
+            self._conn_status()
+
+    def _pause_watch(self):
+        """Сторож паузы: re-key/пуш могут вернуть def1-маршруты — срезаем повторно."""
+        if not self.paused:
+            return
+        gw = tun_server_ip(self.tun_ip)
+        if def1_routes_present(route_print(), gw):
+            def1_route("delete", gw)
+            self.say("def1-маршруты вернулись (re-key?) — сняты повторно")
 
     def _run(self, fn):
         self.busy = True
@@ -2429,11 +2484,6 @@ class App(tk.Tk):
                         self.traffic = (i, o)
                 elif line.startswith(">FATAL:"):
                     self.say("OpenVPN: {line}", line=line)
-                elif line.startswith(("SUCCESS:", "ERROR:")) and "signal" in line.lower():
-                    # ответ на signal SUSPEND/RESUME/SIGTERM — будим _pause_op
-                    self._sig_ok = line.startswith("SUCCESS")
-                    self._sig_event.set()
-                    self.say("mgmt: {line}", line=line)
                 elif line:
                     self.say("mgmt: {line}", line=line)
         except (OSError, ValueError) as e:
@@ -2511,6 +2561,7 @@ class App(tk.Tk):
                         self.mgmt.sendall(b"load-stats\n")
                 except OSError:
                     pass
+            self._pause_watch()
             ck_dead = self.ck and self.ck.poll() is not None
             vpn_dead = self.vpn and self.vpn.poll() is not None
             if not (ck_dead or vpn_dead):
