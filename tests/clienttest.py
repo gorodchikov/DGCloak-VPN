@@ -74,6 +74,16 @@ def logfile():
         return ""
 
 
+def wait_log(marker, timeout=15):
+    """Подождать строку в last.log (фоновые потоки пишут асинхронно)."""
+    end = time.time() + timeout
+    while time.time() < end:
+        if marker in logfile():
+            return True
+        time.sleep(0.1)
+    return False
+
+
 def _tray_active_shape(app):
     """Меню трея при активном VPN: «Отключить «name»» — отдельным пунктом,
     «Отключить «name» и подключить» — подменю только с другими профилями."""
@@ -356,7 +366,7 @@ def t_connect(app):
               and "--disable-dco" in ov_args)
         check("T11.3 внешний IP до/после в логе",
               "Внешний IP до подключения: 1.1.1.1" in new_log
-              and "Внешний IP через VPN: 2.2.2.2" in new_log)
+              and wait_log("Внешний IP через VPN: 2.2.2.2"))
         check("T11.4 pids сохранены",
               json.load(open(CO.PIDS_FILE, encoding="utf-8")).get("vpn_pid") == 40001,
               open(CO.PIDS_FILE, encoding="utf-8").read()[:120])
@@ -374,7 +384,7 @@ def t_connect(app):
         check("T11.5 без bypass при full_tunnel → ВНИМАНИЕ в лог",
               "зациклится" in new_log)
         check("T11.6 внешний IP недоступен → «не определён»",
-              "не определён" in new_log)
+              wait_log("Внешний IP через VPN: не определён"))
         check("T11.7 без UDP в конфиге и профиле → нет -u",
               "-u" not in CALLS[0])
 

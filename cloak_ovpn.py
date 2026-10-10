@@ -1641,6 +1641,7 @@ class App(tk.Tk):
         self.up.clear()
         self.last_state = None
         self.route_failed = False
+        self.ext_ip = None
 
         ip_before = external_ip()
         self.say("Внешний IP до подключения: {ip}", ip=ip_before or self.t("не определён"))
@@ -1771,10 +1772,26 @@ class App(tk.Tk):
             self.set_status("Маршруты не добавлены — нужны права администратора", "red")
         else:
             self.say("Подключено.")
-        ip_after = external_ip()
-        self.ext_ip = ip_after
+        # сразу после CONNECTED маршруты/сессия Cloak ещё встают — одиночный
+        # запрос к ipify часто горит по таймауту → опрос в фоне с повторами;
+        # ext_ip подхватит _conn_status на следующем тике
+        threading.Thread(target=self._resolve_ext_ip,
+                         args=(p, ip_before), daemon=True).start()
+
+    def _resolve_ext_ip(self, p, ip_before):
+        ip = None
+        for _ in range(5):
+            if self.active is not p:
+                return  # отключились/переключились — ответ не нужен
+            ip = external_ip()
+            if ip:
+                break
+            time.sleep(2)
+        if self.active is not p:
+            return
+        self.ext_ip = ip
         self.say("Внешний IP через VPN: {ip} (до подключения: {prev})",
-                 ip=ip_after or self.t("не определён"),
+                 ip=ip or self.t("не определён"),
                  prev=ip_before or self.t("не определён"))
 
     def _mgmt_loop(self, port, proc, p):
