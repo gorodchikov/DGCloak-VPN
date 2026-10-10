@@ -203,6 +203,8 @@ CEN = {
  "73bb4c0": "client: per-profile disk logs (JSONL+rotation), framed log w/ scrollbar, buttons in a row, window-resize fix on Advanced",
  "bd00eb0": "client tray: guide below separator, exit item by state (active/busy→with stop, idle→Exit+abort prompt)",
  "3a34615": "docs: reports for profile journals + window-resize fix",
+ "3568ffd": "client: autoconnect selected profile on startup + tray hint shows the real exit item",
+ "3a7d9d2": "docs: reports for tray menu and journals + guide tagline",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
  "c1cfa05": "firewalld: zone forward + own verification and audit branch (backlog #1)",
@@ -370,6 +372,7 @@ BUGS = [
     ("Client", "Renamed managed profile (from admin) lost inbox sync: .del/<cn>@<srv> missed it \u2192 permanent orphan. Managed profile name is now readonly", "c5afa01"),
     ("Admin", "SSH password and Cloak admin_uid were stored in data.json as plaintext \u2014 now DPAPI *_dp blobs (CryptProtectData, readable only under this user on this PC)", "c5afa01"),
     ("Client", "Expanding \u201cAdvanced\u201d resized the window: hardcoded geometry(720x560) + set_status snapped width to the open panel's reqwidth. Now the window grows exactly by the panel height; width untouched", "73bb4c0"),
+    ("Client", "Tray-hide hint always said \u201cDisconnect VPN and exit\u201d even when idle \u2014 now uses the real menu item text (\u201cExit\u201d when idle)", "3568ffd"),
 ]
 bug_rows = "".join(
     '<tr><td style="width:120px"><span class=tag>%s</span></td>'
