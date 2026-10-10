@@ -228,6 +228,8 @@ CEN = {
  "99c99e1": "docs: translations (pause UX batch)",
  "982270d": "client: pause responsiveness — SetTcpEntry(DELETE_TCB) of tunnel TCP + cache flush",
  "bcb129e": "docs: bugs #60-61 (combobox, window width), translations",
+ "af9c980": "client: pause button and tooltips skipped live language switch — now retranslated",
+ "bfd17dc": "docs: translations and reports (pause responsiveness)",
  "3a7d9d2": "docs: reports for tray menu and journals + guide tagline",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
@@ -400,6 +402,7 @@ BUGS = [
     ("Client", "Pause did nothing: signal SUSPEND/RESUME is a pseudo-signal of the Android OpenVPN build only \u2014 desktop answered \u201cnot a known signal type\u201d. Pause moved to route delete/add of the def1 routes + a watchdog against re-key", "a74eb6e"),
     ("Client", "Profile combobox vanished completely: its pack_propagate(False) frame got a width but no height \u2014 collapsed to 0", "2cea111"),
     ("Client", "Window width grew by 127px when expanding \u201cAdvanced\u201d: update_idletasks resized the window to the panel's reqsize before winfo_width was read. Window now starts at panel width; geometry width is taken before pack", "2cea111"),
+    ("Client", "Pause button and three tooltips didn't translate on a live language switch — _apply_lang skipped them (stayed in the startup language)", "\u2014"),
 ]
 bug_rows = "".join(
     '<tr><td style="width:120px"><span class=tag>%s</span></td>'
@@ -569,6 +572,8 @@ CL = {
 "T34.7 kill_tun_tcp возвращает число без падения": "T34.7 kill_tun_tcp returns a number without crashing",
 "T34.8 пропуск — нет прав админа, килл не проверялся": "T34.8 skip — no admin rights, kill not verified",
 "T34.9 несовпадающий local addr → 0 убитых": "T34.9 non-matching local addr → 0 killed",
+"T3.2b кнопка паузы и тултипы — на en": "T3.2b pause button and tooltips — in en",
+"T3.3b кнопка паузы и тултипы — на ru": "T3.3b pause button and tooltips — in ru",
 }
 
 AD = {
