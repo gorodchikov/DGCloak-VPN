@@ -226,6 +226,8 @@ CEN = {
  "9b13922": "client: UX batch — pause icon/menu/tooltip, combobox width, stable window height",
  "2cea111": "client: fix invisible combobox and window width jump on Advanced",
  "99c99e1": "docs: translations (pause UX batch)",
+ "982270d": "client: pause responsiveness — SetTcpEntry(DELETE_TCB) of tunnel TCP + cache flush",
+ "bcb129e": "docs: bugs #60-61 (combobox, window width), translations",
  "3a7d9d2": "docs: reports for tray menu and journals + guide tagline",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
@@ -395,6 +397,9 @@ BUGS = [
     ("Admin", "SSH password and Cloak admin_uid were stored in data.json as plaintext \u2014 now DPAPI *_dp blobs (CryptProtectData, readable only under this user on this PC)", "c5afa01"),
     ("Client", "Expanding \u201cAdvanced\u201d resized the window: hardcoded geometry(720x560) + set_status snapped width to the open panel's reqwidth. Now the window grows exactly by the panel height; width untouched", "73bb4c0"),
     ("Client", "Tray-hide hint always said \u201cDisconnect VPN and exit\u201d even when idle \u2014 now uses the real menu item text (\u201cExit\u201d when idle)", "3568ffd"),
+    ("Client", "Pause did nothing: signal SUSPEND/RESUME is a pseudo-signal of the Android OpenVPN build only \u2014 desktop answered \u201cnot a known signal type\u201d. Pause moved to route delete/add of the def1 routes + a watchdog against re-key", "a74eb6e"),
+    ("Client", "Profile combobox vanished completely: its pack_propagate(False) frame got a width but no height \u2014 collapsed to 0", "2cea111"),
+    ("Client", "Window width grew by 127px when expanding \u201cAdvanced\u201d: update_idletasks resized the window to the panel's reqsize before winfo_width was read. Window now starts at panel width; geometry width is taken before pack", "2cea111"),
 ]
 bug_rows = "".join(
     '<tr><td style="width:120px"><span class=tag>%s</span></td>'
@@ -555,6 +560,15 @@ CL = {
 "T33.1 комбобокс по ширине «Подключить+Пауза»": "T33.1 combobox width matches «Connect+Pause» pair",
 "T33.2 высота окна не прыгает от многострочного статуса": "T33.2 window height stable across multiline status",
 "T33.3 geometry при «Дополнительно» — одна и та же ширина": "T33.3 geometry calls keep the same width on Advanced toggle",
+"T34.1 выбраны только строки с local addr = tun IP": "T34.1 only rows with local addr = tun IP selected",
+"T34.2 строка помечена DELETE_TCB (state=12)": "T34.2 row marked DELETE_TCB (state=12)",
+"T34.3 фильтр remote_port отбирает обе": "T34.3 remote_port filter selects both",
+"T34.4 несовпадающий remote_port → пусто": "T34.4 non-matching remote_port → empty",
+"T34.5 несовпадающий local addr → пусто": "T34.5 non-matching local addr → empty",
+"T34.6 живое соединение находится в таблице": "T34.6 live connection found in the table",
+"T34.7 kill_tun_tcp возвращает число без падения": "T34.7 kill_tun_tcp returns a number without crashing",
+"T34.8 пропуск — нет прав админа, килл не проверялся": "T34.8 skip — no admin rights, kill not verified",
+"T34.9 несовпадающий local addr → 0 убитых": "T34.9 non-matching local addr → 0 killed",
 }
 
 AD = {
