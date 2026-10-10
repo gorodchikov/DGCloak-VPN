@@ -345,6 +345,11 @@ STRINGS_EN = {
         "Stopped at step \"%s\". Fix it and continue — completed steps won't repeat.",
     "Сверяю статусы с сервером…": "Checking statuses against the server…",
     # --- тултипы ---
+    "✓ развёрнут, все шаги ok\n✓- развёрнут, но есть пропущенные шаги\n"
+    "⚠ есть предупреждение/ошибка в шагах\n"
+    "пусто — не развёрнут или не прошёл аудит":
+        "✓ deployed, all steps ok\n✓- deployed, some steps skipped\n"
+        "⚠ warning/error in steps\nempty — not deployed or audit failed",
     "Шаги идут сверху вниз, готовые шаги — пропускаются":
         "Steps run top to bottom; completed steps are skipped",
     "Выполнить один выбранный в таблице шаг —\nточечный повтор после исправления ошибки":
@@ -2405,6 +2410,11 @@ class App(tk.Tk):
                                anchor="w" if c == "name" else "center")
         self.srv_tv.pack(fill="both", expand=True, padx=4, pady=4)
         self.srv_tv.bind("<<TreeviewSelect>>", lambda e: self._on_srv_select())
+        self._tip(self.srv_tv,
+                  "✓ развёрнут, все шаги ok\n"
+                  "✓- развёрнут, но есть пропущенные шаги\n"
+                  "⚠ есть предупреждение/ошибка в шагах\n"
+                  "пусто — не развёрнут или не прошёл аудит")
         btns = ttk.Frame(left)
         btns.pack(fill="x", padx=4, pady=4)
         for t, c in (("Добавить", self._srv_add),
@@ -2679,15 +2689,22 @@ class App(tk.Tk):
 
     # ---- серверы ----
     def _srv_mark(self, s):
-        """Метка у имени: ✓ только когда ВСЕ шаги деплоя ok; ⚠ если есть
-        warn/fail. Частичный деплой/не аудирован — без метки."""
+        """Метка у имени. Развёрнутость решает флаг deployed (его ставит
+        cloak=ok), а не формальность шагов: иначе сервер с пропущенным
+        необязательным шагом (sysupd «отменено») выглядит неразвёрнутым.
+          ✓ — развёрнут, все шаги ok
+          ✓- — развёрнут, но есть пропущенные/не выполненные шаги
+          ⚠ — где-то warn/fail (выше любого развёрнут-состояния)
+          (пусто) — не развёрнут / deployed снят после провала probe"""
         steps = s.get("steps") or {}
         vals = [r.get("st") for r in steps.values()]
         if any(v in ("warn", "fail") for v in vals):
             return " ⚠"
-        if all(k in steps for k, _ in self.STEPS) and \
-                all(v == "ok" for v in vals):
-            return " ✓"
+        if s.get("deployed"):
+            if all(k in steps for k, _ in self.STEPS) and \
+                    all(v == "ok" for v in vals):
+                return " ✓"
+            return " ✓-"
         return ""
 
     def _srv_online_txt(self, name, which):

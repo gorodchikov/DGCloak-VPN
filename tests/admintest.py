@@ -495,6 +495,33 @@ def u9_revert():
 
 
 # ======================================================================
+# U10. Метка сервера в списке (_srv_mark): ✓ / ✓- / ⚠ / пусто
+# ======================================================================
+
+def u10_srv_mark():
+    m = app._srv_mark
+    st = lambda v: {"st": v}
+    all_ok = {k: st("ok") for k, _ in CA.App.STEPS}
+    check("U10.1 метка: deployed + все шаги ok → ✓",
+          m({"deployed": True, "steps": all_ok}).strip() == "✓")
+    sk = dict(all_ok); sk["sysupd"] = st("skip")
+    check("U10.2 метка: deployed + пропущенный шаг → ✓-",
+          m({"deployed": True, "steps": sk}).strip() == "✓-")
+    w = dict(all_ok); w["sysupd"] = st("warn")
+    check("U10.3 метка: warn приоритетнее deployed → ⚠",
+          m({"deployed": True, "steps": w}).strip() == "⚠")
+    fl = dict(all_ok); fl["ovpn"] = st("fail")
+    check("U10.4 метка: fail на недодеплое → ⚠",
+          m({"steps": fl}).strip() == "⚠")
+    check("U10.5 метка: deployed без steps → ✓-",
+          m({"deployed": True}).strip() == "✓-")
+    check("U10.6 метка: не развёрнут, нет steps → пусто",
+          m({}) == "")
+    check("U10.7 метка: все ok, но deployed снят → пусто",
+          m({"steps": all_ok}) == "")
+
+
+# ======================================================================
 
 u1_localization()
 u2_regressions()
@@ -508,5 +535,6 @@ u6_configs()
 u7_dialogs()
 u8_matrix()
 u9_revert()
+u10_srv_mark()
 
 finish(app)

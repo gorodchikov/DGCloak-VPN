@@ -122,8 +122,10 @@ on the right.</figcaption></figure>
 <table>
 <tr><th style="width:150px">Element</th><th>What it does</th></tr>
 <tr><td><i>Name / SSH / Cloak</i> table</td>
-<td>Server list. Marks next to the name: <code>✓</code> — all deploy steps
-green, <code>⚠</code> — a warning/error exists. The SSH and Cloak columns
+<td>Server list. Marks next to the name: <code>✓</code> — deployed, all
+steps ok; <code>✓-</code> — deployed with skipped steps (e.g. update
+declined); <code>⚠</code> — a warning/error exists; empty — not deployed or
+audit failed. The SSH and Cloak columns
 show online status (TCP probe; Cloak only on deployed servers).</td></tr>
 <tr><td>Add / Edit / Delete</td>
 <td>Server registry. Deletion cleans local user configs; the SSH key is
