@@ -194,6 +194,7 @@ CEN = {
  "f4e4c0f": "docs: reports for the shortcut fix + translations of new commits",
  "1ab458d": "admin: server rename moves journals/keys/bundles/client profiles",
  "04c3f96": "docs: SHChangeNotify in reports + translations",
+ "b83ec36": "admin: external SSH keys copied into keys\\<srv>\\ on save",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
  "c1cfa05": "firewalld: zone forward + own verification and audit branch (backlog #1)",
