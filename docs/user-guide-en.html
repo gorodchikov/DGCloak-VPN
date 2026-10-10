@@ -303,8 +303,12 @@ The close and minimize buttons hide the window to the tray.</td></tr>
 <tr><td>Advanced ▾</td>
 <td>Reveals the log and buttons: <b>Copy log</b>, <b>Clear log</b>,
 <b>Paths to Cloak and OpenVPN…</b>, and the <b>OpenVPN debug log</b>
-checkbox (<code>--verb 4</code>, applies on next connect). On errors the
-panel opens by itself.</td></tr>
+checkbox (<code>--verb 4</code>, applies on next connect). The log is the
+selected profile's journal: it persists on disk across runs
+(<code>VPN\logs\&lt;profile&gt;\session.log</code>, rotates to
+<code>.old</code> at 256 KB); switching profiles shows that profile's
+journal, and lines of an active connection go to its own profile's log.
+On errors the panel opens by itself.</td></tr>
 <tr><td>Language:</td>
 <td>RU/EN. Hover tooltip: log lines already written stay in the old
 language.</td></tr>
@@ -462,7 +466,9 @@ services and packages, keys in <code>~/.ssh</code>.</p>
 <tr><td><code>%APPDATA%\DGCloak\VPN\</code></td>
 <td><code>data.json</code> (settings+profiles, no secrets),
 <code>last.log</code>/<code>prev.log</code>, <code>runtime.ovpn</code>,
-<code>pids.json</code>, <code>profiles\&lt;name&gt;\</code>.</td></tr>
+<code>pids.json</code>, <code>profiles\&lt;name&gt;\</code>,
+<code>logs\&lt;name&gt;\session.log</code> — per-profile journals
+(+ <code>.old</code> rotation).</td></tr>
 <tr><td><code>%APPDATA%\DGCloak\Admin\</code></td>
 <td>Server and user registry, keys,
 <code>bundles\*.dgcloak</code> — ready user configs,

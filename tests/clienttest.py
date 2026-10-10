@@ -820,6 +820,59 @@ def t_rename(app):
     app.data["profiles"] = old_prof
 
 
+def t_profile_logs(app):
+    """T24: журналы профилей — per-profile файлы, ротация, виджет по выбору."""
+    app._log_ctx = None
+    old_profiles = app.data["profiles"]
+    app.data["profiles"] = [{"name": "lga"}, {"name": "lgb"}]
+    app._refresh_combo("lga")
+    pump(app)
+    app.say("маркер lga")
+    ld_a = app._log_dir("lga")
+    f_a = os.path.join(ld_a, "session.log")
+    check("T24.1 say() пишет в logs/<профиль>/session.log",
+          os.path.isfile(f_a) and "маркер lga" in open(f_a, encoding="utf-8").read())
+    ln = open(f_a, encoding="utf-8").read().splitlines()[-1]
+    check("T24.2 формат JSONL",
+          json.loads(ln).get("l", "").endswith("маркер lga"), ln)
+    f_b = os.path.join(app._log_dir("lgb"), "session.log")
+    app.combo.set("lgb"); app._sync_current(); pump(app)
+    app.say("маркер lgb")
+    check("T24.3 у каждого профиля свой журнал",
+          os.path.isfile(f_b)
+          and "маркер lgb" in open(f_b, encoding="utf-8").read()
+          and "маркер lga" not in open(f_b, encoding="utf-8").read())
+    app.combo.set("lga"); app._sync_current(); pump(app)
+    wtxt = app.log.get("1.0", "end")
+    check("T24.4 виджет перечитан с диска при переключении",
+          "маркер lga" in wtxt and "маркер lgb" not in wtxt)
+    with open(f_a, "a", encoding="utf-8") as fh:
+        fh.write("0" * CO.LOG_MAX)     # дописываем мимо API → файл > LOG_MAX
+    app._log_write("lga", "после-ротации")
+    check("T24.5 ротация: session.log → session.log.old",
+          os.path.isfile(f_a + ".old"))
+    check("T24.6 чтение .old+текущего: старый маркер виден",
+          any("маркер lga" in l for l in app._log_read("lga")))
+    app._clear_log(); pump(app)
+    check("T24.7 «Очистить лог» — файлы снесены, осталась метка",
+          not os.path.isfile(f_a + ".old")
+          and "Лог очищен" in open(f_a, encoding="utf-8").read())
+    app._log_ctx = "lgb"
+    app.say("строка операции lgb")
+    app._log_ctx = None
+    check("T24.8 _log_ctx: строка ушла в журнал операции, не видимого профиля",
+          "строка операции lgb" in open(f_b, encoding="utf-8").read()
+          and "строка операции lgb" not in open(f_a, encoding="utf-8").read())
+    app.combo.set("lga"); app._sync_current()
+    app._delete(); pump(app)
+    check("T24.9 удаление профиля → logs/<name> снесён",
+          not os.path.isdir(ld_a))
+    app.data["profiles"] = old_profiles
+    CO.save_data(app.data)   # _delete пересохранил data.json — вернуть как было
+    app._refresh_combo()
+    pump(app)
+
+
 def t_migrate():
     ok = os.path.isfile(os.path.join(CO.BIN_DIR, "ck-client.exe")) \
         and not os.path.isdir(CO.OLD_APP_DIR) and os.path.isfile(CO.DATA_FILE)
@@ -852,6 +905,7 @@ def main():
     t_inbox(app)
     t_shortcut()
     t_rename(app)
+    t_profile_logs(app)
     t_migrate()
     try:
         app.destroy()

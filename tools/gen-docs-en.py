@@ -472,6 +472,15 @@ CL = {
 "T23.2 safe-коллизия («e x» vs «e_x») → отказ": "T23.2 safe-name collision (\u00abe x\u00bb vs \u00abe_x\u00bb) \u2192 rejected",
 "T23.3 правка без смены имени → ок": "T23.3 edit without rename \u2192 ok",
 "T23.4 managed: поле имени readonly": "T23.4 managed: name field readonly",
+"T24.1 say() пишет в logs/<профиль>/session.log": "T24.1 say() writes to logs/<profile>/session.log",
+"T24.2 формат JSONL": "T24.2 JSONL format",
+"T24.3 у каждого профиля свой журнал": "T24.3 each profile has its own log",
+"T24.4 виджет перечитан с диска при переключении": "T24.4 widget reloaded from disk on profile switch",
+"T24.5 ротация: session.log → session.log.old": "T24.5 rotation: session.log → session.log.old",
+"T24.6 чтение .old+текущего: старый маркер виден": "T24.6 reading .old+current: old marker visible",
+"T24.7 «Очистить лог» — файлы снесены, осталась метка": "T24.7 Clear log — files removed, marker line remains",
+"T24.8 _log_ctx: строка ушла в журнал операции, не видимого профиля": "T24.8 _log_ctx: line went to the operation's log, not the viewed profile",
+"T24.9 удаление профиля → logs/<name> снесён": "T24.9 profile delete → logs/<name> removed",
 }
 
 AD = {

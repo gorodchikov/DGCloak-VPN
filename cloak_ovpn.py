@@ -44,6 +44,7 @@ INBOX_DIR = os.path.join(APP_DIR, "inbox")  # профили, подкинуты
 GUIDE_URL = ("https://gorodchikov.github.io/DGCloak-VPN-releases/"
              "user-guide-%s.html")
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+LOG_MAX = 256 * 1024   # журнал профиля: >256К → файл уходит в .old, 2 поколения
 
 DEFAULT_DATA = {
     "ck_client": r"C:\Tools\Cloak\ck-client-windows-amd64.exe",
@@ -177,6 +178,10 @@ STRINGS_EN = {
     "отключено": "offline",
     "Лог скопирован в буфер обмена.": "Log copied to clipboard.",
     "Лог очищен.": "Log cleared.",
+    "Лог": "Log",
+    "Лог — %s": "Log — %s",
+    "…идёт операция на «%s» — её вывод пишется в журнал этого профиля…":
+    "…operation running on «%s» — its output goes to that profile's log…",
     "Профиль «{n}» получен из админки.": "Profile «{n}» received from admin.",
     "Профиль «{n}» удалён админкой.": "Profile «{n}» removed by admin.",
     "Подключено.": "Connected.",
@@ -1151,6 +1156,10 @@ class App(tk.Tk):
         self.verbose = tk.BooleanVar(value=False)
         self.adv_open = False
         self._hint_shown = False
+        self._log_lock = threading.Lock()
+        self._log_ctx = None    # профиль с активной операцией — лог пишется в его журнал
+        self._log_view = ""     # чей журнал показан (выбор в комбобоксе)
+        self._log_gen = 0       # счётчик перечитываний журнала — гасит старые вставки из очереди
         try:
             os.makedirs(APP_DIR, exist_ok=True)
             last_log = os.path.join(APP_DIR, "last.log")
@@ -1267,20 +1276,24 @@ class App(tk.Tk):
         self.adv = ttk.Frame(self)
         bar = ttk.Frame(self.adv)
         bar.pack(fill="x")
-        logbtns = ttk.Frame(bar)
-        logbtns.pack(side="left")
-        self.b_copy = ttk.Button(logbtns, text=t("Копировать лог"), width=BTN_W, command=self._copy_log)
-        self.b_copy.pack()
-        self.b_clear = ttk.Button(logbtns, text=t("Очистить лог"), width=BTN_W, command=self._clear_log)
-        self.b_clear.pack(pady=(4, 0))
+        self.b_copy = ttk.Button(bar, text=t("Копировать лог"), width=BTN_W, command=self._copy_log)
+        self.b_copy.pack(side="left")
+        self.b_clear = ttk.Button(bar, text=t("Очистить лог"), width=BTN_W, command=self._clear_log)
+        self.b_clear.pack(side="left", padx=(4, 0))
         self.b_paths = ttk.Button(bar, text=t("Пути к Cloak и OpenVPN…"), command=self._paths)
-        self.b_paths.pack(side="left", padx=6, anchor="n")
+        self.b_paths.pack(side="left", padx=(8, 0))
         self.chk_verbose = ttk.Checkbutton(
             self.adv, text=t("Отладочный лог OpenVPN (применится при следующем подключении)"),
             variable=self.verbose)
         self.chk_verbose.pack(anchor="w", pady=(6, 0))
-        self.log = tk.Text(self.adv, height=16, state="disabled", wrap="word")
-        self.log.pack(fill="both", expand=True, pady=(6, 0))
+        self.logf = ttk.LabelFrame(self.adv, text=t("Лог"))
+        self.logf.pack(fill="both", expand=True, pady=(6, 0))
+        self.log = tk.Text(self.logf, height=16, state="disabled", wrap="word",
+                           font=("Consolas", 9))
+        sb = ttk.Scrollbar(self.logf, command=self.log.yview)
+        self.log.config(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        self.log.pack(fill="both", expand=True, padx=4, pady=4)
         self._refresh_combo(self.data.get("last_profile"))
 
     def _on_lang_pick(self, _e):
@@ -1302,6 +1315,7 @@ class App(tk.Tk):
         self.b_clear.config(text=t("Очистить лог"))
         self.b_paths.config(text=t("Пути к Cloak и OpenVPN…"))
         self.chk_verbose.config(text=t("Отладочный лог OpenVPN (применится при следующем подключении)"))
+        self.logf.config(text=self._log_title())
         self.lang_label.config(text=t("Язык:"))
         for tp in getattr(self, "_lang_tips", ()):
             tp.text = t("Уже выведенные в лог записи останутся на прежнем языке — "
@@ -1329,15 +1343,19 @@ class App(tk.Tk):
     def _hide_adv(self):
         self.adv.pack_forget()
         self.b_adv.config(text=self.t("Дополнительно ▾"))
-        self.geometry("")                # вернуть компактный размер
         self.adv_open = False
+        self.update_idletasks()
+        # ширину не трогаем — возвращаем только высоту до панели
+        self.geometry(f"{self.winfo_width()}x{self.winfo_reqheight()}")
 
     def _show_adv(self):
         if not self.adv_open:            # флаг ведём сами: winfo_ismapped() отстаёт от pack()
             self.adv.pack(fill="both", expand=True, padx=10, pady=(0, 10))
             self.b_adv.config(text=self.t("Дополнительно ▴"))
-            self.geometry("720x560")
             self.adv_open = True
+            self.update_idletasks()
+            # растим окно ровно на высоту панели; ширина и верхний край не меняются
+            self.geometry(f"{self.winfo_width()}x{self.winfo_reqheight()}")
 
     def _refresh_combo(self, select=None):
         names = [p["name"] for p in self.data["profiles"]]
@@ -1353,6 +1371,8 @@ class App(tk.Tk):
     def _sync_current(self):
         # cur_name читается из потока трея, поэтому дублируем выбор в обычной переменной
         self.cur_name = self.combo.get()
+        self._log_view = self.cur_name
+        self._show_log(self.cur_name)
         self._refresh_tray_menu()
 
     def _refresh_tray_menu(self):
@@ -1396,10 +1416,84 @@ class App(tk.Tk):
             except (OSError, ValueError):
                 pass
 
+    # Журналы профилей: %APPDATA%\DGCloak\VPN\logs\<профиль>\session.log,
+    # JSONL {"l": строка}. Хранятся между запусками; ротация по размеру,
+    # два поколения: session.log переполнился → session.log.old.
+    # Имя папки — safe-вариант имени, как в profiles\.
+
+    def _log_dir(self, name):
+        return os.path.join(APP_DIR, "logs",
+                            re.sub(r"[^\w\-]+", "_", name).strip("_") or "profile")
+
+    def _log_write(self, name, line):
+        try:
+            d = self._log_dir(name)
+            os.makedirs(d, exist_ok=True)
+            f = os.path.join(d, "session.log")
+            with self._log_lock:
+                if os.path.isfile(f) and os.path.getsize(f) > LOG_MAX:
+                    os.replace(f, f + ".old")
+                with open(f, "a", encoding="utf-8") as fh:
+                    fh.write(json.dumps({"l": line}, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+
+    def _log_read(self, name):
+        """Строки журнала профиля с диска: сначала .old, потом текущий."""
+        lines = []
+        d = self._log_dir(name)
+        for fn in ("session.log.old", "session.log"):
+            p = os.path.join(d, fn)
+            if not os.path.isfile(p):
+                continue
+            try:
+                with open(p, encoding="utf-8") as fh:
+                    for ln in fh:
+                        try:
+                            lines.append(json.loads(ln)["l"])
+                        except (ValueError, KeyError):
+                            continue
+            except OSError:
+                continue
+        return lines
+
+    def _show_log(self, name):
+        """Показать журнал профиля name — перечитать с диска."""
+        self._log_gen += 1
+        self.log.config(state="normal")
+        self.log.delete("1.0", "end")
+        if name:
+            if self._log_ctx and self._log_ctx != name:
+                self.log.insert("end", self.t("…идёт операция на «%s» — её вывод пишется в журнал этого профиля…") % self._log_ctx + "\n\n")
+            lines = self._log_read(name)
+            if lines:
+                self.log.insert("end", "\n".join(lines) + "\n")
+        self.log.see("end")
+        self.log.config(state="disabled")
+        self.logf.config(text=self._log_title())
+
+    def _log_title(self):
+        return self.t("Лог — %s") % self._log_view if self._log_view \
+            else self.t("Лог")
+
     def say(self, msg, **kw):
         line = f"[{time.strftime('%H:%M:%S')}] {self.t(msg, **kw)}\n"
         self._log_file(line)
-        self.ui(lambda: self._append(line))
+        # активная операция (подкл/откл/переподключение) пишет в журнал
+        # СВОЕГО профиля, даже если в комбобоксе выбран другой
+        name = self._log_ctx or self.cur_name
+        if name:
+            self._log_write(name, line.rstrip("\n"))
+        if name == self._log_view or not name:
+            gen = self._log_gen
+            self.ui(lambda n=name, g=gen: self._append_view(n, g, line))
+
+    def _append_view(self, name, gen, line):
+        """Отложенная вставка строки в виджет: гасим, если журнал с тех пор
+        перечитан с диска (строка уже показана из файла — дубль) или вид
+        переключился на другой профиль."""
+        if gen == self._log_gen and (not name or name == self._log_view):
+            self._append(line)
 
     def _report_exc(self, exc, val, tb):
         import traceback
@@ -1408,16 +1502,33 @@ class App(tk.Tk):
     def report_callback_exception(self, exc, val, tb):  # исключения внутри Tk-колбэков
         self._report_exc(exc, val, tb)
 
+    def _mark_log(self, msg):
+        """Отметка о локальном действии с логом — в файл ПОКАЗАННОГО
+        профиля, мимо контекста чужой операции."""
+        line = f"[{time.strftime('%H:%M:%S')}] {self.t(msg)}\n"
+        self._log_file(line)
+        if self._log_view:
+            self._log_write(self._log_view, line.rstrip("\n"))
+        self._append(line)
+
     def _copy_log(self):
         self.clipboard_clear()
         self.clipboard_append(self.log.get("1.0", "end"))
-        self.say("Лог скопирован в буфер обмена.")
+        self._mark_log("Лог скопирован в буфер обмена.")
 
     def _clear_log(self):
+        name = self._log_view
+        if name:
+            d = self._log_dir(name)
+            for suf in (".log", ".log.old"):
+                try:
+                    os.remove(os.path.join(d, "session" + suf))
+                except OSError:
+                    pass
         self.log.config(state="normal")
         self.log.delete("1.0", "end")
         self.log.config(state="disabled")
-        self.say("Лог очищен.")
+        self._mark_log("Лог очищен.")
 
     def _append(self, text):
         self.log.config(state="normal")
@@ -1436,7 +1547,9 @@ class App(tk.Tk):
             self.update_idletasks()
             h = self.winfo_reqheight()  # многострочный статус → подогнать высоту окна
             if abs(h - self.winfo_height()) > 4:
-                self.geometry(f"{self.winfo_reqwidth()}x{h}")
+                # только высоту: при открытой панели reqwidth включает её
+                # содержимое и снап к нему дёргал бы ширину окна
+                self.geometry(f"{self.winfo_width()}x{h}")
         self.ui(apply)
 
     # ---------- иконка и трей ----------
@@ -1686,6 +1799,22 @@ class App(tk.Tk):
             new_dir = os.path.dirname(os.path.abspath(p.get("ovpn", "")))
             if old_dir and old_dir != new_dir:  # профиль переименован — старые копии не нужны
                 shutil.rmtree(old_dir, ignore_errors=True)
+            if old != p["name"]:  # журнал переезжает за новым именем
+                old_ld, new_ld = self._log_dir(old), self._log_dir(p["name"])
+                if os.path.isdir(old_ld):
+                    try:
+                        if os.path.isdir(new_ld):
+                            for fn in os.listdir(old_ld):
+                                try:
+                                    os.replace(os.path.join(old_ld, fn),
+                                               os.path.join(new_ld, fn))
+                                except OSError:
+                                    pass
+                            shutil.rmtree(old_ld, ignore_errors=True)
+                        else:
+                            os.renames(old_ld, new_ld)
+                    except OSError:
+                        pass
             if self.data.get("last_profile") == old:
                 self.data["last_profile"] = p["name"]
             save_data(self.data)
@@ -1698,6 +1827,7 @@ class App(tk.Tk):
             self.data["profiles"].remove(p)
             if p.get("ovpn") and _under_profiles_dir(p["ovpn"]):  # убрать нашу копию файлов
                 shutil.rmtree(os.path.dirname(os.path.abspath(p["ovpn"])), ignore_errors=True)
+            shutil.rmtree(self._log_dir(p["name"]), ignore_errors=True)  # и журнал
             save_data(self.data)
             self._refresh_combo()
 
@@ -1739,6 +1869,7 @@ class App(tk.Tk):
             except Exception as e:  # noqa: BLE001
                 self.say("Ошибка: {e}", e=e)
                 self._stop_all()
+                self._log_ctx = None
                 self._check_loopback()
                 self.set_status("Ошибка: {e}", "red", e=e)
                 self.ui(self._show_adv)   # открыть панель с логом, чтобы была видна причина
@@ -1798,6 +1929,7 @@ class App(tk.Tk):
         return ip
 
     def _connect(self, p):
+        self._log_ctx = p["name"]  # дальше лог сессии пишется в журнал этого профиля
         ck_exe, ov_exe = self.data["ck_client"], self.data["openvpn_exe"]
         for path in (ck_exe, ov_exe, p["ck_config"], p["ovpn"]):
             if not os.path.isfile(path):
@@ -2093,6 +2225,7 @@ class App(tk.Tk):
         self._stop_all()
         self._check_loopback()
         self.say("Отключено.")
+        self._log_ctx = None
         self.set_status("Отключено", "gray")
 
     def _check_loopback(self):
