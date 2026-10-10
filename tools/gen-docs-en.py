@@ -199,6 +199,8 @@ CEN = {
  "65fffb7": "docs: reports for key stashing + translations",
  "c5afa01": "client: profile rename fixes + admin: DPAPI for secrets",
  "a887a89": "docs+tests: check names without backslash (harvester truncated)",
+ "199f9bd": "docs: reports for rename fixes and DPAPI + translations",
+ "73bb4c0": "client: per-profile disk logs (JSONL+rotation), framed log w/ scrollbar, buttons in a row, window-resize fix on Advanced",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
  "c1cfa05": "firewalld: zone forward + own verification and audit branch (backlog #1)",
@@ -365,6 +367,7 @@ BUGS = [
     ("Client", "Profile rename left files in profiles\\<old name> (the \u201calready our copy\u201d check skipped them) \u2014 orphan folders piled up; also: duplicate and safe-name collisions (\u00abe x\u00bb vs \u00abe_x\u00bb) shared one folder with mutual rmtree", "c5afa01"),
     ("Client", "Renamed managed profile (from admin) lost inbox sync: .del/<cn>@<srv> missed it \u2192 permanent orphan. Managed profile name is now readonly", "c5afa01"),
     ("Admin", "SSH password and Cloak admin_uid were stored in data.json as plaintext \u2014 now DPAPI *_dp blobs (CryptProtectData, readable only under this user on this PC)", "c5afa01"),
+    ("Client", "Expanding \u201cAdvanced\u201d resized the window: hardcoded geometry(720x560) + set_status snapped width to the open panel's reqwidth. Now the window grows exactly by the panel height; width untouched", "73bb4c0"),
 ]
 bug_rows = "".join(
     '<tr><td style="width:120px"><span class=tag>%s</span></td>'
