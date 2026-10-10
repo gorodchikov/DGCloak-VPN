@@ -188,6 +188,8 @@ CEN = {
  "f0ff0a7": "docs: user-guide.html renamed to user-guide-ru.html",
  "e956db0": "ui: \"?\" button opens the user guide in browser (releases-repo Pages)",
  "4e7aa92": "admin: per-server journals on disk — logs\\<srv>\\<deploy|users>.log",
+ "8eec5c9": "tools+docs: report generators into repo, auto-regen convention in CLAUDE.md",
+ "a300004": "client: remove \"OpenVPN GUI\" desktop shortcut after our install",
  "3c79e0c": "docs: EN versions of the three reports",
  "a6211f6": "docs: user guide RU+EN (features, controls, deploy walkthrough, FAQ)",
  "c1cfa05": "firewalld: zone forward + own verification and audit branch (backlog #1)",
@@ -452,6 +454,8 @@ CL = {
 "T21.2 материализовано в profiles": "T21.2 materialized into profiles\\, udp=True from cloak",
 "T21.3 повторный inbox → upsert без дубля": "T21.3 second inbox \u2192 upsert, no duplicate",
 "T21.4 inbox .del → профиль удалён": "T21.4 inbox .del \u2192 profile removed",
+"T22.1 ярлык снят на всех трёх десктопах": "T22.1 shortcut removed on all three desktops",
+"T22.2 повторный вызов без ярлыка → пусто, без ошибок": "T22.2 second call without shortcut \u2192 empty, no errors",
 }
 
 AD = {
