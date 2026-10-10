@@ -1670,18 +1670,21 @@ def write_user_bundle(s, name, uid, mats, dst, mask=None):
                   ensure_ascii=False, indent=2)
 
 
-def provision_client(srv_name, cn, dgcloak_path=None, delete=False):
+def provision_client(srv_name, cn, dgcloak_path=None, delete=False,
+                     pname=None):
     """Если на этом ПК стоит клиент DGCloakVPN — передать профиль через
     его inbox\\<cn>@<сервер>.dgcloak / .del. Клиент определяем по data-dir
     %APPDATA%\\DGCloak\\VPN — exe может лежать где угодно, папка одна.
     Маркеры подхватывает сам клиент (свой data.json пишет только он —
     гонок нет, мьютекс не нужен). Атомарно через tmp+os.replace.
+    pname — явное имя профиля (сервер переименован, а профиль на клиенте
+    подписан старым именем); иначе строится как <cn>@<srv_name>.
     True = клиент найден и файл брошен."""
     vdir = os.path.join(os.environ.get("APPDATA", ""), "DGCloak", "VPN")
     if not os.path.isdir(vdir):
         return False
     inbox = os.path.join(vdir, "inbox")
-    pname = "%s@%s" % (cn, srv_name)
+    pname = pname or "%s@%s" % (cn, srv_name)
     try:
         os.makedirs(inbox, exist_ok=True)
         if delete:
@@ -2061,7 +2064,9 @@ class App(tk.Tk):
         self._spin_t0 = 0.0
         self._spin_hb = 0.0
         self._logs = {}           # name -> [строки лога]
-        self._log_lock = threading.Lock()  # _log_write зовут рабочие потоки
+        self._log_lock = threading.RLock()  # _say/_log_write зовут потоки;
+        # RLock: _say держит его поверх _log_write, и _srv_edit берёт его
+        # на переименование журналов — гонок со строкой «в чужой лог» нет
         self._logs_load()
         self._log_name = None     # чей лог показан
         self._log_ctx = None      # на каком сервере идёт операция
@@ -2330,7 +2335,8 @@ class App(tk.Tk):
         name = self._log_ctx or self._log_name
         tab = self._op_tab or self._cur_tab()
         if name is not None:
-            self._logs.setdefault(name, []).append((line, verbose, tab))
+            with self._log_lock:
+                self._logs.setdefault(name, []).append((line, verbose, tab))
             self._log_write(name, tab, line, verbose)
         # self._verbose_on — обычный bool-дубль tk-переменной: _say зовут
         # из рабочих потоков, а tk-переменные читать оттуда нельзя
@@ -2990,18 +2996,68 @@ class App(tk.Tk):
             old = s["name"]
             s.update(d.result)
             if s["name"] != old:
-                # журналы переживают переименование: память + папка на диске
-                if old in self._logs:
-                    self._logs[s["name"]] = self._logs.pop(old)
-                for attr in ("_log_name", "_log_ctx"):
-                    if getattr(self, attr) == old:
-                        setattr(self, attr, s["name"])
-                try:
-                    os.rename(self._log_dir(old), self._log_dir(s["name"]))
-                except OSError:
-                    pass
+                # журналы переживают переименование: память + папка на
+                # диске. Под локом — рабочий поток может писать строку
+                # прямо сейчас, _say резолвит имя атомарно с переездом
+                with self._log_lock:
+                    self._logs[s["name"]] = (self._logs.get(s["name"], [])
+                                             + self._logs.pop(old, []))
+                    for attr in ("_log_name", "_log_ctx"):
+                        if getattr(self, attr) == old:
+                            setattr(self, attr, s["name"])
+                    self._move_dir(self._log_dir(old),
+                                   self._log_dir(s["name"]))
+                # SSH-ключи: папка названа по серверу — переезжает, иначе
+                # подсказка в «Удалить сервер» укажет на несуществующий путь
+                kd_old = os.path.join(APP_DIR, "keys",
+                                      re.sub(r"[^\w-]", "_", old))
+                kd_new = os.path.join(APP_DIR, "keys",
+                                      re.sub(r"[^\w-]", "_", s["name"]))
+                if self._move_dir(kd_old, kd_new):
+                    k = s.get("key")
+                    if (k and os.path.normpath(os.path.dirname(k))
+                            == os.path.normpath(kd_old)):
+                        s["key"] = os.path.join(kd_new, os.path.basename(k))
+                # бандлы юзеров — та же привязка к имени
+                self._move_dir(os.path.join(BUNDLES_DIR, old),
+                               os.path.join(BUNDLES_DIR, s["name"]))
+                # профили на клиенте подписаны <cn>@<старое>: .del под
+                # новым именем их не нашёл бы. Бандл есть — переоформляем
+                # (.del старого + .dgcloak нового); нет — помечаем pname,
+                # чтобы будущие операции попадали в старое имя
+                for u in s.get("users", []):
+                    cn = u["cn"]
+                    old_p = u.get("pname") or "%s@%s" % (cn, old)
+                    new_p = "%s@%s" % (cn, s["name"])
+                    bundle = os.path.join(BUNDLES_DIR, s["name"],
+                                          "%s.dgcloak" % cn)
+                    if os.path.isfile(bundle):
+                        provision_client(old, cn, delete=True, pname=old_p)
+                        provision_client(s["name"], cn, bundle)
+                        u["pname"] = new_p
+                    else:
+                        u["pname"] = old_p
             save_data(self.data)
             self._refresh_servers()
+
+    @staticmethod
+    def _move_dir(src, dst):
+        """Переезд папки за новым именем сервера. Если dst уже есть
+        (переименовали туда-обратно) — докидываем файлы. True = переехала."""
+        if not os.path.isdir(src) or src == dst:
+            return False
+        try:
+            os.rename(src, dst)
+            return True
+        except OSError:
+            try:
+                os.makedirs(dst, exist_ok=True)
+                for fn in os.listdir(src):
+                    shutil.move(os.path.join(src, fn), os.path.join(dst, fn))
+                os.rmdir(src)
+                return True
+            except OSError:
+                return False
 
     def _srv_del(self):
         s = self._sel_srv()
@@ -4165,7 +4221,8 @@ class App(tk.Tk):
                       "sessions": sessions, "mask": mask,
                       "up_rate": up_rate, "down_rate": down_rate,
                       "up_credit": up_credit, "down_credit": down_credit,
-                      "created": time.strftime("%Y-%m-%d")})
+                      "created": time.strftime("%Y-%m-%d"),
+                      "pname": "%s@%s" % (name, s["name"])})
         save_data(self.data)
         self._push_users(ssh, s)
         self.say(self.t("Юзер «%s» создан, выдай конфиг юзеру: %s")
@@ -4246,10 +4303,17 @@ class App(tk.Tk):
                 mats = parse_cert_bundle(out)
                 bundle = os.path.join(BUNDLES_DIR, s["name"])
                 write_user_bundle(s, cn, uid, mats, bundle, r["mask"])
+                # профиль на клиенте мог остаться под старым именем
+                # сервера (pname) — сносим его, иначе будет дубль
+                new_p = "%s@%s" % (cn, s["name"])
+                if rec.get("pname") and rec["pname"] != new_p:
+                    provision_client(s["name"], cn, delete=True,
+                                     pname=rec["pname"])
                 if provision_client(s["name"], cn,
                                     os.path.join(bundle, "%s.dgcloak" % cn)):
+                    rec["pname"] = new_p
                     self.say(self.t("  конфиг передан клиенту: «%s»")
-                             % ("%s@%s" % (cn, s["name"])))
+                             % new_p)
                 self.say(self.t("Юзер «%s» обновлён, конфиг перевыпущен, "
                          "выдай его юзеру: %s")
                          % (cn, os.path.join(bundle, "%s.dgcloak" % cn)))
@@ -4365,9 +4429,11 @@ class App(tk.Tk):
                                        "%s.dgcloak" % cn))
             except OSError:
                 pass
-            if provision_client(s["name"], cn, delete=True):
+            if provision_client(s["name"], cn, delete=True,
+                                pname=rec.get("pname")):
                 self.say(self.t("  профиль «%s» удалён и у клиента")
-                         % ("%s@%s" % (cn, s["name"])))
+                         % (rec.get("pname")
+                            or "%s@%s" % (cn, s["name"])))
             self.say(self.t("Юзер «%s» отозван и удалён.") % cn)
             self.ui(self._users_refresh)
         self._worker(work)

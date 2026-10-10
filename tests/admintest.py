@@ -647,6 +647,87 @@ def u12_journal_files():
 
 
 # ======================================================================
+# U13. Переименование сервера: журналы/ключи/бандлы/pname переезжают
+# ======================================================================
+
+def u13_rename():
+    old, new = "u13 old [x]", "u13 new [y]"
+    srv = {"name": old, "host": "1.2.3.4",
+           "users": [{"cn": "u1", "uid": "a" * 16},
+                     {"cn": "u2", "uid": "b" * 16}]}
+    lib.add_srv(app, srv)
+    ldir_old, ldir_new = app._log_dir(old), app._log_dir(new)
+    kd_old = os.path.join(CA.APP_DIR, "keys", re.sub(r"[^\w-]", "_", old))
+    kd_new = os.path.join(CA.APP_DIR, "keys", re.sub(r"[^\w-]", "_", new))
+    bd_old = os.path.join(CA.BUNDLES_DIR, old)
+    bd_new = os.path.join(CA.BUNDLES_DIR, new)
+    _orig_dlg = CA.ServerDialog
+    old_ap = os.environ.get("APPDATA", "")
+    tmp = tempfile.mkdtemp(prefix="dgren-")
+    try:
+        # состояние до переименования: журнал, ключ, бандл u1 (у u2 нет)
+        app._log_name = old
+        app._op_tab = None
+        app.nb.select(0)
+        app.say("u13 строка до переименования")
+        os.makedirs(kd_old, exist_ok=True)
+        kp = os.path.join(kd_old, "key")
+        open(kp, "w").write("k")
+        srv["key"] = kp
+        os.makedirs(bd_old, exist_ok=True)
+        open(os.path.join(bd_old, "u1.dgcloak"), "w").write("{}")
+        # клиентский inbox — подменённый APPDATA
+        os.environ["APPDATA"] = tmp
+        os.makedirs(os.path.join(tmp, "DGCloak", "VPN"))
+        inbox = os.path.join(tmp, "DGCloak", "VPN", "inbox")
+        # сам диалог
+        class _D:
+            result = {"name": new, "host": "1.2.3.4"}
+        CA.ServerDialog = lambda *a, **k: _D()
+        app.data["servers"] = [srv]
+        app._refresh_servers()
+        lib.sel(app, 0)
+        app._srv_edit()
+        check("U13.1 журналы: память и папка за новым именем",
+              bool(lib.jrnl(app, new)) and not lib.jrnl(app, old)
+              and os.path.isfile(os.path.join(ldir_new, "deploy.log"))
+              and not os.path.exists(ldir_old))
+        check("U13.2 показанный журнал → новое имя", app._log_name == new)
+        check("U13.3 ключи переехали, s[\"key\"] переписан",
+              not os.path.exists(kd_old)
+              and os.path.isfile(os.path.join(kd_new, "key"))
+              and srv["key"] == os.path.join(kd_new, "key"))
+        check("U13.4 user_bundles\\<new> на месте, <old> снесён",
+              os.path.isfile(os.path.join(bd_new, "u1.dgcloak"))
+              and not os.path.exists(bd_old))
+        check("U13.5 u1: .del старого + .dgcloak нового, pname обновлён",
+              os.path.isfile(os.path.join(inbox, "u1@%s.del" % old))
+              and os.path.isfile(os.path.join(inbox, "u1@%s.dgcloak" % new))
+              and srv["users"][0]["pname"] == "u1@%s" % new)
+        check("U13.6 u2 без бандла: pname=<old>, маркеров нет",
+              srv["users"][1]["pname"] == "u2@%s" % old
+              and not os.path.exists(os.path.join(inbox, "u2@%s.del" % old))
+              and not os.path.exists(
+                  os.path.join(inbox, "u2@%s.dgcloak" % new)))
+        check("U13.7 delete по pname → .del бьёт в старое имя",
+              CA.provision_client(new, "u2", delete=True,
+                                  pname="u2@%s" % old)
+              and os.path.isfile(os.path.join(inbox, "u2@%s.del" % old)))
+    finally:
+        CA.ServerDialog = _orig_dlg
+        os.environ["APPDATA"] = old_ap
+        app.data["servers"] = [s for s in app.data["servers"]
+                               if s.get("name") not in (old, new)]
+        app._logs.pop(old, None)
+        app._logs.pop(new, None)
+        import shutil as _sh
+        for d in (ldir_old, ldir_new, kd_old, kd_new, bd_old, bd_new):
+            _sh.rmtree(d, ignore_errors=True)
+        app._log_name = None
+        app._refresh_servers()
+
+
+# ======================================================================
 
 u1_localization()
 u2_regressions()
@@ -663,5 +744,6 @@ u9_revert()
 u10_srv_mark()
 u11_provision()
 u12_journal_files()
+u13_rename()
 
 finish(app)

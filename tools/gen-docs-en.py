@@ -568,6 +568,13 @@ AD = {
 "U12.5 ротация по размеру: .log → .log.old": "U12.5 size rotation: .log \u2192 .log.old",
 "U12.6 «очистить лог»: .old снят, в .log только отметка": "U12.6 \u201cclear log\u201d: .old gone, .log keeps only the mark",
 "U12.7 удаление сервера → папка журналов снесена": "U12.7 server deletion \u2192 journal folder removed",
+"U13.1 журналы: память и папка за новым именем": "U13.1 journals: memory and folder under new name",
+"U13.2 показанный журнал → новое имя": "U13.2 shown journal \u2192 new name",
+"U13.3 ключи переехали, s[\"key\"] переписан": "U13.3 keys moved, s[\"key\"] rewritten",
+"U13.4 user_bundles\\<new> на месте, <old> снесён": "U13.4 user_bundles\\<new> in place, <old> removed",
+"U13.5 u1: .del старого + .dgcloak нового, pname обновлён": "U13.5 u1: old .del + new .dgcloak, pname updated",
+"U13.6 u2 без бандла: pname=<old>, маркеров нет": "U13.6 u2 without bundle: pname=<old>, no markers",
+"U13.7 delete по pname → .del бьёт в старое имя": "U13.7 delete by pname \u2192 .del hits old name",
 }
 
 LG = {
