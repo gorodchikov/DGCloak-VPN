@@ -1438,11 +1438,13 @@ class App(tk.Tk):
         self._status_tip = Tooltip(
             self.status, t("Клик по строке с IP скопирует его в буфер обмена"))
 
-        # ширина комбобокса профиля = ширине пары кнопок «Подключить + Пауза»
+        # ширина комбобокса профиля = ширине пары кнопок «Подключить + Пауза»;
+        # pack_propagate(False) — рамке нужны явные ширина и высота, иначе 0
         self.update_idletasks()
         self.combo_box.pack_propagate(False)
         self.combo_box.config(
-            width=self.btn.winfo_reqwidth() + 8 + self.b_pause.winfo_reqwidth())
+            width=self.btn.winfo_reqwidth() + 8 + self.b_pause.winfo_reqwidth(),
+            height=self.combo.winfo_reqheight())
 
         self.b_adv = ttk.Button(box, text=t("Дополнительно ▾"), width=BTN_W, command=self._toggle_adv)
         self.b_adv.grid(row=3, column=0, sticky="w")
@@ -1513,6 +1515,12 @@ class App(tk.Tk):
             v.bind("<Button-1>", self._net_copy)
             self._net_vals[key] = v
         Tooltip(netf, t("Клик по адресу копирует его в буфер обмена"))
+        # ширина окна сразу с запасом под панель «Дополнительно» (+padx 20) —
+        # раскрытие/сворачивание меняет только высоту, ширина никогда не скачет
+        self.update_idletasks()
+        wneed = self.adv.winfo_reqwidth() + 20
+        if wneed > self.winfo_reqwidth():
+            self.geometry(f"{wneed}x{self.winfo_reqheight()}")
         self._refresh_combo(self.data.get("last_profile"))
 
     def _on_lang_pick(self, _e):
@@ -1578,22 +1586,23 @@ class App(tk.Tk):
             self._show_adv()
 
     def _hide_adv(self):
+        w = self.winfo_width()           # ширину читаем ДО изменений раскладки
         self.adv.pack_forget()
         self.b_adv.config(text=self.t("Дополнительно ▾"))
         self.adv_open = False
         self.update_idletasks()
-        # ширину не трогаем — возвращаем только высоту до панели
-        self.geometry(f"{self.winfo_width()}x{self.winfo_reqheight()}")
+        self.geometry(f"{w}x{self.winfo_reqheight()}")
 
     def _show_adv(self):
         if not self.adv_open:            # флаг ведём сами: winfo_ismapped() отстаёт от pack()
+            w = self.winfo_width()
             self._refresh_netinfo()
             self.adv.pack(fill="both", expand=True, padx=10, pady=(0, 10))
             self.b_adv.config(text=self.t("Дополнительно ▴"))
             self.adv_open = True
             self.update_idletasks()
             # растим окно ровно на высоту панели; ширина и верхний край не меняются
-            self.geometry(f"{self.winfo_width()}x{self.winfo_reqheight()}")
+            self.geometry(f"{w}x{self.winfo_reqheight()}")
 
     def _refresh_combo(self, select=None):
         names = [p["name"] for p in self.data["profiles"]]

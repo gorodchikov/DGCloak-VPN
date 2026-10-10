@@ -1151,8 +1151,9 @@ def t_layout(app):
     app.update_idletasks()
     target = app.btn.winfo_reqwidth() + 8 + app.b_pause.winfo_reqwidth()
     check("T33.1 комбобокс по ширине «Подключить+Пауза»",
-          abs(app.combo_box.winfo_reqwidth() - target) <= 2,
-          (app.combo_box.winfo_reqwidth(), target))
+          abs(app.combo_box.winfo_reqwidth() - target) <= 2
+          and app.combo_box.winfo_reqheight() >= app.combo.winfo_reqheight(),
+          (app.combo_box.winfo_reqwidth(), target, app.combo_box.winfo_reqheight()))
     h0 = app.winfo_reqheight()
     app.set_status("Подключено:\na\nb\nc\nd\ne", "green")
     pump(app); app.update_idletasks()
@@ -1160,6 +1161,23 @@ def t_layout(app):
           app.winfo_reqheight() == h0, (h0, app.winfo_reqheight()))
     app.set_status("Отключено", "gray")
     pump(app)
+    # geometry() — единственный канал изменения размера окна: ширина в вызовах
+    # постоянна = визуально окно не прыгает. reqwidth шире окна и растёт легально.
+    geos = []
+    orig_geo = app.geometry
+    def spy(*a):
+        if a:
+            geos.append(a[0])
+        return orig_geo(*a)
+    app.geometry = spy
+    try:
+        app._show_adv(); app.update_idletasks()
+        app._hide_adv(); app.update_idletasks()
+    finally:
+        app.geometry = orig_geo
+    widths = {g.split("x")[0] for g in geos}
+    check("T33.3 geometry при «Дополнительно» — одна и та же ширина",
+          len(geos) >= 2 and len(widths) == 1, geos)
 
 
 def t_autorun(app):

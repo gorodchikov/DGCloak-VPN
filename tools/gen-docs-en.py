@@ -552,6 +552,7 @@ CL = {
 "T32.10 тултип обратно → «Приостановить VPN»": "T32.10 tooltip back → «Pause VPN»",
 "T33.1 комбобокс по ширине «Подключить+Пауза»": "T33.1 combobox width matches «Connect+Pause» pair",
 "T33.2 высота окна не прыгает от многострочного статуса": "T33.2 window height stable across multiline status",
+"T33.3 geometry при «Дополнительно» — одна и та же ширина": "T33.3 geometry calls keep the same width on Advanced toggle",
 }
 
 AD = {
