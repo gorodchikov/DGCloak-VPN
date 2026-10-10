@@ -126,7 +126,11 @@ on the right.</figcaption></figure>
 steps ok; <code>✓-</code> — deployed with skipped steps (e.g. update
 declined); <code>⚠</code> — a warning/error exists; empty — not deployed or
 audit failed. The SSH and Cloak columns
-show online status (TCP probe; Cloak only on deployed servers).</td></tr>
+show online status (TCP probe, refreshed every ~15 s):
+<code>✓</code> reachable · <code>✗</code> unreachable ·
+<code>…</code> first probe still running · <code>—</code> n/a
+(Cloak on an undeployed server — a foreign TLS listener on 443
+can't be told from ours).</td></tr>
 <tr><td>Add / Edit / Delete</td>
 <td>Server registry. Deletion cleans local user configs; the SSH key is
 kept — you can still log in later. The server itself is untouched.</td></tr>
@@ -432,7 +436,7 @@ rules, and the local user configs on this PC;</li>
 restart-policy back and is started (with a dockerd restart if the ruleset
 was flushed);</li>
 <li>restores the original <code>ip_forward</code>, the original ufw lines
-(sysctl/forward-policy/before.rules), firewalld masquerade;</li>
+(sysctl/forward-policy/before.rules), firewalld masquerade/forward;</li>
 <li>removes only the packages we installed; pre-existing ones are kept;</li>
 <li>on a foreign nftables setup it re-dumps <code>/etc/nftables.conf</code>
 so our table doesn't resurrect after reboot.</li>
